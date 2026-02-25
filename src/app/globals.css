@@ -1,0 +1,78 @@
+@import 'tailwindcss';
+
+:root {
+  --bg-primary: #1a1a2e;
+  --bg-secondary: #16213e;
+  --bg-tertiary: #0f3460;
+  --text-primary: #e4e4e7;
+  --text-secondary: #a1a1aa;
+  --accent: #6366f1;
+  --border: #27272a;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue',
+    Arial, sans-serif;
+  overflow: hidden;
+  height: 100vh;
+}
+
+/* Method color coding */
+.method-get {
+  color: #22c55e;
+}
+.method-post {
+  color: #f59e0b;
+}
+.method-put {
+  color: #3b82f6;
+}
+.method-delete {
+  color: #ef4444;
+}
+.method-patch {
+  color: #a855f7;
+}
+.method-head {
+  color: #06b6d4;
+}
+.method-options {
+  color: #8b5cf6;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #3f3f46;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #52525b;
+}
+
+/* Ant Design dark overrides */
+.ant-tree .ant-tree-node-content-wrapper:hover {
+  background-color: rgba(99, 102, 241, 0.1) !important;
+}
+
+.ant-tree .ant-tree-node-selected {
+  background-color: rgba(99, 102, 241, 0.2) !important;
+}

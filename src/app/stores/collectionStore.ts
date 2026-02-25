@@ -1,0 +1,132 @@
+import { create } from 'zustand';
+import { invoke } from '@tauri-apps/api/core';
+import type { Collection, ApiRequest } from '@/app/types';
+
+interface CollectionStore {
+  collections: Collection[];
+  requests: Map<string, ApiRequest[]>;
+  selectedCollectionId: string | null;
+  selectedRequestId: string | null;
+  loading: boolean;
+
+  loadCollections: () => Promise<void>;
+  loadRequests: (collectionId: string) => Promise<void>;
+  createCollection: (name: string, parentId?: string) => Promise<Collection>;
+  updateCollection: (
+    id: string,
+    updates: { name?: string; parent_id?: string | null; sort_order?: number },
+  ) => Promise<Collection>;
+  deleteCollection: (id: string) => Promise<void>;
+  createRequest: (
+    collectionId: string,
+    name: string,
+    config?: string,
+  ) => Promise<ApiRequest>;
+  updateRequest: (
+    id: string,
+    updates: {
+      name?: string;
+      config?: string;
+      collection_id?: string;
+      sort_order?: number;
+    },
+  ) => Promise<ApiRequest>;
+  deleteRequest: (id: string) => Promise<void>;
+  duplicateRequest: (id: string) => Promise<ApiRequest>;
+  setSelectedCollection: (id: string | null) => void;
+  setSelectedRequest: (id: string | null) => void;
+}
+
+export const useCollectionStore = create<CollectionStore>((set, get) => ({
+  collections: [],
+  requests: new Map(),
+  selectedCollectionId: null,
+  selectedRequestId: null,
+  loading: false,
+
+  loadCollections: async () => {
+    set({ loading: true });
+    try {
+      const collections = await invoke<Collection[]>('list_collections');
+      set({ collections });
+    } finally {
+      set({ loading: false });
+    }
+  },
+
+  loadRequests: async (collectionId: string) => {
+    const requests = await invoke<ApiRequest[]>('list_requests', {
+      collectionId,
+    });
+    set((state) => {
+      const newRequests = new Map(state.requests);
+      newRequests.set(collectionId, requests);
+      return { requests: newRequests };
+    });
+  },
+
+  createCollection: async (name: string, parentId?: string) => {
+    const collection = await invoke<Collection>('create_collection', {
+      input: { name, parent_id: parentId ?? null },
+    });
+    await get().loadCollections();
+    return collection;
+  },
+
+  updateCollection: async (id, updates) => {
+    const collection = await invoke<Collection>('update_collection', {
+      input: { id, ...updates },
+    });
+    await get().loadCollections();
+    return collection;
+  },
+
+  deleteCollection: async (id: string) => {
+    await invoke('delete_collection', { id });
+    const { selectedCollectionId } = get();
+    if (selectedCollectionId === id) {
+      set({ selectedCollectionId: null, selectedRequestId: null });
+    }
+    await get().loadCollections();
+  },
+
+  createRequest: async (collectionId, name, config) => {
+    const request = await invoke<ApiRequest>('create_request', {
+      input: { collection_id: collectionId, name, config: config ?? null },
+    });
+    await get().loadRequests(collectionId);
+    return request;
+  },
+
+  updateRequest: async (id, updates) => {
+    const request = await invoke<ApiRequest>('update_request', {
+      input: { id, ...updates },
+    });
+    if (request.collection_id) {
+      await get().loadRequests(request.collection_id);
+    }
+    return request;
+  },
+
+  deleteRequest: async (id: string) => {
+    const { selectedRequestId, selectedCollectionId } = get();
+    await invoke('delete_request', { id });
+    if (selectedRequestId === id) {
+      set({ selectedRequestId: null });
+    }
+    if (selectedCollectionId) {
+      await get().loadRequests(selectedCollectionId);
+    }
+  },
+
+  duplicateRequest: async (id: string) => {
+    const request = await invoke<ApiRequest>('duplicate_request', { id });
+    if (request.collection_id) {
+      await get().loadRequests(request.collection_id);
+    }
+    return request;
+  },
+
+  setSelectedCollection: (id) => set({ selectedCollectionId: id }),
+  setSelectedRequest: (id) => set({ selectedRequestId: id }),
+}));

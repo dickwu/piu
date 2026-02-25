@@ -37,7 +37,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDg5REZGNjk2RUEyNTYyNzUKUldSMVlpWHFsdmJmaVd0WkhhNXh3ZFNVVUwrSlREcXIxaFl0RkROaURjUzF5bUhZeTF4UVE4RlQK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDkxQkVDRDgyMjc0NEI2NjYKUldSbXRrUW5nczIra2NuQURWeEhHZldBRE9OS29xUUZZSTVlVEtaYll5dzc2TE1wTW1NeC9OZFUK",
       "endpoints": ["https://github.com/dickwu/piu/releases/latest/download/latest.json"],
       "windows": {
         "installMode": "quiet"

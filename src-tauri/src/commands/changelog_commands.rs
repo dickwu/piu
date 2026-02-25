@@ -10,9 +10,7 @@ pub struct GetChangelogInput {
 }
 
 #[tauri::command]
-pub async fn get_changelog(
-    input: GetChangelogInput,
-) -> Result<Vec<db::ChangelogEntry>, String> {
+pub async fn get_changelog(input: GetChangelogInput) -> Result<Vec<db::ChangelogEntry>, String> {
     let limit = input.limit.unwrap_or(50);
     let offset = input.offset.unwrap_or(0);
 

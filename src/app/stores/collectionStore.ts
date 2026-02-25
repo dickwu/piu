@@ -14,7 +14,14 @@ interface CollectionStore {
   createCollection: (name: string, parentId?: string) => Promise<Collection>;
   updateCollection: (
     id: string,
-    updates: { name?: string; parent_id?: string | null; sort_order?: number },
+    updates: {
+      name?: string;
+      parent_id?: string | null;
+      sort_order?: number;
+      path_prefix?: string | null;
+      description?: string | null;
+      shared_headers?: string;
+    },
   ) => Promise<Collection>;
   deleteCollection: (id: string) => Promise<void>;
   createRequest: (
@@ -33,6 +40,7 @@ interface CollectionStore {
   ) => Promise<ApiRequest>;
   deleteRequest: (id: string) => Promise<void>;
   duplicateRequest: (id: string) => Promise<ApiRequest>;
+  getCollectionForRequest: (requestId: string) => Collection | undefined;
   setSelectedCollection: (id: string | null) => void;
   setSelectedRequest: (id: string | null) => void;
 }
@@ -125,6 +133,16 @@ export const useCollectionStore = create<CollectionStore>((set, get) => ({
       await get().loadRequests(request.collection_id);
     }
     return request;
+  },
+
+  getCollectionForRequest: (requestId: string) => {
+    const { requests, collections } = get();
+    for (const [collectionId, reqs] of requests.entries()) {
+      if (reqs.some((r) => r.id === requestId)) {
+        return collections.find((c) => c.id === collectionId);
+      }
+    }
+    return undefined;
   },
 
   setSelectedCollection: (id) => set({ selectedCollectionId: id }),

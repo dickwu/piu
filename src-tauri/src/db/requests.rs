@@ -186,22 +186,12 @@ pub async fn delete_request(id: &str) -> DbResult<()> {
     let version: i64 = row.get(1)?;
     drop(rows);
 
-    conn.execute(
-        "DELETE FROM api_requests WHERE id = ?1",
-        turso::params![id],
-    )
-    .await?;
+    conn.execute("DELETE FROM api_requests WHERE id = ?1", turso::params![id])
+        .await?;
 
     drop(conn);
-    super::changelog::insert_changelog(
-        "request",
-        id,
-        &name,
-        version + 1,
-        "Deleted request",
-        None,
-    )
-    .await?;
+    super::changelog::insert_changelog("request", id, &name, version + 1, "Deleted request", None)
+        .await?;
 
     Ok(())
 }
@@ -263,5 +253,11 @@ pub async fn duplicate_request(id: &str, new_id: &str) -> DbResult<ApiRequest> {
         .ok_or_else(|| format!("Request {} not found", id))?;
 
     let new_name = format!("{} (copy)", original.name);
-    create_request(new_id, &original.collection_id, &new_name, Some(&original.config)).await
+    create_request(
+        new_id,
+        &original.collection_id,
+        &new_name,
+        Some(&original.config),
+    )
+    .await
 }

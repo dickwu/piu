@@ -9,6 +9,7 @@ pub fn get_table_sql() -> &'static str {
     "
 }
 
+#[allow(dead_code)]
 pub async fn get_app_state(key: &str) -> DbResult<Option<String>> {
     let conn = get_connection()?.lock().await;
     let mut rows = conn
@@ -25,6 +26,7 @@ pub async fn get_app_state(key: &str) -> DbResult<Option<String>> {
     }
 }
 
+#[allow(dead_code)]
 pub async fn set_app_state(key: &str, value: &str) -> DbResult<()> {
     let conn = get_connection()?.lock().await;
     conn.execute(

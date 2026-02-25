@@ -5,6 +5,9 @@ export interface Collection {
   name: string;
   parent_id: string | null;
   sort_order: number;
+  path_prefix: string | null;
+  description: string | null;
+  shared_headers: string;
   version: number;
   created_at: number;
   updated_at: number;
@@ -28,6 +31,7 @@ export interface RequestConfig {
   params: KeyValuePair[];
   body: RequestBody;
   auth: AuthConfig;
+  description?: string;
 }
 
 export interface KeyValuePair {
@@ -108,5 +112,22 @@ export function parseConfig(configStr: string): RequestConfig {
     return JSON.parse(configStr) as RequestConfig;
   } catch {
     return defaultRequestConfig();
+  }
+}
+
+export function parseSharedHeaders(json: string): KeyValuePair[] {
+  try {
+    const parsed = JSON.parse(json);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (item): item is KeyValuePair =>
+        typeof item === 'object' &&
+        item !== null &&
+        typeof item.key === 'string' &&
+        typeof item.value === 'string' &&
+        typeof item.enabled === 'boolean',
+    );
+  } catch {
+    return [];
   }
 }

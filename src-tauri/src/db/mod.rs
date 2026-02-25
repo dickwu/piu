@@ -47,6 +47,9 @@ pub async fn init_db(db_path: &Path) -> DbResult<()> {
     ))
     .await?;
 
+    // Run migrations for existing databases
+    run_migrations(&conn).await?;
+
     DB_CONNECTION
         .set(Mutex::new(conn))
         .map_err(|_| "Database already initialized")?;
@@ -54,10 +57,26 @@ pub async fn init_db(db_path: &Path) -> DbResult<()> {
     Ok(())
 }
 
+async fn run_migrations(conn: &Connection) -> DbResult<()> {
+    // Migration 1: Add collection settings columns (path_prefix, description, shared_headers)
+    let migrations = [
+        "ALTER TABLE collections ADD COLUMN path_prefix TEXT DEFAULT NULL",
+        "ALTER TABLE collections ADD COLUMN description TEXT DEFAULT NULL",
+        "ALTER TABLE collections ADD COLUMN shared_headers TEXT NOT NULL DEFAULT '[]'",
+    ];
+    for sql in &migrations {
+        if let Err(e) = conn.execute(sql, ()).await {
+            let msg = e.to_string();
+            if !msg.contains("duplicate column") {
+                return Err(Box::new(e));
+            }
+        }
+    }
+    Ok(())
+}
+
 // Re-export collection functions
-pub use collections::{
-    create_collection, delete_collection, get_collection, list_collections, update_collection,
-};
+pub use collections::{create_collection, delete_collection, list_collections, update_collection};
 
 // Re-export request functions
 pub use requests::{
@@ -73,5 +92,6 @@ pub use environments::{
 // Re-export changelog functions
 pub use changelog::get_changelog;
 
-// Re-export app_state functions
+// Re-export app_state functions (reserved for future use)
+#[allow(unused_imports)]
 pub use app_state::{get_app_state, set_app_state};

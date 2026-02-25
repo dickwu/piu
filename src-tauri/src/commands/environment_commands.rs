@@ -43,9 +43,7 @@ pub async fn update_environment(input: UpdateEnvironmentInput) -> Result<db::Env
 
 #[tauri::command]
 pub async fn delete_environment(id: String) -> Result<(), String> {
-    db::delete_environment(&id)
-        .await
-        .map_err(|e| e.to_string())
+    db::delete_environment(&id).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]

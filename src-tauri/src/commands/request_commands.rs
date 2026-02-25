@@ -27,9 +27,14 @@ pub struct ExecuteRequestInput {
 #[tauri::command]
 pub async fn create_request(input: CreateRequestInput) -> Result<db::ApiRequest, String> {
     let id = uuid::Uuid::new_v4().to_string();
-    db::create_request(&id, &input.collection_id, &input.name, input.config.as_deref())
-        .await
-        .map_err(|e| e.to_string())
+    db::create_request(
+        &id,
+        &input.collection_id,
+        &input.name,
+        input.config.as_deref(),
+    )
+    .await
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -72,8 +77,8 @@ pub async fn duplicate_request(id: String) -> Result<db::ApiRequest, String> {
 
 #[tauri::command]
 pub async fn execute_request(input: ExecuteRequestInput) -> Result<http::HttpResponse, String> {
-    let config: http::types::RequestConfig =
-        serde_json::from_str(&input.config).map_err(|e| format!("Invalid request config: {}", e))?;
+    let config: http::types::RequestConfig = serde_json::from_str(&input.config)
+        .map_err(|e| format!("Invalid request config: {}", e))?;
 
     let env_variables = input.env_variables.unwrap_or_default();
     http::executor::execute(&config, &env_variables).await

@@ -5,12 +5,12 @@ import { defaultRequestConfig } from '@/app/types';
 interface RequestEditorStore {
   activeRequestId: string | null;
   config: RequestConfig;
-  activeTab: 'params' | 'headers' | 'body' | 'auth';
+  activeTab: 'params' | 'headers' | 'body' | 'auth' | 'info';
   isDirty: boolean;
 
   setActiveRequest: (id: string | null, config: RequestConfig) => void;
   updateConfig: (updates: Partial<RequestConfig>) => void;
-  setActiveTab: (tab: 'params' | 'headers' | 'body' | 'auth') => void;
+  setActiveTab: (tab: 'params' | 'headers' | 'body' | 'auth' | 'info') => void;
   resetDirty: () => void;
 }
 

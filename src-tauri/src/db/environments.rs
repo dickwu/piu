@@ -113,15 +113,8 @@ pub async fn update_environment(id: &str, name: Option<&str>) -> DbResult<Enviro
     };
 
     drop(conn);
-    super::changelog::insert_changelog(
-        "environment",
-        id,
-        new_name,
-        new_version,
-        &summary,
-        None,
-    )
-    .await?;
+    super::changelog::insert_changelog("environment", id, new_name, new_version, &summary, None)
+        .await?;
 
     Ok(Environment {
         id: id.to_string(),
@@ -151,11 +144,8 @@ pub async fn delete_environment(id: &str) -> DbResult<()> {
     let version: i64 = row.get(1)?;
     drop(rows);
 
-    conn.execute(
-        "DELETE FROM environments WHERE id = ?1",
-        turso::params![id],
-    )
-    .await?;
+    conn.execute("DELETE FROM environments WHERE id = ?1", turso::params![id])
+        .await?;
 
     drop(conn);
     super::changelog::insert_changelog(

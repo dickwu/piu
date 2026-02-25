@@ -13,6 +13,9 @@ pub struct UpdateCollectionInput {
     pub name: Option<String>,
     pub parent_id: Option<Option<String>>,
     pub sort_order: Option<i64>,
+    pub path_prefix: Option<Option<String>>,
+    pub description: Option<Option<String>>,
+    pub shared_headers: Option<String>,
 }
 
 #[tauri::command]
@@ -25,15 +28,17 @@ pub async fn create_collection(input: CreateCollectionInput) -> Result<db::Colle
 
 #[tauri::command]
 pub async fn update_collection(input: UpdateCollectionInput) -> Result<db::Collection, String> {
-    let parent_id_ref = input
-        .parent_id
-        .as_ref()
-        .map(|opt| opt.as_deref());
+    let parent_id_ref = input.parent_id.as_ref().map(|opt| opt.as_deref());
+    let path_prefix_ref = input.path_prefix.as_ref().map(|opt| opt.as_deref());
+    let description_ref = input.description.as_ref().map(|opt| opt.as_deref());
     db::update_collection(
         &input.id,
         input.name.as_deref(),
         parent_id_ref,
         input.sort_order,
+        path_prefix_ref,
+        description_ref,
+        input.shared_headers.as_deref(),
     )
     .await
     .map_err(|e| e.to_string())
@@ -41,9 +46,7 @@ pub async fn update_collection(input: UpdateCollectionInput) -> Result<db::Colle
 
 #[tauri::command]
 pub async fn delete_collection(id: String) -> Result<(), String> {
-    db::delete_collection(&id)
-        .await
-        .map_err(|e| e.to_string())
+    db::delete_collection(&id).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]

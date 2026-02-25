@@ -8,6 +8,7 @@ import {
   DeleteOutlined,
   EditOutlined,
   CopyOutlined,
+  SettingOutlined,
 } from '@ant-design/icons';
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { useCollectionStore } from '../stores/collectionStore';
@@ -15,6 +16,7 @@ import { useRequestEditorStore } from '../stores/requestStore';
 import type { Collection, ApiRequest } from '../types';
 import { parseConfig } from '../types';
 import type { DataNode } from 'antd/es/tree';
+import { CollectionSettingsDrawer } from './CollectionSettingsDrawer';
 
 const METHOD_COLORS: Record<string, string> = {
   GET: '#22c55e',
@@ -51,6 +53,7 @@ export function Sidebar() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [renameId, setRenameId] = useState<string | null>(null);
   const [renameName, setRenameName] = useState('');
+  const [settingsCollectionId, setSettingsCollectionId] = useState<string | null>(null);
 
   // Load requests for all collections
   useEffect(() => {
@@ -179,6 +182,12 @@ export function Sidebar() {
                       setShowCreateModal(true);
                     },
                   },
+                  {
+                    key: 'settings',
+                    icon: <SettingOutlined />,
+                    label: 'Settings',
+                    onClick: () => setSettingsCollectionId(col.id),
+                  },
                   { type: 'divider' },
                   {
                     key: 'delete',
@@ -194,6 +203,15 @@ export function Sidebar() {
                 <span className="truncate text-sm font-medium">
                   {col.name}
                 </span>
+                {col.path_prefix && (
+                  <span
+                    className="truncate text-xs"
+                    style={{ color: 'var(--text-secondary)', maxWidth: 80 }}
+                    title={col.path_prefix}
+                  >
+                    {col.path_prefix}
+                  </span>
+                )}
                 <span
                   className="ml-auto text-xs"
                   style={{ color: 'var(--text-secondary)' }}
@@ -301,6 +319,12 @@ export function Sidebar() {
           autoFocus
         />
       </Modal>
+
+      <CollectionSettingsDrawer
+        collectionId={settingsCollectionId}
+        open={settingsCollectionId !== null}
+        onClose={() => setSettingsCollectionId(null)}
+      />
     </>
   );
 }

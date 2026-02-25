@@ -32,9 +32,26 @@ err() { echo -e "${RED}[error]${NC} $1" >&2; exit 1; }
 command -v gh >/dev/null 2>&1 || err "gh CLI not found. Install: brew install gh"
 command -v bun >/dev/null 2>&1 || err "bun not found. Install: curl -fsSL https://bun.sh/install | bash"
 
-# Ensure clean working directory
+# =============================================================================
+# Quality checks (run before anything is committed or bumped)
+# =============================================================================
+
+log "Running cargo fmt..."
+(cd src-tauri && cargo fmt)
+log "cargo fmt applied"
+
+log "Running cargo clippy --all-targets --all-features..."
+(cd src-tauri && cargo clippy --all-targets --all-features -- -D warnings) \
+  || err "cargo clippy failed. Fix warnings before publishing."
+log "clippy passed"
+
+# =============================================================================
+
+# Ensure clean working directory (fmt may have dirtied files — auto-stage them)
 if [ -n "$(git status --porcelain)" ]; then
-  err "Working directory is not clean. Commit or stash changes first."
+  warn "cargo fmt produced changes — staging and committing them now."
+  git add src-tauri/src
+  git commit -m "chore: apply cargo fmt"
 fi
 
 # Get current version from Cargo.toml

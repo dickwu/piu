@@ -13,12 +13,14 @@ pub mod app_state;
 pub mod changelog;
 pub mod collections;
 pub mod environments;
+pub mod projects;
 pub mod requests;
 
 // Re-export types
 pub use changelog::ChangelogEntry;
 pub use collections::Collection;
 pub use environments::{EnvVariable, Environment};
+pub use projects::Project;
 pub use requests::ApiRequest;
 
 // ============ Connection and Initialization ============
@@ -38,7 +40,8 @@ pub async fn init_db(db_path: &Path) -> DbResult<()> {
     conn.execute("PRAGMA foreign_keys = ON;", ()).await?;
 
     conn.execute_batch(&format!(
-        "{}{}{}{}{}",
+        "{}{}{}{}{}{}",
+        projects::get_table_sql(),
         collections::get_table_sql(),
         requests::get_table_sql(),
         environments::get_table_sql(),
@@ -58,13 +61,17 @@ pub async fn init_db(db_path: &Path) -> DbResult<()> {
 }
 
 async fn run_migrations(conn: &Connection) -> DbResult<()> {
-    // Migration 1: Add collection settings columns (path_prefix, description, shared_headers)
-    let migrations = [
+    // Migration 1: Add collection settings columns
+    // Migration 2: Add project_id to collections/environments, add host to environments
+    let alter_migrations = [
         "ALTER TABLE collections ADD COLUMN path_prefix TEXT DEFAULT NULL",
         "ALTER TABLE collections ADD COLUMN description TEXT DEFAULT NULL",
         "ALTER TABLE collections ADD COLUMN shared_headers TEXT NOT NULL DEFAULT '[]'",
+        "ALTER TABLE collections ADD COLUMN project_id TEXT REFERENCES projects(id) ON DELETE CASCADE",
+        "ALTER TABLE environments ADD COLUMN project_id TEXT REFERENCES projects(id) ON DELETE CASCADE",
+        "ALTER TABLE environments ADD COLUMN host TEXT DEFAULT NULL",
     ];
-    for sql in &migrations {
+    for sql in &alter_migrations {
         if let Err(e) = conn.execute(sql, ()).await {
             let msg = e.to_string();
             if !msg.contains("duplicate column") {
@@ -72,8 +79,114 @@ async fn run_migrations(conn: &Connection) -> DbResult<()> {
             }
         }
     }
+
+    // Create indexes (idempotent via IF NOT EXISTS)
+    let index_migrations = [
+        "CREATE INDEX IF NOT EXISTS idx_collections_project ON collections(project_id)",
+        "CREATE INDEX IF NOT EXISTS idx_environments_project ON environments(project_id)",
+    ];
+    for sql in &index_migrations {
+        conn.execute(sql, ()).await?;
+    }
+
+    // Data migration: assign orphan collections and environments to a default project
+    migrate_orphans_to_default_project(conn).await?;
+
     Ok(())
 }
+
+async fn migrate_orphans_to_default_project(conn: &Connection) -> DbResult<()> {
+    let mut rows = conn
+        .query(
+            "SELECT COUNT(*) FROM collections WHERE project_id IS NULL",
+            (),
+        )
+        .await?;
+    let orphan_collections: i64 = if let Some(row) = rows.next().await? {
+        row.get(0)?
+    } else {
+        0
+    };
+    drop(rows);
+
+    let mut rows = conn
+        .query(
+            "SELECT COUNT(*) FROM environments WHERE project_id IS NULL",
+            (),
+        )
+        .await?;
+    let orphan_environments: i64 = if let Some(row) = rows.next().await? {
+        row.get(0)?
+    } else {
+        0
+    };
+    drop(rows);
+
+    if orphan_collections == 0 && orphan_environments == 0 {
+        return Ok(());
+    }
+
+    // Deterministic ID for idempotent migration
+    let default_project_id = "00000000-0000-0000-0000-000000000001";
+
+    let mut rows = conn
+        .query(
+            "SELECT id FROM projects WHERE id = ?1",
+            turso::params![default_project_id],
+        )
+        .await?;
+    let exists = rows.next().await?.is_some();
+    drop(rows);
+
+    if !exists {
+        let now = chrono::Utc::now().timestamp_millis();
+        conn.execute(
+            "INSERT INTO projects (id, name, description, sort_order, version, created_at, updated_at)
+             VALUES (?1, 'Default Project', NULL, 0, 1, ?2, ?2)",
+            turso::params![default_project_id, now],
+        )
+        .await?;
+    }
+
+    if orphan_collections > 0 {
+        conn.execute(
+            "UPDATE collections SET project_id = ?1 WHERE project_id IS NULL",
+            turso::params![default_project_id],
+        )
+        .await?;
+    }
+
+    if orphan_environments > 0 {
+        conn.execute(
+            "UPDATE environments SET project_id = ?1 WHERE project_id IS NULL",
+            turso::params![default_project_id],
+        )
+        .await?;
+    }
+
+    let mut rows = conn
+        .query(
+            "SELECT value FROM app_state WHERE key = 'active_project_id'",
+            (),
+        )
+        .await?;
+    let has_active = rows.next().await?.is_some();
+    drop(rows);
+
+    if !has_active {
+        conn.execute(
+            "INSERT INTO app_state (key, value) VALUES ('active_project_id', ?1)
+             ON CONFLICT (key) DO UPDATE SET value = ?1",
+            turso::params![default_project_id],
+        )
+        .await?;
+    }
+
+    Ok(())
+}
+
+// Re-export project functions
+pub use projects::{create_project, delete_project, get_project, list_projects, update_project};
 
 // Re-export collection functions
 pub use collections::{create_collection, delete_collection, list_collections, update_collection};
@@ -92,6 +205,5 @@ pub use environments::{
 // Re-export changelog functions
 pub use changelog::get_changelog;
 
-// Re-export app_state functions (reserved for future use)
-#[allow(unused_imports)]
+// Re-export app_state functions
 pub use app_state::{get_app_state, set_app_state};

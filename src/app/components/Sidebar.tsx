@@ -13,6 +13,7 @@ import {
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { useCollectionStore } from '../stores/collectionStore';
 import { useRequestEditorStore } from '../stores/requestStore';
+import { useProjectStore } from '../stores/projectStore';
 import type { Collection, ApiRequest } from '../types';
 import { parseConfig } from '../types';
 import type { DataNode } from 'antd/es/tree';
@@ -45,6 +46,7 @@ export function Sidebar() {
   } = useCollectionStore();
 
   const { setActiveRequest } = useRequestEditorStore();
+  const activeProjectId = useProjectStore((s) => s.activeProjectId);
 
   const [newName, setNewName] = useState('');
   const [createType, setCreateType] = useState<'collection' | 'request'>(
@@ -65,7 +67,7 @@ export function Sidebar() {
   const handleCreate = useCallback(async () => {
     if (!newName.trim()) return;
     if (createType === 'collection') {
-      await createCollection(newName.trim());
+      await createCollection(newName.trim(), undefined, activeProjectId ?? undefined);
     } else if (selectedCollectionId) {
       await createRequest(selectedCollectionId, newName.trim());
     }
@@ -77,6 +79,7 @@ export function Sidebar() {
     selectedCollectionId,
     createCollection,
     createRequest,
+    activeProjectId,
   ]);
 
   const handleSelectRequest = useCallback(

@@ -23,13 +23,32 @@ function formatBody(body: string): string {
   }
 }
 
+function phaseLabel(phase: string | null, resolvedUrl: string | null): string {
+  switch (phase) {
+    case 'resolving':
+      return 'Resolving request...';
+    case 'connecting':
+      return resolvedUrl ? `Connecting to ${resolvedUrl}...` : 'Connecting...';
+    case 'sending':
+      return 'Sending request...';
+    default:
+      return 'Sending request...';
+  }
+}
+
 export function ResponseViewer() {
-  const { response, loading, error } = useResponseStore();
+  const { response, loading, error, phase, resolvedUrl } = useResponseStore();
 
   if (loading) {
     return (
-      <div className="flex flex-1 items-center justify-center">
-        <Spin tip="Sending request..." />
+      <div className="flex flex-1 flex-col items-center justify-center gap-2">
+        <Spin />
+        <span
+          className="text-xs"
+          style={{ color: 'var(--text-secondary)' }}
+        >
+          {phaseLabel(phase, resolvedUrl)}
+        </span>
       </div>
     );
   }

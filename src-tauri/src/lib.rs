@@ -93,6 +93,13 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            // Project commands
+            commands::create_project,
+            commands::update_project,
+            commands::delete_project,
+            commands::list_projects,
+            commands::get_active_project,
+            commands::set_active_project,
             // Collection commands
             commands::create_collection,
             commands::update_collection,
@@ -107,6 +114,7 @@ pub fn run() {
             commands::duplicate_request,
             // HTTP execution
             commands::execute_request,
+            commands::execute_request_by_id,
             // Environment commands
             commands::create_environment,
             commands::update_environment,

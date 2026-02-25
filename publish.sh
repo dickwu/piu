@@ -9,13 +9,14 @@ set -euo pipefail
 #   ./publish.sh              # Auto-increment patch version and release
 #   ./publish.sh 0.2.0        # Release specific version
 #
+# The build and GitHub release are handled entirely by GitHub Actions.
+# Pushing the version tag triggers .github/workflows/release.yml which:
+#   - Builds cross-platform (macOS arm64/x64, Linux, Windows)
+#   - Signs artifacts with TAURI_SIGNING_PRIVATE_KEY secret
+#   - Creates the GitHub release with all artifacts + latest.json for updater
+#
 # Prerequisites:
 #   1. gh CLI authenticated: gh auth login
-#   2. Tauri signing keys generated (first time only):
-#      bunx @tauri-apps/cli signer generate -w ~/.tauri/piu.key
-#   3. Set environment variables (or add to ~/.zshrc):
-#      export TAURI_SIGNING_PRIVATE_KEY=$(cat ~/.tauri/piu.key)
-#      export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="your-password"
 #
 # =============================================================================
 
@@ -30,7 +31,7 @@ err() { echo -e "${RED}[error]${NC} $1" >&2; exit 1; }
 
 # Verify prerequisites
 command -v gh >/dev/null 2>&1 || err "gh CLI not found. Install: brew install gh"
-command -v bun >/dev/null 2>&1 || err "bun not found. Install: curl -fsSL https://bun.sh/install | bash"
+command -v cargo >/dev/null 2>&1 || err "cargo not found. Install: https://rustup.rs"
 
 # =============================================================================
 # Quality checks (run before anything is committed or bumped)
@@ -95,77 +96,11 @@ git tag -a "$TAG" -m "Release ${TAG}"
 
 log "Tagged ${TAG}"
 
-# Push commit and tag
+# Push commit and tag — this triggers GitHub Actions release workflow
 git push origin main
 git push origin "$TAG"
 
 log "Pushed to remote"
-
-# Build the Tauri app
-log "Building Tauri app..."
-if [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
-  bun run tauri build 2>&1
-else
-  warn "TAURI_SIGNING_PRIVATE_KEY not set. Building without updater signing."
-  bun run tauri build 2>&1
-fi
-
-# Find build artifacts
-BUNDLE_DIR="src-tauri/target/release/bundle"
-ARTIFACTS=()
-
-# macOS .dmg
-if [ -f "${BUNDLE_DIR}/dmg/piu_${NEW_VERSION}_aarch64.dmg" ]; then
-  ARTIFACTS+=("${BUNDLE_DIR}/dmg/piu_${NEW_VERSION}_aarch64.dmg")
-elif [ -f "${BUNDLE_DIR}/dmg/piu_${NEW_VERSION}_x64.dmg" ]; then
-  ARTIFACTS+=("${BUNDLE_DIR}/dmg/piu_${NEW_VERSION}_x64.dmg")
-fi
-
-# macOS .app.tar.gz (for updater)
-for f in "${BUNDLE_DIR}/macos/"*.tar.gz; do
-  [ -f "$f" ] && ARTIFACTS+=("$f")
-done
-
-# macOS .app.tar.gz.sig (updater signature)
-for f in "${BUNDLE_DIR}/macos/"*.tar.gz.sig; do
-  [ -f "$f" ] && ARTIFACTS+=("$f")
-done
-
-if [ ${#ARTIFACTS[@]} -eq 0 ]; then
-  warn "No build artifacts found. Creating release without assets."
-fi
-
-# Create GitHub release
-log "Creating GitHub release ${TAG}..."
-
-RELEASE_NOTES="## What's Changed
-
-Release ${TAG} of piu - API Management Application.
-
-### Installation
-- **macOS**: Download the .dmg file and drag to Applications
-
-### Checksums
-"
-
-# Add checksums for artifacts
-for artifact in "${ARTIFACTS[@]}"; do
-  FILENAME=$(basename "$artifact")
-  CHECKSUM=$(shasum -a 256 "$artifact" | cut -d' ' -f1)
-  RELEASE_NOTES="${RELEASE_NOTES}
-- \`${FILENAME}\`: \`${CHECKSUM}\`"
-done
-
-if [ ${#ARTIFACTS[@]} -gt 0 ]; then
-  gh release create "$TAG" \
-    --title "Release ${TAG}" \
-    --notes "$RELEASE_NOTES" \
-    "${ARTIFACTS[@]}"
-else
-  gh release create "$TAG" \
-    --title "Release ${TAG}" \
-    --notes "$RELEASE_NOTES"
-fi
-
-log "Release ${TAG} created successfully!"
-log "View at: https://github.com/dickwu/piu/releases/tag/${TAG}"
+log "GitHub Actions will build and publish the release."
+log "Track progress: https://github.com/dickwu/piu/actions"
+log "Release will appear at: https://github.com/dickwu/piu/releases/tag/${TAG}"

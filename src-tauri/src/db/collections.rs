@@ -10,6 +10,7 @@ pub struct Collection {
     pub path_prefix: Option<String>,
     pub description: Option<String>,
     pub shared_headers: String,
+    pub project_id: Option<String>,
     pub version: i64,
     pub created_at: i64,
     pub updated_at: i64,
@@ -25,16 +26,18 @@ pub fn get_table_sql() -> &'static str {
         path_prefix TEXT,
         description TEXT,
         shared_headers TEXT NOT NULL DEFAULT '[]',
+        project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
         version INTEGER NOT NULL DEFAULT 1,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_collections_parent ON collections(parent_id);
+    CREATE INDEX IF NOT EXISTS idx_collections_project ON collections(project_id);
     "
 }
 
 const SELECT_COLUMNS: &str =
-    "id, name, parent_id, sort_order, path_prefix, description, shared_headers, version, created_at, updated_at";
+    "id, name, parent_id, sort_order, path_prefix, description, shared_headers, project_id, version, created_at, updated_at";
 
 fn collection_from_row(
     row: &turso::Row,
@@ -49,9 +52,10 @@ fn collection_from_row(
         shared_headers: row
             .get::<Option<String>>(6)?
             .unwrap_or_else(|| "[]".to_string()),
-        version: row.get(7)?,
-        created_at: row.get(8)?,
-        updated_at: row.get(9)?,
+        project_id: row.get(7)?,
+        version: row.get(8)?,
+        created_at: row.get(9)?,
+        updated_at: row.get(10)?,
     })
 }
 
@@ -59,14 +63,15 @@ pub async fn create_collection(
     id: &str,
     name: &str,
     parent_id: Option<&str>,
+    project_id: Option<&str>,
 ) -> DbResult<Collection> {
     let conn = get_connection()?.lock().await;
     let now = chrono::Utc::now().timestamp_millis();
 
     conn.execute(
-        "INSERT INTO collections (id, name, parent_id, sort_order, path_prefix, description, shared_headers, version, created_at, updated_at)
-         VALUES (?1, ?2, ?3, 0, NULL, NULL, '[]', 1, ?4, ?4)",
-        turso::params![id, name, parent_id, now],
+        "INSERT INTO collections (id, name, parent_id, sort_order, path_prefix, description, shared_headers, project_id, version, created_at, updated_at)
+         VALUES (?1, ?2, ?3, 0, NULL, NULL, '[]', ?4, 1, ?5, ?5)",
+        turso::params![id, name, parent_id, project_id, now],
     )
     .await?;
 
@@ -83,6 +88,7 @@ pub async fn create_collection(
         path_prefix: None,
         description: None,
         shared_headers: "[]".to_string(),
+        project_id: project_id.map(|s| s.to_string()),
         version: 1,
         created_at: now,
         updated_at: now,
@@ -188,6 +194,7 @@ pub async fn update_collection(
         path_prefix: new_path_prefix.map(|s| s.to_string()),
         description: new_description.map(|s| s.to_string()),
         shared_headers: new_shared_headers.to_string(),
+        project_id: old.project_id,
         version: new_version,
         created_at: old.created_at,
         updated_at: now,
@@ -229,7 +236,6 @@ pub async fn delete_collection(id: &str) -> DbResult<()> {
     Ok(())
 }
 
-#[allow(dead_code)]
 pub async fn get_collection(id: &str) -> DbResult<Option<Collection>> {
     let conn = get_connection()?.lock().await;
     let mut rows = conn
@@ -246,17 +252,28 @@ pub async fn get_collection(id: &str) -> DbResult<Option<Collection>> {
     }
 }
 
-pub async fn list_collections() -> DbResult<Vec<Collection>> {
+pub async fn list_collections(project_id: Option<&str>) -> DbResult<Vec<Collection>> {
     let conn = get_connection()?.lock().await;
-    let mut rows = conn
-        .query(
+
+    let mut rows = if let Some(pid) = project_id {
+        conn.query(
+            &format!(
+                "SELECT {} FROM collections WHERE project_id = ?1 ORDER BY sort_order, name",
+                SELECT_COLUMNS
+            ),
+            turso::params![pid],
+        )
+        .await?
+    } else {
+        conn.query(
             &format!(
                 "SELECT {} FROM collections ORDER BY sort_order, name",
                 SELECT_COLUMNS
             ),
             (),
         )
-        .await?;
+        .await?
+    };
 
     let mut collections = Vec::new();
     while let Some(row) = rows.next().await? {

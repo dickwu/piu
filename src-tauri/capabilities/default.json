@@ -5,6 +5,8 @@
   "windows": ["*"],
   "permissions": [
     "core:default",
+    "core:event:default",
+    "core:app:default",
     "dialog:default",
     "opener:default",
     "updater:default",

@@ -9,9 +9,13 @@ interface CollectionStore {
   selectedRequestId: string | null;
   loading: boolean;
 
-  loadCollections: () => Promise<void>;
+  loadCollections: (projectId?: string) => Promise<void>;
   loadRequests: (collectionId: string) => Promise<void>;
-  createCollection: (name: string, parentId?: string) => Promise<Collection>;
+  createCollection: (
+    name: string,
+    parentId?: string,
+    projectId?: string,
+  ) => Promise<Collection>;
   updateCollection: (
     id: string,
     updates: {
@@ -52,10 +56,12 @@ export const useCollectionStore = create<CollectionStore>((set, get) => ({
   selectedRequestId: null,
   loading: false,
 
-  loadCollections: async () => {
+  loadCollections: async (projectId?: string) => {
     set({ loading: true });
     try {
-      const collections = await invoke<Collection[]>('list_collections');
+      const collections = await invoke<Collection[]>('list_collections', {
+        projectId: projectId ?? null,
+      });
       set({ collections });
     } finally {
       set({ loading: false });
@@ -73,11 +79,19 @@ export const useCollectionStore = create<CollectionStore>((set, get) => ({
     });
   },
 
-  createCollection: async (name: string, parentId?: string) => {
+  createCollection: async (
+    name: string,
+    parentId?: string,
+    projectId?: string,
+  ) => {
     const collection = await invoke<Collection>('create_collection', {
-      input: { name, parent_id: parentId ?? null },
+      input: {
+        name,
+        parent_id: parentId ?? null,
+        project_id: projectId ?? null,
+      },
     });
-    await get().loadCollections();
+    await get().loadCollections(projectId);
     return collection;
   },
 
@@ -85,7 +99,7 @@ export const useCollectionStore = create<CollectionStore>((set, get) => ({
     const collection = await invoke<Collection>('update_collection', {
       input: { id, ...updates },
     });
-    await get().loadCollections();
+    await get().loadCollections(collection.project_id ?? undefined);
     return collection;
   },
 
@@ -95,7 +109,7 @@ export const useCollectionStore = create<CollectionStore>((set, get) => ({
     if (selectedCollectionId === id) {
       set({ selectedCollectionId: null, selectedRequestId: null });
     }
-    await get().loadCollections();
+    // Reload will be triggered by the parent component with the current project
   },
 
   createRequest: async (collectionId, name, config) => {

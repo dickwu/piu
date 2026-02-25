@@ -75,3 +75,28 @@ pub struct HttpResponse {
 pub struct ResponseTiming {
     pub total_ms: u64,
 }
+
+/// Event payload for streaming request execution progress
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "phase")]
+pub enum ExecutionProgress {
+    #[serde(rename = "resolving")]
+    Resolving { execution_id: String },
+    #[serde(rename = "connecting")]
+    Connecting {
+        execution_id: String,
+        url: String,
+    },
+    #[serde(rename = "sending")]
+    Sending { execution_id: String },
+    #[serde(rename = "complete")]
+    Complete {
+        execution_id: String,
+        response: HttpResponse,
+    },
+    #[serde(rename = "error")]
+    Error {
+        execution_id: String,
+        error: String,
+    },
+}

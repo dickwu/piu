@@ -1,6 +1,7 @@
 use crate::{db, http};
 use serde::Deserialize;
 use std::collections::HashMap;
+use tauri::Emitter;
 
 #[derive(Debug, Deserialize)]
 pub struct CreateRequestInput {
@@ -82,4 +83,27 @@ pub async fn execute_request(input: ExecuteRequestInput) -> Result<http::HttpRes
 
     let env_variables = input.env_variables.unwrap_or_default();
     http::executor::execute(&config, &env_variables).await
+}
+
+/// Event-based request execution. Fires and forgets — progress streamed via "request-progress" events.
+#[tauri::command]
+pub async fn execute_request_by_id(
+    app: tauri::AppHandle,
+    request_id: String,
+    execution_id: String,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn(async move {
+        if let Err(e) =
+            http::orchestrator::orchestrate_request(&app, &request_id, &execution_id).await
+        {
+            let _ = app.emit(
+                "request-progress",
+                http::types::ExecutionProgress::Error {
+                    execution_id,
+                    error: e,
+                },
+            );
+        }
+    });
+    Ok(())
 }

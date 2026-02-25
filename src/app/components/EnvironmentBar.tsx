@@ -8,6 +8,7 @@ import {
 } from '@ant-design/icons';
 import { useState, useCallback, useEffect } from 'react';
 import { useEnvironmentStore } from '../stores/environmentStore';
+import { useProjectStore } from '../stores/projectStore';
 import { ChangelogModal } from './ChangelogModal';
 
 export function EnvironmentBar() {
@@ -17,22 +18,29 @@ export function EnvironmentBar() {
     variables,
     setActiveEnvironment,
     createEnvironment,
+    updateEnvironment,
     loadVariables,
     setVariables,
   } = useEnvironmentStore();
 
+  const activeProjectId = useProjectStore((s) => s.activeProjectId);
+
   const [showEnvModal, setShowEnvModal] = useState(false);
   const [showChangelog, setShowChangelog] = useState(false);
   const [newEnvName, setNewEnvName] = useState('');
+  const [editingHost, setEditingHost] = useState('');
   const [editingVars, setEditingVars] = useState<
     { id: string; key: string; value: string; enabled: boolean }[]
   >([]);
 
   const handleCreateEnv = useCallback(async () => {
     if (!newEnvName.trim()) return;
-    await createEnvironment(newEnvName.trim());
+    await createEnvironment(
+      newEnvName.trim(),
+      activeProjectId ?? undefined,
+    );
     setNewEnvName('');
-  }, [newEnvName, createEnvironment]);
+  }, [newEnvName, createEnvironment, activeProjectId]);
 
   const handleOpenVarEditor = useCallback(async () => {
     if (!activeEnvironment) return;
@@ -46,14 +54,22 @@ export function EnvironmentBar() {
         enabled: v.enabled,
       })),
     );
+    setEditingHost(activeEnvironment.host ?? '');
     setShowEnvModal(true);
   }, [activeEnvironment, variables, loadVariables]);
 
   const handleSaveVars = useCallback(async () => {
     if (!activeEnvironment) return;
+    // Save host if changed
+    const currentHost = activeEnvironment.host ?? '';
+    if (editingHost !== currentHost) {
+      await updateEnvironment(activeEnvironment.id, {
+        host: editingHost.trim() || null,
+      });
+    }
     await setVariables(activeEnvironment.id, editingVars);
     setShowEnvModal(false);
-  }, [activeEnvironment, editingVars, setVariables]);
+  }, [activeEnvironment, editingHost, editingVars, setVariables, updateEnvironment]);
 
   const addVariable = useCallback(() => {
     setEditingVars((prev) => [
@@ -102,9 +118,22 @@ export function EnvironmentBar() {
             style={{ width: 180 }}
             placeholder="No Environment"
             value={activeEnvironment?.id}
-            onChange={(id) => setActiveEnvironment(id)}
+            onChange={(id) => {
+              if (activeProjectId) {
+                setActiveEnvironment(id, activeProjectId);
+              }
+            }}
             options={environments.map((env) => ({
-              label: env.name,
+              label: (
+                <span>
+                  {env.name}
+                  {env.host && (
+                    <span style={{ color: 'var(--text-secondary)', fontSize: 11, marginLeft: 4 }}>
+                      {env.host}
+                    </span>
+                  )}
+                </span>
+              ),
               value: env.id,
             }))}
             allowClear
@@ -139,12 +168,26 @@ export function EnvironmentBar() {
       </div>
 
       <Modal
-        title={`Variables - ${activeEnvironment?.name ?? ''}`}
+        title={`Environment - ${activeEnvironment?.name ?? ''}`}
         open={showEnvModal}
         onOk={handleSaveVars}
         onCancel={() => setShowEnvModal(false)}
         width={700}
       >
+        <div className="mb-3">
+          <label
+            className="mb-1 block text-xs"
+            style={{ color: 'var(--text-secondary)' }}
+          >
+            Host (base URL)
+          </label>
+          <Input
+            size="small"
+            placeholder="https://api.example.com"
+            value={editingHost}
+            onChange={(e) => setEditingHost(e.target.value)}
+          />
+        </div>
         <Table
           dataSource={editingVars}
           rowKey="id"

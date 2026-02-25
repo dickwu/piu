@@ -8,13 +8,20 @@ interface EnvironmentStore {
   variables: Map<string, EnvVariable[]>;
   loading: boolean;
 
-  loadEnvironments: () => Promise<void>;
-  loadActiveEnvironment: () => Promise<void>;
+  loadEnvironments: (projectId?: string) => Promise<void>;
+  loadActiveEnvironment: (projectId: string) => Promise<void>;
   loadVariables: (environmentId: string) => Promise<void>;
-  createEnvironment: (name: string) => Promise<Environment>;
-  updateEnvironment: (id: string, name: string) => Promise<Environment>;
+  createEnvironment: (
+    name: string,
+    projectId?: string,
+    host?: string,
+  ) => Promise<Environment>;
+  updateEnvironment: (
+    id: string,
+    updates: { name?: string; host?: string | null },
+  ) => Promise<Environment>;
   deleteEnvironment: (id: string) => Promise<void>;
-  setActiveEnvironment: (id: string) => Promise<void>;
+  setActiveEnvironment: (id: string, projectId: string) => Promise<void>;
   setVariables: (
     environmentId: string,
     variables: { id: string; key: string; value: string; enabled: boolean }[],
@@ -28,13 +35,17 @@ export const useEnvironmentStore = create<EnvironmentStore>((set, get) => ({
   variables: new Map(),
   loading: false,
 
-  loadEnvironments: async () => {
-    const environments = await invoke<Environment[]>('list_environments');
+  loadEnvironments: async (projectId?: string) => {
+    const environments = await invoke<Environment[]>('list_environments', {
+      projectId: projectId ?? null,
+    });
     set({ environments });
   },
 
-  loadActiveEnvironment: async () => {
-    const env = await invoke<Environment | null>('get_active_environment');
+  loadActiveEnvironment: async (projectId: string) => {
+    const env = await invoke<Environment | null>('get_active_environment', {
+      projectId,
+    });
     set({ activeEnvironment: env });
     if (env) {
       await get().loadVariables(env.id);
@@ -52,19 +63,27 @@ export const useEnvironmentStore = create<EnvironmentStore>((set, get) => ({
     });
   },
 
-  createEnvironment: async (name: string) => {
+  createEnvironment: async (
+    name: string,
+    projectId?: string,
+    host?: string,
+  ) => {
     const env = await invoke<Environment>('create_environment', {
-      input: { name },
+      input: {
+        name,
+        project_id: projectId ?? null,
+        host: host ?? null,
+      },
     });
-    await get().loadEnvironments();
+    await get().loadEnvironments(projectId);
     return env;
   },
 
-  updateEnvironment: async (id: string, name: string) => {
+  updateEnvironment: async (id, updates) => {
     const env = await invoke<Environment>('update_environment', {
-      input: { id, name },
+      input: { id, ...updates },
     });
-    await get().loadEnvironments();
+    await get().loadEnvironments(env.project_id ?? undefined);
     return env;
   },
 
@@ -74,12 +93,14 @@ export const useEnvironmentStore = create<EnvironmentStore>((set, get) => ({
     if (activeEnvironment?.id === id) {
       set({ activeEnvironment: null });
     }
-    await get().loadEnvironments();
+    // Reload will be triggered by parent with the current project
   },
 
-  setActiveEnvironment: async (id: string) => {
-    await invoke('set_active_environment', { id });
-    await get().loadActiveEnvironment();
+  setActiveEnvironment: async (id: string, projectId: string) => {
+    await invoke('set_active_environment', {
+      input: { id, project_id: projectId },
+    });
+    await get().loadActiveEnvironment(projectId);
   },
 
   setVariables: async (environmentId, variables) => {

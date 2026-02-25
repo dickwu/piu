@@ -6,13 +6,10 @@ import { useCallback } from 'react';
 import { useRequestEditorStore } from '../stores/requestStore';
 import { useCollectionStore } from '../stores/collectionStore';
 import { useResponseStore } from '../stores/responseStore';
-import { useEnvironmentStore } from '../stores/environmentStore';
 import { HeadersEditor } from './HeadersEditor';
 import { ParamsEditor } from './ParamsEditor';
 import { BodyEditor } from './BodyEditor';
 import { AuthEditor } from './AuthEditor';
-import type { RequestConfig } from '../types';
-import { parseSharedHeaders } from '../types';
 
 const HTTP_METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'];
 
@@ -31,13 +28,7 @@ export function RequestEditor() {
     useRequestEditorStore();
   const updateRequest = useCollectionStore((s) => s.updateRequest);
   const { executeRequest, loading } = useResponseStore();
-  const getResolvedVariables = useEnvironmentStore(
-    (s) => s.getResolvedVariables,
-  );
   const resetDirty = useRequestEditorStore((s) => s.resetDirty);
-  const getCollectionForRequest = useCollectionStore(
-    (s) => s.getCollectionForRequest,
-  );
 
   const handleSave = useCallback(async () => {
     if (!activeRequestId) return;
@@ -48,54 +39,16 @@ export function RequestEditor() {
   }, [activeRequestId, config, updateRequest, resetDirty]);
 
   const handleSend = useCallback(async () => {
+    if (!activeRequestId) return;
+
     // Save first if dirty
-    if (isDirty && activeRequestId) {
+    if (isDirty) {
       await handleSave();
     }
 
-    // Build effective config with collection path prefix and shared headers
-    const effectiveConfig = { ...config, headers: [...config.headers] };
-
-    if (activeRequestId) {
-      const collection = getCollectionForRequest(activeRequestId);
-
-      // Prepend path prefix to URL path
-      if (collection?.path_prefix && effectiveConfig.url) {
-        const prefix = collection.path_prefix.replace(/\/+$/, '');
-        const url = effectiveConfig.url;
-        const protocolMatch = url.match(/^(https?:\/\/[^/?#]*)(.*)/);
-        if (protocolMatch) {
-          const [, origin, rest] = protocolMatch;
-          const pathAndRest = rest || '/';
-          if (!pathAndRest.startsWith(prefix + '/') && pathAndRest !== prefix) {
-            effectiveConfig.url = origin + prefix + pathAndRest;
-          }
-        } else {
-          const normalizedUrl = url.startsWith('/') ? url : '/' + url;
-          if (!normalizedUrl.startsWith(prefix + '/') && normalizedUrl !== prefix) {
-            effectiveConfig.url = prefix + normalizedUrl;
-          }
-        }
-      }
-
-      // Merge shared headers (collection headers, then request headers override)
-      if (collection?.shared_headers) {
-        const sharedHeaders = parseSharedHeaders(collection.shared_headers);
-        const requestHeaderKeys = new Set(
-          effectiveConfig.headers
-            .filter((h) => h.enabled && h.key)
-            .map((h) => h.key.toLowerCase()),
-        );
-        const extraHeaders = sharedHeaders.filter(
-          (h) => h.enabled && h.key && !requestHeaderKeys.has(h.key.toLowerCase()),
-        );
-        effectiveConfig.headers = [...extraHeaders, ...effectiveConfig.headers];
-      }
-    }
-
-    const envVars = getResolvedVariables();
-    await executeRequest(JSON.stringify(effectiveConfig), envVars);
-  }, [config, isDirty, activeRequestId, handleSave, getResolvedVariables, executeRequest, getCollectionForRequest]);
+    // Rust handles everything: collection context, environment, variable interpolation
+    await executeRequest(activeRequestId);
+  }, [activeRequestId, isDirty, handleSave, executeRequest]);
 
   if (!activeRequestId) {
     return (
@@ -125,7 +78,7 @@ export function RequestEditor() {
           }))}
         />
         <Input
-          placeholder="Enter URL or paste cURL"
+          placeholder="Enter relative URL (e.g. /api/users)"
           value={config.url}
           onChange={(e) => updateConfig({ url: e.target.value })}
           onPressEnter={handleSend}

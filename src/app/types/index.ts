@@ -1,5 +1,15 @@
 // Types matching Rust structs
 
+export interface Project {
+  id: string;
+  name: string;
+  description: string | null;
+  sort_order: number;
+  version: number;
+  created_at: number;
+  updated_at: number;
+}
+
 export interface Collection {
   id: string;
   name: string;
@@ -8,6 +18,7 @@ export interface Collection {
   path_prefix: string | null;
   description: string | null;
   shared_headers: string;
+  project_id: string | null;
   version: number;
   created_at: number;
   updated_at: number;
@@ -59,6 +70,8 @@ export interface Environment {
   name: string;
   is_active: boolean;
   sort_order: number;
+  project_id: string | null;
+  host: string | null;
   version: number;
   created_at: number;
   updated_at: number;
@@ -95,6 +108,32 @@ export interface ChangelogEntry {
   diff: string | null;
   created_at: number;
 }
+
+// Execution progress via Tauri events
+export type ExecutionPhase =
+  | 'resolving'
+  | 'connecting'
+  | 'sending'
+  | 'complete'
+  | 'error';
+
+export interface ExecutionProgress {
+  phase: ExecutionPhase;
+  execution_id: string;
+  url?: string;
+  response?: HttpResponse;
+  error?: string;
+}
+
+// Update status for status bar
+export type UpdateStatus =
+  | { state: 'idle' }
+  | { state: 'checking' }
+  | { state: 'up_to_date' }
+  | { state: 'available'; version: string }
+  | { state: 'downloading'; version: string; progress: number }
+  | { state: 'ready'; version: string }
+  | { state: 'error'; message: string };
 
 export function defaultRequestConfig(): RequestConfig {
   return {

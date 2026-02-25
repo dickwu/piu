@@ -11,6 +11,7 @@ interface ChangelogModalProps {
 }
 
 const TYPE_COLORS: Record<string, string> = {
+  project: 'orange',
   collection: 'blue',
   request: 'green',
   environment: 'purple',

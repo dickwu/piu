@@ -29,9 +29,9 @@ export function HeadersEditor({ headers, onChange }: HeadersEditorProps) {
   };
 
   return (
-    <div className="space-y-1 pb-2">
+    <div className="pb-2">
       {headers.map((header, idx) => (
-        <div key={idx} className="flex items-center gap-2">
+        <div key={idx} className="kv-row flex items-center gap-2">
           <Switch
             size="small"
             checked={header.enabled}
@@ -39,6 +39,7 @@ export function HeadersEditor({ headers, onChange }: HeadersEditorProps) {
           />
           <Input
             size="small"
+            className="input-mono"
             placeholder="Header name"
             value={header.key}
             onChange={(e) => updateHeader(idx, 'key', e.target.value)}
@@ -46,6 +47,7 @@ export function HeadersEditor({ headers, onChange }: HeadersEditorProps) {
           />
           <Input
             size="small"
+            className="input-mono"
             placeholder="Header value"
             value={header.value}
             onChange={(e) => updateHeader(idx, 'value', e.target.value)}

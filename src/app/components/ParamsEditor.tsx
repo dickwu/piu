@@ -29,9 +29,9 @@ export function ParamsEditor({ params, onChange }: ParamsEditorProps) {
   };
 
   return (
-    <div className="space-y-1 pb-2">
+    <div className="pb-2">
       {params.map((param, idx) => (
-        <div key={idx} className="flex items-center gap-2">
+        <div key={idx} className="kv-row flex items-center gap-2">
           <Switch
             size="small"
             checked={param.enabled}
@@ -39,6 +39,7 @@ export function ParamsEditor({ params, onChange }: ParamsEditorProps) {
           />
           <Input
             size="small"
+            className="input-mono"
             placeholder="Key"
             value={param.key}
             onChange={(e) => updateParam(idx, 'key', e.target.value)}
@@ -46,6 +47,7 @@ export function ParamsEditor({ params, onChange }: ParamsEditorProps) {
           />
           <Input
             size="small"
+            className="input-mono"
             placeholder="Value"
             value={param.value}
             onChange={(e) => updateParam(idx, 'value', e.target.value)}

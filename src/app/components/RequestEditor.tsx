@@ -14,13 +14,13 @@ import { AuthEditor } from './AuthEditor';
 const HTTP_METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'];
 
 const METHOD_COLORS: Record<string, string> = {
-  GET: '#22c55e',
-  POST: '#f59e0b',
-  PUT: '#3b82f6',
-  DELETE: '#ef4444',
-  PATCH: '#a855f7',
-  HEAD: '#06b6d4',
-  OPTIONS: '#8b5cf6',
+  GET: '#34d399',
+  POST: '#fbbf24',
+  PUT: '#60a5fa',
+  DELETE: '#f87171',
+  PATCH: '#c084fc',
+  HEAD: '#22d3ee',
+  OPTIONS: '#a78bfa',
 };
 
 export function RequestEditor() {
@@ -53,10 +53,15 @@ export function RequestEditor() {
   if (!activeRequestId) {
     return (
       <div
-        className="flex flex-1 items-center justify-center"
-        style={{ color: 'var(--text-secondary)' }}
+        className="flex flex-1 flex-col items-center justify-center gap-2"
+        style={{ color: 'var(--text-tertiary)' }}
       >
-        Select a request from the sidebar or create a new one
+        <span style={{ fontSize: 14, fontFamily: 'var(--font-ui)', fontWeight: 600 }}>
+          Select a request from the sidebar
+        </span>
+        <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
+          or create a new one to get started
+        </span>
       </div>
     );
   }
@@ -67,17 +72,32 @@ export function RequestEditor() {
       style={{ borderColor: 'var(--border)', minHeight: '50%' }}
     >
       {/* URL Bar */}
-      <div className="flex items-center gap-2 border-b p-3" style={{ borderColor: 'var(--border)' }}>
+      <div
+        className="flex items-center gap-3 border-b p-3"
+        style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-secondary)' }}
+      >
         <Select
           value={config.method}
           onChange={(method) => updateConfig({ method })}
           style={{ width: 110 }}
           options={HTTP_METHODS.map((m) => ({
-            label: <span style={{ color: METHOD_COLORS[m], fontWeight: 700 }}>{m}</span>,
+            label: (
+              <span
+                style={{
+                  color: METHOD_COLORS[m],
+                  fontFamily: 'var(--font-code)',
+                  fontWeight: 700,
+                  fontSize: 12,
+                }}
+              >
+                {m}
+              </span>
+            ),
             value: m,
           }))}
         />
         <Input
+          className="input-mono"
           placeholder="Enter relative URL (e.g. /api/users)"
           value={config.url}
           onChange={(e) => updateConfig({ url: e.target.value })}
@@ -92,9 +112,11 @@ export function RequestEditor() {
           )}
           <Button
             type="primary"
+            className="btn-glow"
             icon={<SendOutlined />}
             onClick={handleSend}
             loading={loading}
+            style={{ fontWeight: 600 }}
           >
             Send
           </Button>

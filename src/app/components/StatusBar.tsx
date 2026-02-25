@@ -50,7 +50,7 @@ export function StatusBar() {
       case 'up_to_date':
         return (
           <span className="flex items-center gap-1">
-            <CheckCircleOutlined style={{ color: '#22c55e', fontSize: 11 }} />
+            <CheckCircleOutlined style={{ color: 'var(--success)', fontSize: 11 }} />
             <span>Up to date</span>
           </span>
         );
@@ -92,7 +92,7 @@ export function StatusBar() {
             size="small"
             icon={<ReloadOutlined />}
             onClick={handleRestart}
-            style={{ padding: 0, height: 'auto', fontSize: 11, color: '#22c55e' }}
+            style={{ padding: 0, height: 'auto', fontSize: 11, color: 'var(--success)' }}
           >
             Restart to apply v{status.version}
           </Button>
@@ -104,7 +104,7 @@ export function StatusBar() {
             size="small"
             icon={<WarningOutlined />}
             onClick={checkForUpdate}
-            style={{ padding: 0, height: 'auto', fontSize: 11, color: '#f59e0b' }}
+            style={{ padding: 0, height: 'auto', fontSize: 11, color: 'var(--warning)' }}
           >
             Retry update
           </Button>
@@ -118,13 +118,18 @@ export function StatusBar() {
       style={{
         borderColor: 'var(--border)',
         backgroundColor: 'var(--bg-secondary)',
-        height: 24,
-        fontSize: 11,
-        color: 'var(--text-secondary)',
+        height: 26,
+        fontSize: 10,
+        color: 'var(--text-tertiary)',
+        fontFamily: 'var(--font-code)',
       }}
     >
       <div className="flex items-center gap-3">
-        {currentVersion && <span>v{currentVersion}</span>}
+        {currentVersion && (
+          <span style={{ color: 'var(--text-tertiary)', letterSpacing: '0.02em' }}>
+            v{currentVersion}
+          </span>
+        )}
         {renderStatus()}
       </div>
     </div>

@@ -10,9 +10,9 @@ interface AuthEditorProps {
 
 export function AuthEditor({ auth, onChange }: AuthEditorProps) {
   return (
-    <div className="space-y-3 pb-2">
+    <div className="space-y-4 px-1 pb-2">
       <div className="flex items-center gap-2">
-        <span className="w-20 text-sm" style={{ color: 'var(--text-secondary)' }}>
+        <span className="w-20 text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-tertiary)', fontFamily: 'var(--font-ui)' }}>
           Type:
         </span>
         <Select
@@ -31,11 +31,12 @@ export function AuthEditor({ auth, onChange }: AuthEditorProps) {
 
       {auth.type === 'bearer' && (
         <div className="flex items-center gap-2">
-          <span className="w-20 text-sm" style={{ color: 'var(--text-secondary)' }}>
+          <span className="w-20 text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-tertiary)', fontFamily: 'var(--font-ui)' }}>
             Token:
           </span>
           <Input
             size="small"
+            className="input-mono"
             placeholder="Bearer token (supports {{variables}})"
             value={auth.token ?? ''}
             onChange={(e) => onChange({ ...auth, token: e.target.value })}
@@ -46,7 +47,7 @@ export function AuthEditor({ auth, onChange }: AuthEditorProps) {
       {auth.type === 'basic' && (
         <>
           <div className="flex items-center gap-2">
-            <span className="w-20 text-sm" style={{ color: 'var(--text-secondary)' }}>
+            <span className="w-20 text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-tertiary)', fontFamily: 'var(--font-ui)' }}>
               Username:
             </span>
             <Input
@@ -57,7 +58,7 @@ export function AuthEditor({ auth, onChange }: AuthEditorProps) {
             />
           </div>
           <div className="flex items-center gap-2">
-            <span className="w-20 text-sm" style={{ color: 'var(--text-secondary)' }}>
+            <span className="w-20 text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-tertiary)', fontFamily: 'var(--font-ui)' }}>
               Password:
             </span>
             <Input.Password
@@ -73,11 +74,12 @@ export function AuthEditor({ auth, onChange }: AuthEditorProps) {
       {auth.type === 'api_key' && (
         <>
           <div className="flex items-center gap-2">
-            <span className="w-20 text-sm" style={{ color: 'var(--text-secondary)' }}>
+            <span className="w-20 text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-tertiary)', fontFamily: 'var(--font-ui)' }}>
               Header:
             </span>
             <Input
               size="small"
+              className="input-mono"
               placeholder="Header name (e.g. X-API-Key)"
               value={auth.header_name ?? ''}
               onChange={(e) =>
@@ -86,11 +88,12 @@ export function AuthEditor({ auth, onChange }: AuthEditorProps) {
             />
           </div>
           <div className="flex items-center gap-2">
-            <span className="w-20 text-sm" style={{ color: 'var(--text-secondary)' }}>
+            <span className="w-20 text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-tertiary)', fontFamily: 'var(--font-ui)' }}>
               Value:
             </span>
             <Input
               size="small"
+              className="input-mono"
               placeholder="API key value"
               value={auth.header_value ?? ''}
               onChange={(e) =>

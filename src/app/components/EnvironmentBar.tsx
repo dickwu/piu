@@ -106,12 +106,15 @@ export function EnvironmentBar() {
   return (
     <>
       <div
-        className="flex items-center justify-between border-b px-4 py-2"
+        className="flex items-center justify-between border-b px-4 py-1.5"
         style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-secondary)' }}
       >
         <div className="flex items-center gap-2">
-          <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-            Environment:
+          <span
+            className="text-xs font-semibold uppercase tracking-wider"
+            style={{ color: 'var(--text-tertiary)', fontFamily: 'var(--font-ui)' }}
+          >
+            Env
           </span>
           <Select
             size="small"
@@ -128,7 +131,7 @@ export function EnvironmentBar() {
                 <span>
                   {env.name}
                   {env.host && (
-                    <span style={{ color: 'var(--text-secondary)', fontSize: 11, marginLeft: 4 }}>
+                    <span style={{ color: 'var(--text-tertiary)', fontSize: 10, marginLeft: 4, fontFamily: 'var(--font-code)' }}>
                       {env.host}
                     </span>
                   )}
@@ -176,13 +179,14 @@ export function EnvironmentBar() {
       >
         <div className="mb-3">
           <label
-            className="mb-1 block text-xs"
-            style={{ color: 'var(--text-secondary)' }}
+            className="mb-1 block text-xs font-semibold uppercase tracking-wider"
+            style={{ color: 'var(--text-tertiary)', fontFamily: 'var(--font-ui)' }}
           >
             Host (base URL)
           </label>
           <Input
             size="small"
+            className="input-mono"
             placeholder="https://api.example.com"
             value={editingHost}
             onChange={(e) => setEditingHost(e.target.value)}

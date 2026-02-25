@@ -66,19 +66,20 @@ export function CollectionSettingsDrawer({
       <Space direction="vertical" size="large" style={{ width: '100%' }}>
         <div>
           <label
-            className="mb-1 block text-sm font-medium"
-            style={{ color: 'var(--text-secondary)' }}
+            className="mb-1 block text-xs font-semibold uppercase tracking-wider"
+            style={{ color: 'var(--text-tertiary)', fontFamily: 'var(--font-ui)' }}
           >
             Path Prefix
           </label>
           <Input
+            className="input-mono"
             placeholder="/api/v1"
             value={pathPrefix}
             onChange={(e) => setPathPrefix(e.target.value)}
           />
           <div
             className="mt-1 text-xs"
-            style={{ color: 'var(--text-secondary)' }}
+            style={{ color: 'var(--text-tertiary)' }}
           >
             Prepended to request URL paths when sending (e.g., /api/v1)
           </div>
@@ -86,8 +87,8 @@ export function CollectionSettingsDrawer({
 
         <div>
           <label
-            className="mb-1 block text-sm font-medium"
-            style={{ color: 'var(--text-secondary)' }}
+            className="mb-1 block text-xs font-semibold uppercase tracking-wider"
+            style={{ color: 'var(--text-tertiary)', fontFamily: 'var(--font-ui)' }}
           >
             Description
           </label>
@@ -101,14 +102,14 @@ export function CollectionSettingsDrawer({
 
         <div>
           <label
-            className="mb-1 block text-sm font-medium"
-            style={{ color: 'var(--text-secondary)' }}
+            className="mb-1 block text-xs font-semibold uppercase tracking-wider"
+            style={{ color: 'var(--text-tertiary)', fontFamily: 'var(--font-ui)' }}
           >
             Shared Headers
           </label>
           <div
             className="mb-1 text-xs"
-            style={{ color: 'var(--text-secondary)' }}
+            style={{ color: 'var(--text-tertiary)' }}
           >
             Applied to all requests in this collection. Request-level headers override these.
           </div>

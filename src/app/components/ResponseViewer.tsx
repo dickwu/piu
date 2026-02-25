@@ -1,6 +1,6 @@
 'use client';
 
-import { Tabs, Tag, Empty, Spin } from 'antd';
+import { Tabs, Empty, Spin } from 'antd';
 import { useResponseStore } from '../stores/responseStore';
 
 function formatSize(bytes: number): string {
@@ -10,9 +10,15 @@ function formatSize(bytes: number): string {
 }
 
 function statusColor(status: number): string {
-  if (status < 300) return '#22c55e';
-  if (status < 400) return '#f59e0b';
-  return '#ef4444';
+  if (status < 300) return 'var(--success)';
+  if (status < 400) return 'var(--warning)';
+  return 'var(--error)';
+}
+
+function statusBg(status: number): string {
+  if (status < 300) return 'rgba(16, 185, 129, 0.15)';
+  if (status < 400) return 'rgba(245, 158, 11, 0.15)';
+  return 'rgba(239, 68, 68, 0.15)';
 }
 
 function formatBody(body: string): string {
@@ -41,11 +47,11 @@ export function ResponseViewer() {
 
   if (loading) {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-2">
+      <div className="flex flex-1 flex-col items-center justify-center gap-3">
         <Spin />
         <span
-          className="text-xs"
-          style={{ color: 'var(--text-secondary)' }}
+          className="animate-pulse-accent text-xs"
+          style={{ fontFamily: 'var(--font-code)' }}
         >
           {phaseLabel(phase, resolvedUrl)}
         </span>
@@ -56,14 +62,15 @@ export function ResponseViewer() {
   if (error) {
     return (
       <div className="flex flex-1 flex-col p-4">
-        <Tag color="error">Error</Tag>
+        <span
+          className="status-pill"
+          style={{ backgroundColor: 'rgba(239, 68, 68, 0.15)', color: 'var(--error)', width: 'fit-content' }}
+        >
+          Error
+        </span>
         <pre
-          className="mt-2 overflow-auto rounded p-3 text-sm"
-          style={{
-            backgroundColor: 'rgba(239, 68, 68, 0.1)',
-            color: '#ef4444',
-            fontFamily: 'monospace',
-          }}
+          className="code-block mt-2 overflow-auto text-sm"
+          style={{ color: 'var(--error)' }}
         >
           {error}
         </pre>
@@ -83,19 +90,25 @@ export function ResponseViewer() {
   }
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden">
+    <div className="animate-fade-in flex flex-1 flex-col overflow-hidden">
       {/* Status bar */}
       <div
         className="flex items-center gap-3 border-t px-4 py-2"
-        style={{ borderColor: 'var(--border)' }}
+        style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-secondary)' }}
       >
-        <Tag color={statusColor(response.status)}>
+        <span
+          className="status-pill"
+          style={{
+            backgroundColor: statusBg(response.status),
+            color: statusColor(response.status),
+          }}
+        >
           {response.status} {response.status_text}
-        </Tag>
-        <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+        </span>
+        <span className="text-xs" style={{ color: 'var(--text-tertiary)', fontFamily: 'var(--font-code)' }}>
           {response.timing.total_ms}ms
         </span>
-        <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+        <span className="text-xs" style={{ color: 'var(--text-tertiary)', fontFamily: 'var(--font-code)' }}>
           {formatSize(response.size)}
         </span>
       </div>
@@ -110,11 +123,8 @@ export function ResponseViewer() {
             label: 'Body',
             children: (
               <pre
-                className="overflow-auto rounded p-3"
+                className="code-block overflow-auto"
                 style={{
-                  backgroundColor: 'rgba(0,0,0,0.2)',
-                  fontFamily: 'monospace',
-                  fontSize: 13,
                   maxHeight: 'calc(100vh - 400px)',
                   whiteSpace: 'pre-wrap',
                   wordBreak: 'break-word',
@@ -131,16 +141,24 @@ export function ResponseViewer() {
               <div
                 className="overflow-auto rounded p-3"
                 style={{
-                  backgroundColor: 'rgba(0,0,0,0.2)',
+                  backgroundColor: 'var(--bg-tertiary)',
                   maxHeight: 'calc(100vh - 400px)',
                 }}
               >
-                {Object.entries(response.headers).map(([key, value]) => (
-                  <div key={key} className="flex gap-2 py-0.5 text-sm">
-                    <span style={{ color: '#6366f1', fontWeight: 600 }}>
+                {Object.entries(response.headers).map(([key, value], idx) => (
+                  <div
+                    key={key}
+                    className="flex gap-2 text-sm"
+                    style={{
+                      backgroundColor: idx % 2 === 1 ? 'var(--bg-surface)' : 'transparent',
+                      padding: '4px 8px',
+                      borderRadius: 4,
+                    }}
+                  >
+                    <span style={{ color: 'var(--accent)', fontWeight: 600, fontFamily: 'var(--font-code)' }}>
                       {key}:
                     </span>
-                    <span style={{ fontFamily: 'monospace' }}>{value}</span>
+                    <span style={{ fontFamily: 'var(--font-code)', color: 'var(--text-primary)' }}>{value}</span>
                   </div>
                 ))}
               </div>
@@ -155,7 +173,7 @@ export function ResponseViewer() {
                   <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
                     Total:
                   </span>
-                  <span className="text-lg font-bold" style={{ color: '#22c55e' }}>
+                  <span className="text-lg font-bold" style={{ color: 'var(--success)', fontFamily: 'var(--font-code)' }}>
                     {response.timing.total_ms}ms
                   </span>
                 </div>

@@ -6,7 +6,6 @@ import {
   FolderOutlined,
   ApiOutlined,
   DeleteOutlined,
-  EditOutlined,
   CopyOutlined,
   SettingOutlined,
 } from '@ant-design/icons';
@@ -14,19 +13,19 @@ import { useState, useCallback, useMemo, useEffect } from 'react';
 import { useCollectionStore } from '../stores/collectionStore';
 import { useRequestEditorStore } from '../stores/requestStore';
 import { useProjectStore } from '../stores/projectStore';
-import type { Collection, ApiRequest } from '../types';
+import type { ApiRequest } from '../types';
 import { parseConfig } from '../types';
 import type { DataNode } from 'antd/es/tree';
 import { CollectionSettingsDrawer } from './CollectionSettingsDrawer';
 
 const METHOD_COLORS: Record<string, string> = {
-  GET: '#22c55e',
-  POST: '#f59e0b',
-  PUT: '#3b82f6',
-  DELETE: '#ef4444',
-  PATCH: '#a855f7',
-  HEAD: '#06b6d4',
-  OPTIONS: '#8b5cf6',
+  GET: '#34d399',
+  POST: '#fbbf24',
+  PUT: '#60a5fa',
+  DELETE: '#f87171',
+  PATCH: '#c084fc',
+  HEAD: '#22d3ee',
+  OPTIONS: '#a78bfa',
 };
 
 export function Sidebar() {
@@ -53,8 +52,6 @@ export function Sidebar() {
     'collection',
   );
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [renameId, setRenameId] = useState<string | null>(null);
-  const [renameName, setRenameName] = useState('');
   const [settingsCollectionId, setSettingsCollectionId] = useState<string | null>(null);
 
   // Load requests for all collections
@@ -130,23 +127,28 @@ export function Sidebar() {
                 }}
               >
                 <span
-                  className="flex items-center gap-1"
+                  className="flex items-center gap-1.5"
                   onClick={() => handleSelectRequest(req)}
                 >
                   <span
-                    style={{
-                      color: METHOD_COLORS[method] ?? '#888',
-                      fontSize: 10,
-                      fontWeight: 700,
-                      minWidth: 36,
-                    }}
+                    className={`method-pill method-pill-${method.toLowerCase()}`}
+                    style={{ fontSize: 9, minWidth: 36 }}
                   >
                     {method}
                   </span>
-                  <span className="truncate text-sm">{req.name}</span>
                   <span
-                    className="ml-auto text-xs"
-                    style={{ color: 'var(--text-secondary)' }}
+                    className="truncate text-xs"
+                    style={{ fontFamily: 'var(--font-ui)' }}
+                  >
+                    {req.name}
+                  </span>
+                  <span
+                    className="ml-auto"
+                    style={{
+                      color: 'var(--text-tertiary)',
+                      fontFamily: 'var(--font-code)',
+                      fontSize: 9,
+                    }}
                   >
                     v{req.version}
                   </span>
@@ -202,22 +204,34 @@ export function Sidebar() {
                 ],
               }}
             >
-              <span className="flex items-center gap-1">
-                <span className="truncate text-sm font-medium">
+              <span className="flex items-center gap-1.5">
+                <span
+                  className="truncate text-xs font-semibold"
+                  style={{ fontFamily: 'var(--font-ui)' }}
+                >
                   {col.name}
                 </span>
                 {col.path_prefix && (
                   <span
-                    className="truncate text-xs"
-                    style={{ color: 'var(--text-secondary)', maxWidth: 80 }}
+                    className="truncate"
+                    style={{
+                      color: 'var(--text-tertiary)',
+                      fontSize: 9,
+                      maxWidth: 80,
+                      fontFamily: 'var(--font-code)',
+                    }}
                     title={col.path_prefix}
                   >
                     {col.path_prefix}
                   </span>
                 )}
                 <span
-                  className="ml-auto text-xs"
-                  style={{ color: 'var(--text-secondary)' }}
+                  className="ml-auto"
+                  style={{
+                    color: 'var(--text-tertiary)',
+                    fontFamily: 'var(--font-code)',
+                    fontSize: 9,
+                  }}
                 >
                   v{col.version}
                 </span>
@@ -244,14 +258,18 @@ export function Sidebar() {
   return (
     <>
       <div
-        className="flex h-full w-64 flex-col border-r"
+        className="flex h-full w-64 flex-col"
         style={{
-          borderColor: 'var(--border)',
           backgroundColor: 'var(--bg-secondary)',
         }}
       >
-        <div className="flex items-center justify-between border-b p-3" style={{ borderColor: 'var(--border)' }}>
-          <span className="text-sm font-semibold">Collections</span>
+        <div className="sidebar-header flex items-center justify-between p-3">
+          <span
+            className="text-xs font-bold uppercase tracking-wider"
+            style={{ fontFamily: 'var(--font-ui)', color: 'var(--text-secondary)' }}
+          >
+            Collections
+          </span>
           <Button
             size="small"
             icon={<PlusOutlined />}
@@ -266,7 +284,7 @@ export function Sidebar() {
           {treeData.length === 0 ? (
             <div
               className="p-4 text-center text-sm"
-              style={{ color: 'var(--text-secondary)' }}
+              style={{ color: 'var(--text-tertiary)' }}
             >
               No collections yet.
               <br />

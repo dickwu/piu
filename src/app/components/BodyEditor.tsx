@@ -12,7 +12,7 @@ interface BodyEditorProps {
 
 export function BodyEditor({ body, onChange }: BodyEditorProps) {
   return (
-    <div className="space-y-2 pb-2">
+    <div className="space-y-3 px-1 pb-2">
       <Segmented
         size="small"
         value={body.type}
@@ -31,9 +31,12 @@ export function BodyEditor({ body, onChange }: BodyEditorProps) {
             : 'Enter raw text body...'
         }
         autoSize={{ minRows: 6, maxRows: 16 }}
+        className="input-depth"
         style={{
-          fontFamily: 'monospace',
+          fontFamily: 'var(--font-code)',
           fontSize: 13,
+          lineHeight: 1.6,
+          letterSpacing: '-0.01em',
         }}
       />
     </div>

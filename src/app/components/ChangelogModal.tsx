@@ -11,10 +11,10 @@ interface ChangelogModalProps {
 }
 
 const TYPE_COLORS: Record<string, string> = {
-  project: 'orange',
-  collection: 'blue',
-  request: 'green',
-  environment: 'purple',
+  project: '#f97316',
+  collection: '#60a5fa',
+  request: '#34d399',
+  environment: '#c084fc',
 };
 
 function formatDate(timestamp: number): string {
@@ -55,6 +55,7 @@ export function ChangelogModal({ open, onClose }: ChangelogModalProps) {
         <Empty description="No changes recorded yet" />
       ) : (
         <List
+          className="animate-fade-in"
           loading={loading}
           dataSource={entries}
           renderItem={(entry) => (
@@ -74,7 +75,7 @@ export function ChangelogModal({ open, onClose }: ChangelogModalProps) {
                     <div>{entry.summary}</div>
                     <div
                       className="text-xs"
-                      style={{ color: 'var(--text-secondary)' }}
+                      style={{ color: 'var(--text-tertiary)', fontFamily: 'var(--font-code)' }}
                     >
                       {formatDate(entry.created_at)}
                     </div>

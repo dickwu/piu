@@ -50,11 +50,12 @@ export default function Home() {
   }, [activeProjectId, loadCollections, loadEnvironments, loadActiveEnvironment]);
 
   return (
-    <div className="flex h-screen flex-col">
+    <div className="animate-fade-in flex h-screen flex-col" style={{ backgroundColor: 'var(--bg-primary)' }}>
       <ProjectSelector />
       <EnvironmentBar />
       <div className="flex flex-1 overflow-hidden">
         <Sidebar />
+        <div className="panel-separator" />
         <div className="flex flex-1 flex-col overflow-hidden">
           <RequestEditor />
           <ResponseViewer />

@@ -1,14 +1,69 @@
 @import 'tailwindcss';
 
+/* ============================================================
+   PIU Design System — "Terminal Luxe"
+   Deep carbon backgrounds, warm coral accent, dual typography
+   ============================================================ */
+
 :root {
-  --bg-primary: #1a1a2e;
-  --bg-secondary: #16213e;
-  --bg-tertiary: #0f3460;
-  --text-primary: #e4e4e7;
-  --text-secondary: #a1a1aa;
-  --accent: #6366f1;
-  --border: #27272a;
+  /* === Backgrounds: deep carbon with blue undertone === */
+  --bg-primary: #0a0a0f;
+  --bg-secondary: #101018;
+  --bg-tertiary: #16161f;
+  --bg-surface: #1a1a24;
+  --bg-elevated: #1e1e2a;
+  --bg-hover: #22222e;
+
+  /* === Text: warm gray spectrum === */
+  --text-primary: #e2e2e8;
+  --text-secondary: #8b8b99;
+  --text-tertiary: #7a7a8e;
+
+  /* === Accent: warm coral === */
+  --accent: #f97316;
+  --accent-hover: #fb923c;
+  --accent-subtle: rgba(249, 115, 22, 0.12);
+  --accent-glow: rgba(249, 115, 22, 0.25);
+
+  /* === Semantic === */
+  --success: #10b981;
+  --warning: #f59e0b;
+  --error: #ef4444;
+  --info: #3b82f6;
+
+  /* === Borders === */
+  --border: #1e1e28;
+  --border-hover: #2a2a38;
+  --border-active: #363648;
+
+  /* === Method colors (refined) === */
+  --method-get: #34d399;
+  --method-post: #fbbf24;
+  --method-put: #60a5fa;
+  --method-delete: #f87171;
+  --method-patch: #c084fc;
+  --method-head: #22d3ee;
+  --method-options: #a78bfa;
+
+  /* === Fonts === */
+  --font-ui: var(--font-jakarta), 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-code: var(--font-mono), 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+
+  /* === Transitions === */
+  --transition-fast: 100ms ease;
+  --transition-base: 150ms ease;
+  --transition-slow: 250ms ease;
+
+  /* === Radii === */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-pill: 9999px;
 }
+
+/* ============================================================
+   Global Reset & Body
+   ============================================================ */
 
 * {
   margin: 0;
@@ -19,37 +74,70 @@
 body {
   background-color: var(--bg-primary);
   color: var(--text-primary);
-  font-family:
-    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue',
-    Arial, sans-serif;
+  font-family: var(--font-ui);
+  font-weight: 500;
   overflow: hidden;
   height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
-/* Method color coding */
-.method-get {
-  color: #22c55e;
-}
-.method-post {
-  color: #f59e0b;
-}
-.method-put {
-  color: #3b82f6;
-}
-.method-delete {
-  color: #ef4444;
-}
-.method-patch {
-  color: #a855f7;
-}
-.method-head {
-  color: #06b6d4;
-}
-.method-options {
-  color: #8b5cf6;
+/* ============================================================
+   Noise Grain Texture Overlay
+   ============================================================ */
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  pointer-events: none;
+  opacity: 0.025;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 256px 256px;
 }
 
-/* Scrollbar styling */
+/* ============================================================
+   Method Color Classes
+   ============================================================ */
+
+.method-get { color: var(--method-get); }
+.method-post { color: var(--method-post); }
+.method-put { color: var(--method-put); }
+.method-delete { color: var(--method-delete); }
+.method-patch { color: var(--method-patch); }
+.method-head { color: var(--method-head); }
+.method-options { color: var(--method-options); }
+
+/* Method pill badges */
+.method-pill {
+  font-family: var(--font-code);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  text-transform: uppercase;
+}
+
+.method-pill-get { background: rgba(52, 211, 153, 0.12); color: var(--method-get); }
+.method-pill-post { background: rgba(251, 191, 36, 0.12); color: var(--method-post); }
+.method-pill-put { background: rgba(96, 165, 250, 0.12); color: var(--method-put); }
+.method-pill-delete { background: rgba(248, 113, 113, 0.12); color: var(--method-delete); }
+.method-pill-patch { background: rgba(192, 132, 252, 0.12); color: var(--method-patch); }
+.method-pill-head { background: rgba(34, 211, 238, 0.12); color: var(--method-head); }
+.method-pill-options { background: rgba(167, 139, 250, 0.12); color: var(--method-options); }
+
+/* ============================================================
+   Scrollbar
+   ============================================================ */
+
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -60,19 +148,361 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #3f3f46;
+  background: var(--border-hover);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #52525b;
+  background: var(--border-active);
 }
 
-/* Ant Design dark overrides */
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* ============================================================
+   Animation Keyframes
+   ============================================================ */
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(-8px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes pulseAccent {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.animate-fade-in {
+  animation: fadeIn var(--transition-slow) ease both;
+}
+
+.animate-slide-in {
+  animation: slideIn var(--transition-slow) ease both;
+}
+
+.animate-pulse-accent {
+  animation: pulseAccent 1.5s ease-in-out infinite;
+  color: var(--accent);
+}
+
+/* ============================================================
+   Utility Classes
+   ============================================================ */
+
+/* Alternating row backgrounds for key-value editors */
+.kv-row {
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  transition: background-color var(--transition-fast);
+}
+
+.kv-row:nth-child(odd) {
+  background-color: var(--bg-tertiary);
+}
+
+.kv-row:nth-child(even) {
+  background-color: transparent;
+}
+
+.kv-row:hover {
+  background-color: var(--bg-hover);
+}
+
+/* Monospace input override */
+.input-mono input {
+  font-family: var(--font-code) !important;
+  font-size: 13px !important;
+  letter-spacing: -0.01em;
+}
+
+/* Code block for response body */
+.code-block {
+  font-family: var(--font-code);
+  font-size: 13px;
+  line-height: 1.6;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  color: var(--text-primary);
+}
+
+/* Inner shadow depth for inputs */
+.input-depth textarea {
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.3) !important;
+}
+
+/* Hover glow for primary buttons */
+.btn-glow:hover {
+  box-shadow: 0 0 12px var(--accent-glow), 0 0 4px var(--accent-subtle);
+}
+
+/* Sidebar gradient header */
+.sidebar-header {
+  background: linear-gradient(135deg, var(--bg-surface) 0%, var(--bg-tertiary) 100%);
+  border-bottom: 1px solid var(--border);
+}
+
+/* Status pill */
+.status-pill {
+  font-family: var(--font-code);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 10px;
+  border-radius: var(--radius-pill);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Panel separator */
+.panel-separator {
+  width: 1px;
+  background: var(--border);
+  transition: background-color var(--transition-base);
+  flex-shrink: 0;
+  position: relative;
+}
+
+.panel-separator:hover {
+  background: var(--accent);
+}
+
+.panel-separator::after {
+  content: '';
+  position: absolute;
+  inset: 0 -3px;
+}
+
+/* ============================================================
+   Ant Design Dark Overrides
+   ============================================================ */
+
+/* Tree */
 .ant-tree .ant-tree-node-content-wrapper:hover {
-  background-color: rgba(99, 102, 241, 0.1) !important;
+  background-color: var(--bg-hover) !important;
 }
 
 .ant-tree .ant-tree-node-selected {
-  background-color: rgba(99, 102, 241, 0.2) !important;
+  background-color: var(--accent-subtle) !important;
+}
+
+.ant-tree .ant-tree-switcher {
+  color: var(--text-tertiary);
+}
+
+/* Tabs */
+.ant-tabs .ant-tabs-tab {
+  font-family: var(--font-ui) !important;
+  font-weight: 600 !important;
+  font-size: 12px !important;
+  letter-spacing: 0.02em;
+  color: var(--text-secondary) !important;
+  transition: color var(--transition-base) !important;
+  padding: 8px 4px !important;
+}
+
+.ant-tabs .ant-tabs-tab:hover {
+  color: var(--text-primary) !important;
+}
+
+.ant-tabs .ant-tabs-tab-active .ant-tabs-tab-btn {
+  color: var(--accent) !important;
+}
+
+.ant-tabs .ant-tabs-ink-bar {
+  background: var(--accent) !important;
+  height: 2px !important;
+  border-radius: 1px;
+}
+
+/* Inputs */
+.ant-input,
+.ant-input-affix-wrapper,
+.ant-select-selector {
+  background-color: var(--bg-tertiary) !important;
+  border-color: var(--border) !important;
+  color: var(--text-primary) !important;
+  transition: all var(--transition-base) !important;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.2) !important;
+}
+
+.ant-input:hover,
+.ant-input-affix-wrapper:hover,
+.ant-select-selector:hover {
+  border-color: var(--border-hover) !important;
+}
+
+.ant-input:focus,
+.ant-input-affix-wrapper-focused,
+.ant-select-focused .ant-select-selector {
+  border-color: var(--accent) !important;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.2), 0 0 0 2px var(--accent-subtle) !important;
+}
+
+/* Buttons */
+.ant-btn-primary {
+  background: var(--accent) !important;
+  border-color: var(--accent) !important;
+  font-family: var(--font-ui) !important;
+  font-weight: 600 !important;
+  transition: all var(--transition-base) !important;
+}
+
+.ant-btn-primary:hover {
+  background: var(--accent-hover) !important;
+  border-color: var(--accent-hover) !important;
+  box-shadow: 0 0 12px var(--accent-glow);
+}
+
+.ant-btn-default {
+  background: var(--bg-surface) !important;
+  border-color: var(--border) !important;
+  color: var(--text-secondary) !important;
+}
+
+.ant-btn-default:hover {
+  border-color: var(--border-hover) !important;
+  color: var(--text-primary) !important;
+}
+
+/* Modal */
+.ant-modal-content {
+  background: var(--bg-surface) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-lg) !important;
+}
+
+.ant-modal-mask {
+  backdrop-filter: blur(8px) !important;
+  background: rgba(0, 0, 0, 0.6) !important;
+}
+
+.ant-modal-header {
+  background: transparent !important;
+  border-bottom: 1px solid var(--border) !important;
+}
+
+.ant-modal-title {
+  font-family: var(--font-ui) !important;
+  font-weight: 700 !important;
+}
+
+/* Drawer */
+.ant-drawer .ant-drawer-content {
+  background: var(--bg-surface) !important;
+}
+
+.ant-drawer .ant-drawer-mask {
+  backdrop-filter: blur(12px) saturate(1.2) !important;
+  background: rgba(10, 10, 15, 0.7) !important;
+}
+
+.ant-drawer .ant-drawer-header {
+  background: transparent !important;
+  border-bottom: 1px solid var(--border) !important;
+}
+
+/* Tags */
+.ant-tag {
+  font-family: var(--font-code) !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  border: none !important;
+  border-radius: var(--radius-pill) !important;
+}
+
+/* Segmented */
+.ant-segmented {
+  background: var(--bg-tertiary) !important;
+  border-radius: var(--radius-md) !important;
+}
+
+.ant-segmented-item-selected {
+  background: var(--bg-elevated) !important;
+  color: var(--accent) !important;
+  font-weight: 600;
+}
+
+/* Select dropdown */
+.ant-select-dropdown {
+  background: var(--bg-surface) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-md) !important;
+}
+
+.ant-select-item-option-active {
+  background: var(--bg-hover) !important;
+}
+
+.ant-select-item-option-selected {
+  background: var(--accent-subtle) !important;
+}
+
+/* Switch */
+.ant-switch-checked {
+  background: var(--accent) !important;
+}
+
+/* Table */
+.ant-table {
+  background: transparent !important;
+}
+
+.ant-table-thead > tr > th {
+  background: var(--bg-tertiary) !important;
+  border-bottom: 1px solid var(--border) !important;
+  font-family: var(--font-ui) !important;
+  font-weight: 600 !important;
+  font-size: 11px !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+  color: var(--text-secondary) !important;
+}
+
+.ant-table-tbody > tr > td {
+  border-bottom: 1px solid var(--border) !important;
+}
+
+.ant-table-tbody > tr:hover > td {
+  background: var(--bg-hover) !important;
+}
+
+/* Dropdown menu */
+.ant-dropdown .ant-dropdown-menu {
+  background: var(--bg-surface) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-md) !important;
+}
+
+.ant-dropdown .ant-dropdown-menu-item:hover {
+  background: var(--bg-hover) !important;
+}
+
+/* Spin */
+.ant-spin .ant-spin-dot-item {
+  background-color: var(--accent) !important;
+}
+
+/* Progress bar */
+.ant-progress .ant-progress-bg {
+  background: var(--accent) !important;
+}
+
+/* Empty */
+.ant-empty-description {
+  color: var(--text-tertiary) !important;
+  font-family: var(--font-ui) !important;
+}
+
+/* List */
+.ant-list-item {
+  border-block-end-color: var(--border) !important;
 }

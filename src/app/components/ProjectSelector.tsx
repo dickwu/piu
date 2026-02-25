@@ -64,11 +64,11 @@ export function ProjectSelector() {
         className="flex items-center justify-between border-b px-4 py-1.5"
         style={{
           borderColor: 'var(--border)',
-          backgroundColor: 'var(--bg-secondary)',
+          background: 'linear-gradient(90deg, var(--bg-secondary) 0%, var(--bg-tertiary) 100%)',
         }}
       >
         <div className="flex items-center gap-2">
-          <ProjectOutlined style={{ color: 'var(--text-secondary)' }} />
+          <ProjectOutlined style={{ color: 'var(--accent)', fontSize: 14 }} />
           <Select
             size="small"
             style={{ width: 200 }}
@@ -106,7 +106,7 @@ export function ProjectSelector() {
         {activeProject?.description && (
           <span
             className="truncate text-xs"
-            style={{ color: 'var(--text-secondary)', maxWidth: 300 }}
+            style={{ color: 'var(--text-tertiary)', maxWidth: 300, fontFamily: 'var(--font-ui)' }}
             title={activeProject.description}
           >
             {activeProject.description}

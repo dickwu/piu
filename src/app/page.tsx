@@ -5,6 +5,7 @@ import { Sidebar } from './components/Sidebar';
 import { RequestEditor } from './components/RequestEditor';
 import { ResponseViewer } from './components/ResponseViewer';
 import { EnvironmentBar } from './components/EnvironmentBar';
+import { UpdateChecker } from './components/UpdateChecker';
 import { useCollectionStore } from './stores/collectionStore';
 import { useEnvironmentStore } from './stores/environmentStore';
 
@@ -23,6 +24,7 @@ export default function Home() {
 
   return (
     <div className="flex h-screen flex-col">
+      <UpdateChecker />
       <EnvironmentBar />
       <div className="flex flex-1 overflow-hidden">
         <Sidebar />

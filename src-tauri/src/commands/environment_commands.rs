@@ -40,19 +40,20 @@ pub struct SetActiveEnvironmentInput {
 }
 
 #[tauri::command]
-pub async fn create_environment(
-    input: CreateEnvironmentInput,
-) -> Result<db::Environment, String> {
+pub async fn create_environment(input: CreateEnvironmentInput) -> Result<db::Environment, String> {
     let id = uuid::Uuid::new_v4().to_string();
-    db::create_environment(&id, &input.name, input.project_id.as_deref(), input.host.as_deref())
-        .await
-        .map_err(|e| e.to_string())
+    db::create_environment(
+        &id,
+        &input.name,
+        input.project_id.as_deref(),
+        input.host.as_deref(),
+    )
+    .await
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn update_environment(
-    input: UpdateEnvironmentInput,
-) -> Result<db::Environment, String> {
+pub async fn update_environment(input: UpdateEnvironmentInput) -> Result<db::Environment, String> {
     let host_ref = input.host.as_ref().map(|opt| opt.as_deref());
     db::update_environment(&input.id, input.name.as_deref(), host_ref)
         .await
@@ -65,9 +66,7 @@ pub async fn delete_environment(id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn list_environments(
-    project_id: Option<String>,
-) -> Result<Vec<db::Environment>, String> {
+pub async fn list_environments(project_id: Option<String>) -> Result<Vec<db::Environment>, String> {
     db::list_environments(project_id.as_deref())
         .await
         .map_err(|e| e.to_string())

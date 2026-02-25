@@ -26,12 +26,9 @@ pub fn get_table_sql() -> &'static str {
     "
 }
 
-const SELECT_COLUMNS: &str =
-    "id, name, description, sort_order, version, created_at, updated_at";
+const SELECT_COLUMNS: &str = "id, name, description, sort_order, version, created_at, updated_at";
 
-fn project_from_row(
-    row: &turso::Row,
-) -> Result<Project, Box<dyn std::error::Error + Send + Sync>> {
+fn project_from_row(row: &turso::Row) -> Result<Project, Box<dyn std::error::Error + Send + Sync>> {
     Ok(Project {
         id: row.get(0)?,
         name: row.get(1)?,
@@ -43,11 +40,7 @@ fn project_from_row(
     })
 }
 
-pub async fn create_project(
-    id: &str,
-    name: &str,
-    description: Option<&str>,
-) -> DbResult<Project> {
+pub async fn create_project(id: &str, name: &str, description: Option<&str>) -> DbResult<Project> {
     let conn = get_connection()?.lock().await;
     let now = chrono::Utc::now().timestamp_millis();
 
@@ -172,33 +165,10 @@ pub async fn delete_project(id: &str) -> DbResult<()> {
         .await?;
 
     drop(conn);
-    super::changelog::insert_changelog(
-        "project",
-        id,
-        &name,
-        version + 1,
-        "Deleted project",
-        None,
-    )
-    .await?;
-
-    Ok(())
-}
-
-pub async fn get_project(id: &str) -> DbResult<Option<Project>> {
-    let conn = get_connection()?.lock().await;
-    let mut rows = conn
-        .query(
-            &format!("SELECT {} FROM projects WHERE id = ?1", SELECT_COLUMNS),
-            turso::params![id],
-        )
+    super::changelog::insert_changelog("project", id, &name, version + 1, "Deleted project", None)
         .await?;
 
-    if let Some(row) = rows.next().await? {
-        Ok(Some(project_from_row(&row)?))
-    } else {
-        Ok(None)
-    }
+    Ok(())
 }
 
 pub async fn list_projects() -> DbResult<Vec<Project>> {

@@ -65,7 +65,11 @@ pub async fn orchestrate_request(
 
         let extra_headers: Vec<KeyValuePair> = shared_headers
             .into_iter()
-            .filter(|h| h.enabled && !h.key.is_empty() && !request_header_keys.contains(&h.key.to_lowercase()))
+            .filter(|h| {
+                h.enabled
+                    && !h.key.is_empty()
+                    && !request_header_keys.contains(&h.key.to_lowercase())
+            })
             .collect();
 
         let mut merged = extra_headers;

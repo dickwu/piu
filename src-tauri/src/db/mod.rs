@@ -186,7 +186,7 @@ async fn migrate_orphans_to_default_project(conn: &Connection) -> DbResult<()> {
 }
 
 // Re-export project functions
-pub use projects::{create_project, delete_project, get_project, list_projects, update_project};
+pub use projects::{create_project, delete_project, list_projects, update_project};
 
 // Re-export collection functions
 pub use collections::{create_collection, delete_collection, list_collections, update_collection};

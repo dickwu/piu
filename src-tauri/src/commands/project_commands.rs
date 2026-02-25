@@ -11,7 +11,10 @@ pub struct CreateProjectInput {
 pub struct UpdateProjectInput {
     pub id: String,
     pub name: Option<String>,
-    #[serde(default, deserialize_with = "super::collection_commands::deserialize_optional_nullable")]
+    #[serde(
+        default,
+        deserialize_with = "super::collection_commands::deserialize_optional_nullable"
+    )]
     pub description: Option<Option<String>>,
     pub sort_order: Option<i64>,
 }

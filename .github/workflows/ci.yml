@@ -21,7 +21,7 @@ jobs:
           - platform: macos-latest
             args: --target x86_64-apple-darwin
           - platform: ubuntu-22.04
-            args: ''
+            args: --bundles deb,rpm
           - platform: windows-latest
             args: ''
 
@@ -84,7 +84,7 @@ jobs:
           name: linux-x64
           path: |
             src-tauri/target/release/bundle/deb/*.deb
-            src-tauri/target/release/bundle/appimage/*.AppImage
+            src-tauri/target/release/bundle/rpm/*.rpm
           if-no-files-found: error
 
       - name: Upload artifacts (Windows)

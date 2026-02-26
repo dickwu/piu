@@ -9,10 +9,12 @@ Built with **Tauri 2.0** (Rust backend) + **React 19** + **Next.js** + **Ant Des
 ## Features
 
 - 📁 **Nested Collections** — Organize API requests in hierarchical folders
+- 🗂️ **Project sidebar** — Switch projects from a compact sidebar panel with name, description, and env count badge
 - 🚀 **Rust-side HTTP execution** — All requests run via `reqwest` on the Tauri backend (no CORS issues)
 - 🗃️ **JSON-based config storage** — Every request config stored as a JSON blob in SQLite
 - 🔢 **Version management** — Every change auto-increments a version number per entity with a full changelog
 - 🌍 **Environments & Variables** — `{{variable}}` interpolation across URLs, headers, and body; environment host + collection prefix build the full URL at execution time
+- ✏️ **Environment rename** — Rename environments inline with duplicate-name prevention
 - 🔗 **URL resolution** — Requests store only the path (e.g. `/users/123`); the full URL is `env host + collection prefix + path`. Missing host shows a config prompt before sending
 - 🔑 **Auth support** — Bearer token, Basic auth, API key
 - ⚡ **Response viewer** — Status, headers, body (auto-formatted JSON), timing

@@ -81,6 +81,7 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+  user-select: none;
 }
 
 /* ============================================================
@@ -232,6 +233,12 @@ body::before {
   border-radius: var(--radius-md);
   padding: 16px;
   color: var(--text-primary);
+  user-select: text;
+}
+
+/* Ensure form elements remain selectable */
+input, textarea, [contenteditable="true"] {
+  user-select: text;
 }
 
 /* Inner shadow depth for inputs */
@@ -288,6 +295,24 @@ body::before {
   background: var(--bg-tertiary);
   padding: 1px 6px;
   border-radius: var(--radius-pill);
+}
+
+/* Collection tree item hover action buttons */
+.collection-item-actions {
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.collection-item-version {
+  transition: opacity var(--transition-fast);
+}
+
+.ant-tree-node-content-wrapper:hover .collection-item-actions {
+  opacity: 1;
+}
+
+.ant-tree-node-content-wrapper:hover .collection-item-version {
+  opacity: 0;
 }
 
 /* Status pill */

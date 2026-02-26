@@ -192,7 +192,6 @@ export function StatusBar() {
               ),
               value: env.id,
             }))}
-            allowClear
             popupMatchSelectWidth={220}
           />
           <Button

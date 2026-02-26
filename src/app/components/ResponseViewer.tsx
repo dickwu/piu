@@ -139,7 +139,7 @@ export function ResponseViewer() {
             label: `Headers (${Object.keys(response.headers).length})`,
             children: (
               <div
-                className="overflow-auto rounded p-3"
+                className="select-text overflow-auto rounded p-3"
                 style={{
                   backgroundColor: 'var(--bg-tertiary)',
                   maxHeight: 'calc(100vh - 400px)',
@@ -168,7 +168,7 @@ export function ResponseViewer() {
             key: 'timing',
             label: 'Timing',
             children: (
-              <div className="p-3">
+              <div className="select-text p-3">
                 <div className="flex items-center gap-3">
                   <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
                     Total:

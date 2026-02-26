@@ -8,7 +8,6 @@ import {
   Space,
   Switch,
   Table,
-  Collapse,
 } from 'antd';
 import {
   SaveOutlined,
@@ -20,6 +19,8 @@ import {
 import { useState, useEffect, useCallback } from 'react';
 import { useProjectStore } from '../stores/projectStore';
 import { useEnvironmentStore } from '../stores/environmentStore';
+import type { Environment } from '../types';
+import { EnvironmentFormModal } from './EnvironmentFormModal';
 
 interface ProjectSettingsModalProps {
   projectId: string | null;
@@ -37,7 +38,6 @@ export function ProjectSettingsModal({
   const updateProject = useProjectStore((s) => s.updateProject);
   const {
     environments,
-    variables,
     loadVariables,
     createEnvironment,
     updateEnvironment,
@@ -51,43 +51,23 @@ export function ProjectSettingsModal({
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [newEnvName, setNewEnvName] = useState('');
-  const [editEnvId, setEditEnvId] = useState<string | null>(null);
-  const [editEnvName, setEditEnvName] = useState('');
-  const [showRenameModal, setShowRenameModal] = useState(false);
   const [varEditorEnvId, setVarEditorEnvId] = useState<string | null>(null);
   const [editingHost, setEditingHost] = useState('');
   const [editingVars, setEditingVars] = useState<
     { id: string; key: string; value: string; enabled: boolean }[]
   >([]);
 
-  const createEnvError =
-    newEnvName.trim() && hasEnvironmentName(newEnvName)
-      ? 'Name already exists'
-      : '';
-
-  const renameEnvError =
-    editEnvName.trim() && hasEnvironmentName(editEnvName, editEnvId ?? undefined)
-      ? 'Name already exists'
-      : '';
+  const [envFormOpen, setEnvFormOpen] = useState(false);
+  const [envFormMode, setEnvFormMode] = useState<'create' | 'edit'>('create');
+  const [envFormEnv, setEnvFormEnv] = useState<Environment | null>(null);
 
   useEffect(() => {
     if (project && open) {
       setName(project.name);
       setDescription(project.description ?? '');
-      setNewEnvName('');
       setVarEditorEnvId(null);
     }
   }, [project, open]);
-
-  // Load variables for all environments when modal opens
-  useEffect(() => {
-    if (open && environments.length > 0) {
-      for (const env of environments) {
-        loadVariables(env.id);
-      }
-    }
-  }, [open, environments, loadVariables]);
 
   const handleSaveProject = useCallback(async () => {
     if (!projectId || !name.trim()) return;
@@ -103,33 +83,39 @@ export function ProjectSettingsModal({
     }
   }, [projectId, name, description, updateProject, onClose, message]);
 
-  const handleCreateEnv = useCallback(async () => {
-    if (!newEnvName.trim() || hasEnvironmentName(newEnvName)) return;
-    try {
-      await createEnvironment(newEnvName.trim(), projectId ?? undefined);
-      setNewEnvName('');
-    } catch (error) {
-      message.error('Failed to create environment');
-    }
-  }, [newEnvName, projectId, createEnvironment, hasEnvironmentName, message]);
-
-  const handleOpenRename = useCallback((envId: string, envName: string) => {
-    setEditEnvId(envId);
-    setEditEnvName(envName);
-    setShowRenameModal(true);
+  const handleOpenCreateEnv = useCallback(() => {
+    setEnvFormMode('create');
+    setEnvFormEnv(null);
+    setEnvFormOpen(true);
   }, []);
 
-  const handleRename = useCallback(async () => {
-    if (!editEnvId || !editEnvName.trim()) return;
-    if (hasEnvironmentName(editEnvName, editEnvId)) return;
-    try {
-      await updateEnvironment(editEnvId, { name: editEnvName.trim() });
-      setShowRenameModal(false);
-      setEditEnvId(null);
-    } catch (error) {
-      message.error('Failed to rename environment');
-    }
-  }, [editEnvId, editEnvName, hasEnvironmentName, updateEnvironment, message]);
+  const handleOpenEditEnv = useCallback((env: Environment) => {
+    setEnvFormMode('edit');
+    setEnvFormEnv(env);
+    setEnvFormOpen(true);
+  }, []);
+
+  const handleCloseEnvForm = useCallback(() => {
+    setEnvFormOpen(false);
+    setEnvFormEnv(null);
+  }, []);
+
+  const handleSaveEnvForm = useCallback(
+    async (envName: string, host: string) => {
+      try {
+        if (envFormMode === 'create') {
+          await createEnvironment(envName, projectId ?? undefined, host);
+        } else if (envFormEnv) {
+          await updateEnvironment(envFormEnv.id, { name: envName, host: host || null });
+        }
+        handleCloseEnvForm();
+      } catch (error) {
+        message.error(envFormMode === 'create' ? 'Failed to create environment' : 'Failed to update environment');
+        throw error;
+      }
+    },
+    [envFormMode, envFormEnv, projectId, createEnvironment, updateEnvironment, handleCloseEnvForm, message],
+  );
 
   const handleDeleteEnv = useCallback(
     (envId: string, envName: string) => {
@@ -273,33 +259,21 @@ export function ProjectSettingsModal({
 
           {/* Environments */}
           <div>
-            <label
-              className="mb-2 block text-xs font-semibold uppercase tracking-wider"
-              style={{ color: 'var(--text-tertiary)', fontFamily: 'var(--font-ui)' }}
-            >
-              Environments
-            </label>
-
-            <Space.Compact size="small" style={{ width: '100%', marginBottom: 12 }}>
-              <Input
-                placeholder="New environment name"
-                value={newEnvName}
-                onChange={(e) => setNewEnvName(e.target.value)}
-                onPressEnter={handleCreateEnv}
-                status={createEnvError ? 'error' : undefined}
-                maxLength={100}
-              />
+            <div className="mb-2 flex items-center justify-between">
+              <label
+                className="block text-xs font-semibold uppercase tracking-wider"
+                style={{ color: 'var(--text-tertiary)', fontFamily: 'var(--font-ui)' }}
+              >
+                Environments
+              </label>
               <Button
+                size="small"
                 icon={<PlusOutlined />}
-                onClick={handleCreateEnv}
-                disabled={!!createEnvError || !newEnvName.trim()}
-              />
-            </Space.Compact>
-            {createEnvError && (
-              <div style={{ color: 'var(--error)', fontSize: 11, marginBottom: 8 }}>
-                {createEnvError}
-              </div>
-            )}
+                onClick={handleOpenCreateEnv}
+              >
+                Add
+              </Button>
+            </div>
 
             {environments.length === 0 ? (
               <div
@@ -309,72 +283,67 @@ export function ProjectSettingsModal({
                 No environments yet.
               </div>
             ) : (
-              <Collapse
+              <Table
+                dataSource={environments}
+                rowKey="id"
+                pagination={false}
                 size="small"
-                accordion
-                items={environments.map((env) => ({
-                  key: env.id,
-                  label: (
-                    <span className="flex items-center gap-2">
+                columns={[
+                  {
+                    title: 'Name',
+                    dataIndex: 'name',
+                    render: (envName: string) => (
                       <span style={{ fontFamily: 'var(--font-ui)', fontWeight: 600, fontSize: 12 }}>
-                        {env.name}
+                        {envName}
                       </span>
-                      {env.host && (
-                        <span
-                          style={{
-                            color: 'var(--text-tertiary)',
-                            fontSize: 10,
-                            fontFamily: 'var(--font-code)',
-                          }}
-                        >
-                          {env.host}
-                        </span>
-                      )}
-                    </span>
-                  ),
-                  extra: (
-                    <Space size={4} onClick={(e) => e.stopPropagation()}>
-                      <Button
-                        size="small"
-                        type="text"
-                        icon={<EditOutlined />}
-                        onClick={() => handleOpenRename(env.id, env.name)}
-                        title="Rename"
-                      />
-                      <Button
-                        size="small"
-                        type="text"
-                        icon={<SettingOutlined />}
-                        onClick={() => handleOpenVarEditor(env.id)}
-                        title="Variables"
-                      />
-                      <Button
-                        size="small"
-                        type="text"
-                        danger
-                        icon={<DeleteOutlined />}
-                        onClick={() => handleDeleteEnv(env.id, env.name)}
-                        title="Delete"
-                      />
-                    </Space>
-                  ),
-                  children: (
-                    <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                      <div>Host: {env.host || '(not set)'}</div>
-                      <div>
-                        Variables: {(variables.get(env.id) ?? []).length} defined
-                      </div>
-                      <Button
-                        size="small"
-                        type="link"
-                        onClick={() => handleOpenVarEditor(env.id)}
-                        style={{ padding: 0, marginTop: 4 }}
+                    ),
+                  },
+                  {
+                    title: 'Host',
+                    dataIndex: 'host',
+                    render: (host: string | null) => (
+                      <span
+                        style={{
+                          color: host ? 'var(--text-primary)' : 'var(--text-tertiary)',
+                          fontSize: 11,
+                          fontFamily: 'var(--font-code)',
+                        }}
                       >
-                        Edit host & variables
-                      </Button>
-                    </div>
-                  ),
-                }))}
+                        {host || '(not set)'}
+                      </span>
+                    ),
+                  },
+                  {
+                    title: '',
+                    width: 120,
+                    render: (_: unknown, env: Environment) => (
+                      <Space size={4}>
+                        <Button
+                          size="small"
+                          type="text"
+                          icon={<EditOutlined />}
+                          onClick={() => handleOpenEditEnv(env)}
+                          title="Edit"
+                        />
+                        <Button
+                          size="small"
+                          type="text"
+                          icon={<SettingOutlined />}
+                          onClick={() => handleOpenVarEditor(env.id)}
+                          title="Variables"
+                        />
+                        <Button
+                          size="small"
+                          type="text"
+                          danger
+                          icon={<DeleteOutlined />}
+                          onClick={() => handleDeleteEnv(env.id, env.name)}
+                          title="Delete"
+                        />
+                      </Space>
+                    ),
+                  },
+                ]}
               />
             )}
           </div>
@@ -472,35 +441,16 @@ export function ProjectSettingsModal({
         </Button>
       </Modal>
 
-      {/* Rename Modal */}
-      <Modal
-        title="Rename Environment"
-        open={showRenameModal}
-        onOk={handleRename}
-        onCancel={() => {
-          setShowRenameModal(false);
-          setEditEnvId(null);
-        }}
-        okButtonProps={{ disabled: !editEnvName.trim() || !!renameEnvError }}
-        width={360}
-      >
-        <div className="flex flex-col gap-1">
-          <Input
-            placeholder="Environment name"
-            value={editEnvName}
-            onChange={(e) => setEditEnvName(e.target.value)}
-            onPressEnter={handleRename}
-            status={renameEnvError ? 'error' : undefined}
-            maxLength={100}
-            autoFocus
-          />
-          {renameEnvError && (
-            <span style={{ color: 'var(--error)', fontSize: 11 }}>
-              {renameEnvError}
-            </span>
-          )}
-        </div>
-      </Modal>
+      <EnvironmentFormModal
+        open={envFormOpen}
+        mode={envFormMode}
+        initialName={envFormEnv?.name}
+        initialHost={envFormEnv?.host ?? ''}
+        hasName={hasEnvironmentName}
+        excludeId={envFormEnv?.id}
+        onClose={handleCloseEnvForm}
+        onSave={handleSaveEnvForm}
+      />
     </>
   );
 }

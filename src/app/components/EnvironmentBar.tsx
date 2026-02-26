@@ -67,7 +67,6 @@ export function EnvironmentBar() {
               ),
               value: env.id,
             }))}
-            allowClear
           />
         </div>
         <Button

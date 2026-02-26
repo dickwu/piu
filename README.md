@@ -12,7 +12,8 @@ Built with **Tauri 2.0** (Rust backend) + **React 19** + **Next.js** + **Ant Des
 - 🚀 **Rust-side HTTP execution** — All requests run via `reqwest` on the Tauri backend (no CORS issues)
 - 🗃️ **JSON-based config storage** — Every request config stored as a JSON blob in SQLite
 - 🔢 **Version management** — Every change auto-increments a version number per entity with a full changelog
-- 🌍 **Environments & Variables** — `{{variable}}` interpolation across URLs, headers, and body
+- 🌍 **Environments & Variables** — `{{variable}}` interpolation across URLs, headers, and body; environment host + collection prefix build the full URL at execution time
+- 🔗 **URL resolution** — Requests store only the path (e.g. `/users/123`); the full URL is `env host + collection prefix + path`. Missing host shows a config prompt before sending
 - 🔑 **Auth support** — Bearer token, Basic auth, API key
 - ⚡ **Response viewer** — Status, headers, body (auto-formatted JSON), timing
 - 🔄 **Auto-updater** — Built-in Tauri updater with signed artifacts
@@ -37,7 +38,9 @@ Download the latest release for your platform from [Releases](https://github.com
 |---|---|
 | macOS (Apple Silicon) | `piu_x.x.x_aarch64.dmg` |
 | macOS (Intel) | `piu_x.x.x_x64.dmg` |
-| Linux | `piu_x.x.x_amd64.AppImage` |
+| Windows | `piu_x.x.x_x64-setup.exe` or `.msi` |
+| Linux (Debian/Ubuntu) | `piu_x.x.x_amd64.deb` |
+| Linux (Fedora/RHEL) | `piu-x.x.x-1.x86_64.rpm` |
 
 ## Development
 
@@ -94,12 +97,20 @@ Each request's configuration (method, URL, headers, params, body, auth) is store
 ```json
 {
   "method": "POST",
-  "url": "https://api.example.com/users/{{userId}}",
+  "url": "/users/{{userId}}",
   "headers": [{ "key": "Authorization", "value": "Bearer {{token}}", "enabled": true }],
   "params": [],
   "body": { "type": "json", "content": "{\"name\": \"test\"}" },
   "auth": { "type": "bearer", "token": "{{token}}" }
 }
+```
+
+The `url` field stores **only the path**. At execution time the Rust orchestrator builds the full URL as:
+
+```
+full URL = environment.host + collection.path_prefix + request.url
+         = "https://api.example.com" + "/v1" + "/users/123"
+         = "https://api.example.com/v1/users/123"
 ```
 
 ### Environment variables
@@ -113,14 +124,14 @@ Create environments (Dev, Staging, Prod) and define `key=value` pairs. Variables
 ./publish.sh 0.2.0    # specific version
 ```
 
-The script bumps versions in `Cargo.toml`, `tauri.conf.json`, and `package.json`, creates a git tag, and pushes. The `v*` tag triggers the GitHub Actions release workflow which builds for macOS (arm64 + x64) and Linux and publishes a signed GitHub release with an updater `latest.json`.
+The script bumps versions in `Cargo.toml`, `tauri.conf.json`, and `package.json`, creates a git tag, and pushes. The `v*` tag triggers the GitHub Actions release workflow which builds for macOS (arm64 + x64), Linux (deb + rpm), and Windows (MSI + NSIS), then publishes a signed GitHub release with an updater `latest.json`.
 
 ## CI / CD
 
 | Workflow | Trigger | What it does |
 |---|---|---|
-| `CI` | Push / PR to `main` | Builds all platforms, uploads artifacts |
-| `Release` | Push `v*` tag | Builds, signs, creates GitHub Release |
+| `CI` | Push / PR to `main` | Builds all platforms (macOS, Linux, Windows), uploads artifacts |
+| `Release` | Push `v*` tag | Builds, signs, creates GitHub Release with updater JSON |
 
 ## License
 

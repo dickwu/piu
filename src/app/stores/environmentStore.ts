@@ -29,6 +29,7 @@ interface EnvironmentStore {
     variables: { id: string; key: string; value: string; enabled: boolean }[],
   ) => Promise<void>;
   getResolvedVariables: () => Record<string, string>;
+  hasEnvironmentName: (name: string, excludeId?: string) => boolean;
 }
 
 export const useEnvironmentStore = create<EnvironmentStore>((set, get) => ({
@@ -127,5 +128,13 @@ export const useEnvironmentStore = create<EnvironmentStore>((set, get) => ({
       }
     }
     return resolved;
+  },
+
+  hasEnvironmentName: (name: string, excludeId?: string) => {
+    const { environments } = get();
+    const normalized = name.trim().toLowerCase();
+    return environments.some(
+      (e) => e.name.toLowerCase() === normalized && e.id !== excludeId,
+    );
   },
 }));

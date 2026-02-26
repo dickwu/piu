@@ -244,10 +244,50 @@ body::before {
   box-shadow: 0 0 12px var(--accent-glow), 0 0 4px var(--accent-subtle);
 }
 
-/* Sidebar gradient header */
+/* Sidebar section header (shared for Projects / Collections) */
+.sidebar-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: linear-gradient(135deg, var(--bg-surface) 0%, var(--bg-tertiary) 100%);
+  border-bottom: 1px solid var(--border);
+}
+
+/* Sidebar gradient header (legacy alias) */
 .sidebar-header {
   background: linear-gradient(135deg, var(--bg-surface) 0%, var(--bg-tertiary) 100%);
   border-bottom: 1px solid var(--border);
+}
+
+/* Project list item in sidebar */
+.project-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  border-left: 2px solid transparent;
+  transition: all var(--transition-fast);
+}
+
+.project-item:hover {
+  background-color: var(--bg-hover);
+}
+
+.project-item-active {
+  border-left-color: var(--accent);
+  background-color: var(--accent-subtle);
+}
+
+/* Environment count badge */
+.env-count-badge {
+  font-family: var(--font-code);
+  font-size: 9px;
+  color: var(--text-tertiary);
+  background: var(--bg-tertiary);
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
 }
 
 /* Status pill */

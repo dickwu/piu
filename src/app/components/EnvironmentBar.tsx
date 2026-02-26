@@ -1,8 +1,9 @@
 'use client';
 
-import { Select, Button, Modal, Input, Space, Switch, Table } from 'antd';
+import { Select, Button, Modal, Input, Space, Switch, Table, message } from 'antd';
 import {
   PlusOutlined,
+  EditOutlined,
   SettingOutlined,
   HistoryOutlined,
 } from '@ant-design/icons';
@@ -25,52 +26,93 @@ export function EnvironmentBar() {
     setVariables,
   } = useEnvironmentStore();
 
+  const hasEnvironmentName = useEnvironmentStore((s) => s.hasEnvironmentName);
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const [showChangelog, setShowChangelog] = useState(false);
+  const [showRenameModal, setShowRenameModal] = useState(false);
+  const [editEnvName, setEditEnvName] = useState('');
   const [newEnvName, setNewEnvName] = useState('');
   const [editingHost, setEditingHost] = useState('');
   const [editingVars, setEditingVars] = useState<
     { id: string; key: string; value: string; enabled: boolean }[]
   >([]);
 
+  const createEnvError =
+    newEnvName.trim() && hasEnvironmentName(newEnvName)
+      ? 'Environment name already exists'
+      : '';
+
+  const renameEnvError =
+    editEnvName.trim() && hasEnvironmentName(editEnvName, activeEnvironment?.id)
+      ? 'Environment name already exists'
+      : '';
+
   const handleCreateEnv = useCallback(async () => {
-    if (!newEnvName.trim()) return;
-    await createEnvironment(
-      newEnvName.trim(),
-      activeProjectId ?? undefined,
-    );
-    setNewEnvName('');
-  }, [newEnvName, createEnvironment, activeProjectId]);
+    if (!newEnvName.trim() || hasEnvironmentName(newEnvName)) return;
+    try {
+      await createEnvironment(
+        newEnvName.trim(),
+        activeProjectId ?? undefined,
+      );
+      setNewEnvName('');
+    } catch (error) {
+      message.error('Failed to create environment');
+    }
+  }, [newEnvName, createEnvironment, activeProjectId, hasEnvironmentName]);
+
+  const handleOpenRename = useCallback(() => {
+    if (!activeEnvironment) return;
+    setEditEnvName(activeEnvironment.name);
+    setShowRenameModal(true);
+  }, [activeEnvironment]);
+
+  const handleRename = useCallback(async () => {
+    if (!activeEnvironment || !editEnvName.trim()) return;
+    if (hasEnvironmentName(editEnvName, activeEnvironment.id)) return;
+    try {
+      await updateEnvironment(activeEnvironment.id, { name: editEnvName.trim() });
+      setShowRenameModal(false);
+    } catch (error) {
+      message.error('Failed to rename environment');
+    }
+  }, [activeEnvironment, editEnvName, hasEnvironmentName, updateEnvironment]);
 
   const handleOpenVarEditor = useCallback(async () => {
     if (!activeEnvironment) return;
-    await loadVariables(activeEnvironment.id);
-    const freshVars =
-      useEnvironmentStore.getState().variables.get(activeEnvironment.id) ?? [];
-    setEditingVars(
-      freshVars.map((v) => ({
-        id: v.id,
-        key: v.key,
-        value: v.value,
-        enabled: v.enabled,
-      })),
-    );
-    setEditingHost(activeEnvironment.host ?? '');
-    setEnvSettingsOpen(true);
+    try {
+      await loadVariables(activeEnvironment.id);
+      const freshVars =
+        useEnvironmentStore.getState().variables.get(activeEnvironment.id) ?? [];
+      setEditingVars(
+        freshVars.map((v) => ({
+          id: v.id,
+          key: v.key,
+          value: v.value,
+          enabled: v.enabled,
+        })),
+      );
+      setEditingHost(activeEnvironment.host ?? '');
+      setEnvSettingsOpen(true);
+    } catch (error) {
+      message.error('Failed to load environment variables');
+    }
   }, [activeEnvironment, loadVariables, setEnvSettingsOpen]);
 
   const handleSaveVars = useCallback(async () => {
     if (!activeEnvironment) return;
-    // Save host if changed
-    const currentHost = activeEnvironment.host ?? '';
-    if (editingHost !== currentHost) {
-      await updateEnvironment(activeEnvironment.id, {
-        host: editingHost.trim() || null,
-      });
+    try {
+      const currentHost = activeEnvironment.host ?? '';
+      if (editingHost !== currentHost) {
+        await updateEnvironment(activeEnvironment.id, {
+          host: editingHost.trim() || null,
+        });
+      }
+      await setVariables(activeEnvironment.id, editingVars);
+      setEnvSettingsOpen(false);
+    } catch (error) {
+      message.error('Failed to save environment variables');
     }
-    await setVariables(activeEnvironment.id, editingVars);
-    setEnvSettingsOpen(false);
-  }, [activeEnvironment, editingHost, editingVars, setVariables, updateEnvironment]);
+  }, [activeEnvironment, editingHost, editingVars, setVariables, updateEnvironment, setEnvSettingsOpen]);
 
   const addVariable = useCallback(() => {
     setEditingVars((prev) => [
@@ -149,17 +191,32 @@ export function EnvironmentBar() {
               onChange={(e) => setNewEnvName(e.target.value)}
               onPressEnter={handleCreateEnv}
               style={{ width: 140 }}
+              status={createEnvError ? 'error' : undefined}
+              maxLength={100}
             />
-            <Button icon={<PlusOutlined />} onClick={handleCreateEnv} />
+            <Button icon={<PlusOutlined />} onClick={handleCreateEnv} disabled={!!createEnvError} />
           </Space.Compact>
+          {createEnvError && (
+            <span style={{ color: 'var(--error)', fontSize: 11, fontFamily: 'var(--font-ui)' }}>
+              {createEnvError}
+            </span>
+          )}
           {activeEnvironment && (
-            <Button
-              size="small"
-              icon={<SettingOutlined />}
-              onClick={handleOpenVarEditor}
-            >
-              Variables
-            </Button>
+            <Space size={4}>
+              <Button
+                size="small"
+                type="text"
+                icon={<EditOutlined />}
+                onClick={handleOpenRename}
+              />
+              <Button
+                size="small"
+                icon={<SettingOutlined />}
+                onClick={handleOpenVarEditor}
+              >
+                Variables
+              </Button>
+            </Space>
           )}
         </div>
         <Button
@@ -259,6 +316,32 @@ export function EnvironmentBar() {
         >
           Add Variable
         </Button>
+      </Modal>
+
+      <Modal
+        title="Rename Environment"
+        open={showRenameModal}
+        onOk={handleRename}
+        onCancel={() => setShowRenameModal(false)}
+        okButtonProps={{ disabled: !editEnvName.trim() || !!renameEnvError }}
+        width={360}
+      >
+        <div className="flex flex-col gap-1">
+          <Input
+            placeholder="Environment name"
+            value={editEnvName}
+            onChange={(e) => setEditEnvName(e.target.value)}
+            onPressEnter={handleRename}
+            status={renameEnvError ? 'error' : undefined}
+            maxLength={100}
+            autoFocus
+          />
+          {renameEnvError && (
+            <span style={{ color: 'var(--error)', fontSize: 11, fontFamily: 'var(--font-ui)' }}>
+              {renameEnvError}
+            </span>
+          )}
+        </div>
       </Modal>
 
       <ChangelogModal

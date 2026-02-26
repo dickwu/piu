@@ -2,11 +2,10 @@
 
 import { useEffect } from 'react';
 import { Layout } from 'antd';
-import { Sidebar } from './components/Sidebar';
+import { SidebarLayout } from './components/SidebarLayout';
 import { RequestEditor } from './components/RequestEditor';
 import { ResponseViewer } from './components/ResponseViewer';
 import { EnvironmentBar } from './components/EnvironmentBar';
-import { ProjectSelector } from './components/ProjectSelector';
 import { StatusBar } from './components/StatusBar';
 import { useCollectionStore } from './stores/collectionStore';
 import { useEnvironmentStore } from './stores/environmentStore';
@@ -55,12 +54,11 @@ export default function Home() {
   return (
     <Layout className="animate-fade-in" style={{ height: '100vh' }}>
       <Header>
-        <ProjectSelector />
         <EnvironmentBar />
       </Header>
       <Layout hasSider>
         <Sider width={256} style={{ overflow: 'hidden' }}>
-          <Sidebar />
+          <SidebarLayout />
         </Sider>
         <Content style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           <RequestEditor />

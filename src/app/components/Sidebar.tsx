@@ -1,12 +1,13 @@
 'use client';
 
-import { Button, Input, Tree, Dropdown, Modal } from 'antd';
+import { Button, Tree, Dropdown, Tooltip } from 'antd';
 import {
   PlusOutlined,
   FolderOutlined,
   ApiOutlined,
   DeleteOutlined,
   CopyOutlined,
+  EditOutlined,
   SettingOutlined,
 } from '@ant-design/icons';
 import { useState, useCallback, useMemo, useEffect } from 'react';
@@ -14,9 +15,10 @@ import { useCollectionStore } from '../stores/collectionStore';
 import { useRequestEditorStore } from '../stores/requestStore';
 import { useProjectStore } from '../stores/projectStore';
 import type { ApiRequest } from '../types';
-import { parseConfig } from '../types';
+import { parseConfig, parseSharedHeaders, defaultRequestConfig } from '../types';
 import type { DataNode } from 'antd/es/tree';
-import { CollectionSettingsDrawer } from './CollectionSettingsDrawer';
+import { CollectionFormModal } from './CollectionFormModal';
+import { RequestFormModal } from './RequestFormModal';
 
 const METHOD_COLORS: Record<string, string> = {
   GET: '#34d399',
@@ -37,8 +39,10 @@ export function Sidebar() {
     settingsDrawerCollectionId,
     loadRequests,
     createCollection,
+    updateCollection,
     deleteCollection,
     createRequest,
+    updateRequest,
     deleteRequest,
     duplicateRequest,
     setSelectedCollection,
@@ -46,14 +50,20 @@ export function Sidebar() {
     setSettingsDrawerCollectionId,
   } = useCollectionStore();
 
-  const { setActiveRequest } = useRequestEditorStore();
+  const { activeRequestId, setActiveRequest } = useRequestEditorStore();
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
 
-  const [newName, setNewName] = useState('');
-  const [createType, setCreateType] = useState<'collection' | 'request'>(
-    'collection',
-  );
-  const [showCreateModal, setShowCreateModal] = useState(false);
+  // Collection form modal state
+  const [collFormOpen, setCollFormOpen] = useState(false);
+  const [collFormMode, setCollFormMode] = useState<'create' | 'edit'>('create');
+  const [collFormCollectionId, setCollFormCollectionId] = useState<string | null>(null);
+  const [collFormParentId, setCollFormParentId] = useState<string | null>(null);
+
+  // Request form modal state
+  const [reqFormOpen, setReqFormOpen] = useState(false);
+  const [reqFormMode, setReqFormMode] = useState<'create' | 'edit'>('create');
+  const [reqFormRequestId, setReqFormRequestId] = useState<string | null>(null);
+  const [reqFormCollectionId, setReqFormCollectionId] = useState<string | null>(null);
 
   // Load requests for all collections
   useEffect(() => {
@@ -62,23 +72,156 @@ export function Sidebar() {
     }
   }, [collections, loadRequests]);
 
-  const handleCreate = useCallback(async () => {
-    if (!newName.trim()) return;
-    if (createType === 'collection') {
-      await createCollection(newName.trim(), undefined, activeProjectId ?? undefined);
-    } else if (selectedCollectionId) {
-      await createRequest(selectedCollectionId, newName.trim());
+  // Sync external store trigger (from ConfigValidationModal) with local modal state
+  useEffect(() => {
+    if (settingsDrawerCollectionId) {
+      setCollFormMode('edit');
+      setCollFormCollectionId(settingsDrawerCollectionId);
+      setCollFormParentId(null);
+      setCollFormOpen(true);
+      setSettingsDrawerCollectionId(null);
     }
-    setNewName('');
-    setShowCreateModal(false);
-  }, [
-    newName,
-    createType,
-    selectedCollectionId,
-    createCollection,
-    createRequest,
-    activeProjectId,
-  ]);
+  }, [settingsDrawerCollectionId, setSettingsDrawerCollectionId]);
+
+  // --- Collection form helpers ---
+
+  const openCollectionCreate = useCallback((parentId: string | null) => {
+    setCollFormMode('create');
+    setCollFormCollectionId(null);
+    setCollFormParentId(parentId);
+    setCollFormOpen(true);
+  }, []);
+
+  const openCollectionEdit = useCallback((collectionId: string) => {
+    setCollFormMode('edit');
+    setCollFormCollectionId(collectionId);
+    setCollFormParentId(null);
+    setCollFormOpen(true);
+  }, []);
+
+  const handleCloseCollForm = useCallback(() => {
+    setCollFormOpen(false);
+    setCollFormCollectionId(null);
+    setCollFormParentId(null);
+  }, []);
+
+  const handleSaveCollForm = useCallback(
+    async (data: {
+      name: string;
+      pathPrefix: string | null;
+      description: string | null;
+      sharedHeaders: string;
+    }) => {
+      if (collFormMode === 'create') {
+        const col = await createCollection(
+          data.name,
+          collFormParentId ?? undefined,
+          activeProjectId ?? undefined,
+        );
+        await updateCollection(col.id, {
+          path_prefix: data.pathPrefix,
+          description: data.description,
+          shared_headers: data.sharedHeaders,
+        });
+      } else if (collFormCollectionId) {
+        await updateCollection(collFormCollectionId, {
+          name: data.name,
+          path_prefix: data.pathPrefix,
+          description: data.description,
+          shared_headers: data.sharedHeaders,
+        });
+      }
+      handleCloseCollForm();
+    },
+    [
+      collFormMode,
+      collFormCollectionId,
+      collFormParentId,
+      activeProjectId,
+      createCollection,
+      updateCollection,
+      handleCloseCollForm,
+    ],
+  );
+
+  // --- Request form helpers ---
+
+  const openRequestCreate = useCallback((collectionId: string) => {
+    setSelectedCollection(collectionId);
+    setReqFormMode('create');
+    setReqFormRequestId(null);
+    setReqFormCollectionId(collectionId);
+    setReqFormOpen(true);
+  }, [setSelectedCollection]);
+
+  const openRequestEdit = useCallback((req: ApiRequest) => {
+    setReqFormMode('edit');
+    setReqFormRequestId(req.id);
+    setReqFormCollectionId(req.collection_id);
+    setReqFormOpen(true);
+  }, []);
+
+  const handleCloseReqForm = useCallback(() => {
+    setReqFormOpen(false);
+    setReqFormRequestId(null);
+    setReqFormCollectionId(null);
+  }, []);
+
+  const findRequestById = useCallback(
+    (requestId: string): ApiRequest | undefined => {
+      for (const reqs of requests.values()) {
+        const found = reqs.find((r) => r.id === requestId);
+        if (found) return found;
+      }
+      return undefined;
+    },
+    [requests],
+  );
+
+  const handleSaveReqForm = useCallback(
+    async (data: { name: string; method: string; url: string }) => {
+      if (reqFormMode === 'create' && reqFormCollectionId) {
+        const config = { ...defaultRequestConfig(), method: data.method, url: data.url };
+        const req = await createRequest(
+          reqFormCollectionId,
+          data.name,
+          JSON.stringify(config),
+        );
+        // Auto-select the new request
+        setSelectedRequest(req.id);
+        setSelectedCollection(req.collection_id);
+        setActiveRequest(req.id, parseConfig(req.config));
+      } else if (reqFormMode === 'edit' && reqFormRequestId) {
+        const existing = findRequestById(reqFormRequestId);
+        if (existing) {
+          const existingConfig = parseConfig(existing.config);
+          const updatedConfig = { ...existingConfig, method: data.method, url: data.url };
+          await updateRequest(reqFormRequestId, {
+            name: data.name,
+            config: JSON.stringify(updatedConfig),
+          });
+          // Sync RequestEditor if this is the active request
+          if (reqFormRequestId === activeRequestId) {
+            setActiveRequest(reqFormRequestId, updatedConfig);
+          }
+        }
+      }
+      handleCloseReqForm();
+    },
+    [
+      reqFormMode,
+      reqFormRequestId,
+      reqFormCollectionId,
+      activeRequestId,
+      createRequest,
+      updateRequest,
+      findRequestById,
+      setSelectedRequest,
+      setSelectedCollection,
+      setActiveRequest,
+      handleCloseReqForm,
+    ],
+  );
 
   const handleSelectRequest = useCallback(
     (request: ApiRequest) => {
@@ -89,6 +232,27 @@ export function Sidebar() {
     },
     [setSelectedRequest, setSelectedCollection, setActiveRequest],
   );
+
+  // --- Computed values for modal initial props ---
+
+  const collFormCollection = collFormCollectionId
+    ? collections.find((c) => c.id === collFormCollectionId)
+    : undefined;
+
+  const collFormSharedHeaders = useMemo(
+    () =>
+      collFormCollection
+        ? parseSharedHeaders(collFormCollection.shared_headers)
+        : undefined,
+    [collFormCollection?.shared_headers],
+  );
+
+  const reqFormRequest = reqFormRequestId
+    ? findRequestById(reqFormRequestId)
+    : undefined;
+  const reqFormConfig = reqFormRequest
+    ? parseConfig(reqFormRequest.config)
+    : undefined;
 
   // Build tree data from collections and requests
   const treeData = useMemo(() => {
@@ -112,11 +276,18 @@ export function Sidebar() {
                 menu={{
                   items: [
                     {
+                      key: 'edit',
+                      icon: <EditOutlined />,
+                      label: 'Edit',
+                      onClick: () => openRequestEdit(req),
+                    },
+                    {
                       key: 'duplicate',
                       icon: <CopyOutlined />,
                       label: 'Duplicate',
                       onClick: () => duplicateRequest(req.id),
                     },
+                    { type: 'divider' },
                     {
                       key: 'delete',
                       icon: <DeleteOutlined />,
@@ -172,27 +343,19 @@ export function Sidebar() {
                     key: 'add-request',
                     icon: <PlusOutlined />,
                     label: 'New Request',
-                    onClick: () => {
-                      setSelectedCollection(col.id);
-                      setCreateType('request');
-                      setShowCreateModal(true);
-                    },
+                    onClick: () => openRequestCreate(col.id),
                   },
                   {
                     key: 'add-sub',
                     icon: <FolderOutlined />,
                     label: 'New Sub-collection',
-                    onClick: () => {
-                      setSelectedCollection(col.id);
-                      setCreateType('collection');
-                      setShowCreateModal(true);
-                    },
+                    onClick: () => openCollectionCreate(col.id),
                   },
                   {
                     key: 'settings',
                     icon: <SettingOutlined />,
                     label: 'Settings',
-                    onClick: () => setSettingsDrawerCollectionId(col.id),
+                    onClick: () => openCollectionEdit(col.id),
                   },
                   { type: 'divider' },
                   {
@@ -226,16 +389,47 @@ export function Sidebar() {
                     {col.path_prefix}
                   </span>
                 )}
-                <span
-                  className="ml-auto"
-                  style={{
-                    color: 'var(--text-tertiary)',
-                    fontFamily: 'var(--font-code)',
-                    fontSize: 9,
-                  }}
+                <div
+                  className="collection-item-actions ml-auto flex items-center gap-0.5"
+                  onClick={(e) => e.stopPropagation()}
                 >
-                  v{col.version}
-                </span>
+                  <Tooltip title="New Request" placement="top" mouseEnterDelay={0.5}>
+                    <Button
+                      size="small"
+                      type="text"
+                      icon={<PlusOutlined style={{ fontSize: 10 }} />}
+                      style={{ width: 18, height: 18, minWidth: 18, padding: 0 }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openRequestCreate(col.id);
+                      }}
+                    />
+                  </Tooltip>
+                  <Tooltip title="New Sub-collection" placement="top" mouseEnterDelay={0.5}>
+                    <Button
+                      size="small"
+                      type="text"
+                      icon={<FolderOutlined style={{ fontSize: 10 }} />}
+                      style={{ width: 18, height: 18, minWidth: 18, padding: 0 }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openCollectionCreate(col.id);
+                      }}
+                    />
+                  </Tooltip>
+                </div>
+                {!col.path_prefix && (
+                  <span
+                    className="collection-item-version ml-auto"
+                    style={{
+                      color: 'var(--text-tertiary)',
+                      fontFamily: 'var(--font-code)',
+                      fontSize: 9,
+                    }}
+                  >
+                    v{col.version}
+                  </span>
+                )}
               </span>
             </Dropdown>
           ),
@@ -250,10 +444,13 @@ export function Sidebar() {
     collections,
     requests,
     handleSelectRequest,
+    openRequestCreate,
+    openRequestEdit,
+    openCollectionCreate,
+    openCollectionEdit,
     duplicateRequest,
     deleteRequest,
     deleteCollection,
-    setSelectedCollection,
   ]);
 
   return (
@@ -269,14 +466,14 @@ export function Sidebar() {
           <Button
             size="small"
             icon={<PlusOutlined />}
-            onClick={() => {
-              setCreateType('collection');
-              setShowCreateModal(true);
-            }}
+            onClick={() => openCollectionCreate(null)}
           />
         </div>
 
-        <div className="flex-1 overflow-auto p-2">
+        <div
+          className="flex-1 overflow-auto p-2"
+          onContextMenu={(e) => e.preventDefault()}
+        >
           {treeData.length === 0 ? (
             <div
               className="p-4 text-center text-sm"
@@ -306,10 +503,7 @@ export function Sidebar() {
               type="dashed"
               block
               icon={<PlusOutlined />}
-              onClick={() => {
-                setCreateType('request');
-                setShowCreateModal(true);
-              }}
+              onClick={() => openRequestCreate(selectedCollectionId)}
             >
               New Request
             </Button>
@@ -317,30 +511,25 @@ export function Sidebar() {
         )}
       </div>
 
-      <Modal
-        title={
-          createType === 'collection' ? 'New Collection' : 'New Request'
-        }
-        open={showCreateModal}
-        onOk={handleCreate}
-        onCancel={() => setShowCreateModal(false)}
-        width={400}
-      >
-        <Input
-          placeholder={
-            createType === 'collection' ? 'Collection name' : 'Request name'
-          }
-          value={newName}
-          onChange={(e) => setNewName(e.target.value)}
-          onPressEnter={handleCreate}
-          autoFocus
-        />
-      </Modal>
+      <CollectionFormModal
+        open={collFormOpen}
+        mode={collFormMode}
+        initialName={collFormCollection?.name}
+        initialPathPrefix={collFormCollection?.path_prefix ?? ''}
+        initialDescription={collFormCollection?.description ?? ''}
+        initialSharedHeaders={collFormSharedHeaders}
+        onClose={handleCloseCollForm}
+        onSave={handleSaveCollForm}
+      />
 
-      <CollectionSettingsDrawer
-        collectionId={settingsDrawerCollectionId}
-        open={settingsDrawerCollectionId !== null}
-        onClose={() => setSettingsDrawerCollectionId(null)}
+      <RequestFormModal
+        open={reqFormOpen}
+        mode={reqFormMode}
+        initialName={reqFormRequest?.name}
+        initialMethod={reqFormConfig?.method}
+        initialUrl={reqFormConfig?.url}
+        onClose={handleCloseReqForm}
+        onSave={handleSaveReqForm}
       />
     </>
   );

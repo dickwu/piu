@@ -1,15 +1,19 @@
 'use client';
 
-import { useEffect, useRef, useCallback } from 'react';
-import { Button, Progress } from 'antd';
+import { useEffect, useRef, useCallback, useState } from 'react';
+import { Button, Progress, Select } from 'antd';
 import {
   CheckCircleOutlined,
   LoadingOutlined,
   DownloadOutlined,
   ReloadOutlined,
   WarningOutlined,
+  SettingOutlined,
 } from '@ant-design/icons';
 import { useUpdateStore } from '../stores/updateStore';
+import { useEnvironmentStore } from '../stores/environmentStore';
+import { useProjectStore } from '../stores/projectStore';
+import { ProjectSettingsModal } from './ProjectSettingsModal';
 
 const UPDATE_CHECK_DELAY_MS = 3000;
 
@@ -17,6 +21,23 @@ export function StatusBar() {
   const { status, currentVersion, setCurrentVersion, checkForUpdate, downloadAndInstall } =
     useUpdateStore();
   const checkedRef = useRef(false);
+
+  const {
+    environments,
+    activeEnvironment,
+    setActiveEnvironment,
+    loadVariables,
+  } = useEnvironmentStore();
+
+  const { activeProjectId, setSettingsProjectId, settingsProjectId } = useProjectStore();
+
+  const [showSettings, setShowSettings] = useState(false);
+
+  useEffect(() => {
+    if (activeEnvironment) {
+      loadVariables(activeEnvironment.id);
+    }
+  }, [activeEnvironment, loadVariables]);
 
   // Load current version on mount
   useEffect(() => {
@@ -43,6 +64,18 @@ export function StatusBar() {
     const { relaunch } = await import('@tauri-apps/plugin-process');
     await relaunch();
   }, []);
+
+  const handleOpenSettings = useCallback(() => {
+    if (activeProjectId) {
+      setSettingsProjectId(activeProjectId);
+      setShowSettings(true);
+    }
+  }, [activeProjectId, setSettingsProjectId]);
+
+  const handleCloseSettings = useCallback(() => {
+    setShowSettings(false);
+    setSettingsProjectId(null);
+  }, [setSettingsProjectId]);
 
   const renderStatus = () => {
     switch (status.state) {
@@ -113,25 +146,88 @@ export function StatusBar() {
   };
 
   return (
-    <div
-      className="flex items-center justify-end border-t px-4"
-      style={{
-        borderColor: 'var(--border)',
-        backgroundColor: 'var(--bg-secondary)',
-        height: 26,
-        fontSize: 10,
-        color: 'var(--text-tertiary)',
-        fontFamily: 'var(--font-code)',
-      }}
-    >
-      <div className="flex items-center gap-3">
-        {currentVersion && (
-          <span style={{ color: 'var(--text-tertiary)', letterSpacing: '0.02em' }}>
-            v{currentVersion}
-          </span>
-        )}
-        {renderStatus()}
+    <>
+      <div
+        className="flex items-center justify-between border-t px-4"
+        style={{
+          borderColor: 'var(--border)',
+          backgroundColor: 'var(--bg-secondary)',
+          height: 26,
+          fontSize: 10,
+          color: 'var(--text-tertiary)',
+          fontFamily: 'var(--font-code)',
+          paddingLeft: 20,
+          paddingRight: 20,
+        }}
+      >
+        {/* Left: env switch + settings */}
+        <div className="flex items-center gap-2">
+          <Select
+            size="small"
+            style={{ width: 160, fontSize: 10 }}
+            placeholder="No Environment"
+            value={activeEnvironment?.id}
+            onChange={(id) => {
+              if (activeProjectId) {
+                setActiveEnvironment(id, activeProjectId);
+              }
+            }}
+            options={environments.map((env) => ({
+              label: (
+                <span style={{ fontSize: 11 }}>
+                  {env.name}
+                  {env.host && (
+                    <span
+                      style={{
+                        color: 'var(--text-tertiary)',
+                        fontSize: 9,
+                        marginLeft: 4,
+                        fontFamily: 'var(--font-code)',
+                      }}
+                    >
+                      {env.host}
+                    </span>
+                  )}
+                </span>
+              ),
+              value: env.id,
+            }))}
+            allowClear
+            popupMatchSelectWidth={220}
+          />
+          <Button
+            type="text"
+            size="small"
+            icon={<SettingOutlined style={{ fontSize: 11 }} />}
+            onClick={handleOpenSettings}
+            disabled={!activeProjectId}
+            style={{
+              padding: 0,
+              width: 20,
+              height: 20,
+              minWidth: 20,
+              color: 'var(--text-tertiary)',
+            }}
+            title="Project Settings"
+          />
+        </div>
+
+        {/* Right: version + update status */}
+        <div className="flex items-center gap-3">
+          {currentVersion && (
+            <span style={{ color: 'var(--text-tertiary)', letterSpacing: '0.02em' }}>
+              v{currentVersion}
+            </span>
+          )}
+          {renderStatus()}
+        </div>
       </div>
-    </div>
+
+      <ProjectSettingsModal
+        projectId={settingsProjectId}
+        open={showSettings}
+        onClose={handleCloseSettings}
+      />
+    </>
   );
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { Drawer, Input, Button, Space } from 'antd';
+import { Modal, Input, Button, Space } from 'antd';
 import { SaveOutlined } from '@ant-design/icons';
 import { useState, useEffect, useCallback } from 'react';
 import { useCollectionStore } from '../stores/collectionStore';
@@ -52,18 +52,21 @@ export function CollectionSettingsDrawer({
   }, [collectionId, pathPrefix, description, headers, updateCollection, onClose]);
 
   return (
-    <Drawer
+    <Modal
       title={collection ? `${collection.name} — Settings` : 'Collection Settings'}
       open={open}
-      onClose={onClose}
-      width={480}
-      extra={
-        <Button type="primary" icon={<SaveOutlined />} onClick={handleSave}>
-          Save
-        </Button>
+      onCancel={onClose}
+      width={520}
+      footer={
+        <div className="flex justify-end gap-2">
+          <Button onClick={onClose}>Cancel</Button>
+          <Button type="primary" icon={<SaveOutlined />} onClick={handleSave}>
+            Save
+          </Button>
+        </div>
       }
     >
-      <Space direction="vertical" size="large" style={{ width: '100%' }}>
+      <Space orientation="vertical" size="large" style={{ width: '100%' }}>
         <div>
           <label
             className="mb-1 block text-xs font-semibold uppercase tracking-wider"
@@ -116,6 +119,6 @@ export function CollectionSettingsDrawer({
           <HeadersEditor headers={headers} onChange={setHeaders} />
         </div>
       </Space>
-    </Drawer>
+    </Modal>
   );
 }

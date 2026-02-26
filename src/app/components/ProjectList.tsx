@@ -1,37 +1,36 @@
 'use client';
 
-import { Button, Input, Modal, Dropdown, message } from 'antd';
+import { App, Button, Input, Modal, Dropdown } from 'antd';
 import {
   PlusOutlined,
-  EditOutlined,
   DeleteOutlined,
   CheckCircleFilled,
   MoreOutlined,
   ProjectOutlined,
+  SettingOutlined,
 } from '@ant-design/icons';
 import { useState, useCallback } from 'react';
 import { useProjectStore } from '../stores/projectStore';
 import { useEnvironmentStore } from '../stores/environmentStore';
+import { ProjectSettingsModal } from './ProjectSettingsModal';
 
 export function ProjectList() {
+  const { message, modal } = App.useApp();
   const {
     projects,
     activeProjectId,
+    settingsProjectId,
     setActiveProject,
+    setSettingsProjectId,
     createProject,
-    updateProject,
     deleteProject,
   } = useProjectStore();
 
   const environments = useEnvironmentStore((s) => s.environments);
 
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [showEditModal, setShowEditModal] = useState(false);
   const [newName, setNewName] = useState('');
   const [newDescription, setNewDescription] = useState('');
-  const [editName, setEditName] = useState('');
-  const [editDescription, setEditDescription] = useState('');
-  const [editProjectId, setEditProjectId] = useState<string | null>(null);
 
   const handleCreate = useCallback(async () => {
     if (!newName.trim()) return;
@@ -43,38 +42,12 @@ export function ProjectList() {
     } catch (error) {
       message.error('Failed to create project');
     }
-  }, [newName, newDescription, createProject]);
-
-  const handleEdit = useCallback(async () => {
-    if (!editProjectId || !editName.trim()) return;
-    try {
-      await updateProject(editProjectId, {
-        name: editName.trim(),
-        description: editDescription.trim() || null,
-      });
-      setShowEditModal(false);
-      setEditProjectId(null);
-    } catch (error) {
-      message.error('Failed to update project');
-    }
-  }, [editProjectId, editName, editDescription, updateProject]);
-
-  const handleOpenEdit = useCallback(
-    (projectId: string) => {
-      const project = projects.find((p) => p.id === projectId);
-      if (!project) return;
-      setEditProjectId(projectId);
-      setEditName(project.name);
-      setEditDescription(project.description ?? '');
-      setShowEditModal(true);
-    },
-    [projects],
-  );
+  }, [newName, newDescription, createProject, message]);
 
   const handleDelete = useCallback(
     (projectId: string) => {
       const project = projects.find((p) => p.id === projectId);
-      Modal.confirm({
+      modal.confirm({
         title: 'Delete Project',
         content: `Are you sure you want to delete "${project?.name ?? 'this project'}"? This action cannot be undone.`,
         okText: 'Delete',
@@ -88,12 +61,12 @@ export function ProjectList() {
         },
       });
     },
-    [projects, deleteProject],
+    [projects, deleteProject, message, modal],
   );
 
   return (
     <>
-      <div className="flex flex-col">
+      <div className="flex h-full flex-col">
         <div className="sidebar-section-header">
           <span
             className="text-xs font-bold uppercase tracking-wider"
@@ -108,7 +81,7 @@ export function ProjectList() {
           />
         </div>
 
-        <div style={{ maxHeight: '40%', overflowY: 'auto' }}>
+        <div style={{ flex: 1, overflowY: 'auto' }}>
           {projects.length === 0 ? (
             <div
               className="p-4 text-center text-xs"
@@ -190,12 +163,12 @@ export function ProjectList() {
                     menu={{
                       items: [
                         {
-                          key: 'edit',
-                          icon: <EditOutlined />,
-                          label: 'Edit',
+                          key: 'settings',
+                          icon: <SettingOutlined />,
+                          label: 'Settings',
                           onClick: (e) => {
                             e.domEvent.stopPropagation();
-                            handleOpenEdit(project.id);
+                            setSettingsProjectId(project.id);
                           },
                         },
                         {
@@ -252,34 +225,11 @@ export function ProjectList() {
         </div>
       </Modal>
 
-      <Modal
-        title="Edit Project"
-        open={showEditModal}
-        onOk={handleEdit}
-        onCancel={() => {
-          setShowEditModal(false);
-          setEditProjectId(null);
-        }}
-        width={400}
-      >
-        <div className="flex flex-col gap-2">
-          <Input
-            placeholder="Project name"
-            value={editName}
-            onChange={(e) => setEditName(e.target.value)}
-            onPressEnter={handleEdit}
-            maxLength={100}
-            autoFocus
-          />
-          <Input.TextArea
-            placeholder="Description (optional)"
-            value={editDescription}
-            onChange={(e) => setEditDescription(e.target.value)}
-            autoSize={{ minRows: 2, maxRows: 4 }}
-            maxLength={500}
-          />
-        </div>
-      </Modal>
+      <ProjectSettingsModal
+        projectId={settingsProjectId}
+        open={settingsProjectId !== null}
+        onClose={() => setSettingsProjectId(null)}
+      />
     </>
   );
 }

@@ -6,7 +6,9 @@ interface ProjectStore {
   projects: Project[];
   activeProjectId: string | null;
   loading: boolean;
+  settingsProjectId: string | null;
 
+  setSettingsProjectId: (id: string | null) => void;
   loadProjects: () => Promise<void>;
   getActiveProject: () => Promise<void>;
   setActiveProject: (id: string) => Promise<void>;
@@ -29,6 +31,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   projects: [],
   activeProjectId: null,
   loading: false,
+  settingsProjectId: null,
+
+  setSettingsProjectId: (id) => set({ settingsProjectId: id }),
 
   loadProjects: async () => {
     set({ loading: true });

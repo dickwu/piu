@@ -2,7 +2,7 @@
 
 import { Modal, Button, Space } from 'antd';
 import { WarningOutlined, GlobalOutlined, SettingOutlined } from '@ant-design/icons';
-import { useEnvironmentStore } from '../stores/environmentStore';
+import { useProjectStore } from '../stores/projectStore';
 import { useCollectionStore } from '../stores/collectionStore';
 
 interface ConfigValidationModalProps {
@@ -18,14 +18,17 @@ export function ConfigValidationModal({
   missingHost,
   activeRequestId,
 }: ConfigValidationModalProps) {
-  const setEnvSettingsOpen = useEnvironmentStore((s) => s.setEnvSettingsOpen);
+  const activeProjectId = useProjectStore((s) => s.activeProjectId);
+  const setSettingsProjectId = useProjectStore((s) => s.setSettingsProjectId);
   const getCollectionForRequest = useCollectionStore((s) => s.getCollectionForRequest);
   const setSettingsDrawerCollectionId = useCollectionStore(
     (s) => s.setSettingsDrawerCollectionId,
   );
 
   const handleOpenEnvironmentSettings = () => {
-    setEnvSettingsOpen(true);
+    if (activeProjectId) {
+      setSettingsProjectId(activeProjectId);
+    }
     onClose();
   };
 

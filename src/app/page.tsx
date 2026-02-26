@@ -2,10 +2,10 @@
 
 import { useEffect } from 'react';
 import { Layout } from 'antd';
-import { SidebarLayout } from './components/SidebarLayout';
+import { ProjectList } from './components/ProjectList';
+import { Sidebar } from './components/Sidebar';
 import { RequestEditor } from './components/RequestEditor';
 import { ResponseViewer } from './components/ResponseViewer';
-import { EnvironmentBar } from './components/EnvironmentBar';
 import { StatusBar } from './components/StatusBar';
 import { useCollectionStore } from './stores/collectionStore';
 import { useEnvironmentStore } from './stores/environmentStore';
@@ -13,7 +13,7 @@ import { useProjectStore } from './stores/projectStore';
 import { useResponseStore } from './stores/responseStore';
 import type { UnlistenFn } from '@tauri-apps/api/event';
 
-const { Header, Sider, Content, Footer } = Layout;
+const { Sider, Content, Footer } = Layout;
 
 export default function Home() {
   const loadCollections = useCollectionStore((s) => s.loadCollections);
@@ -53,17 +53,17 @@ export default function Home() {
 
   return (
     <Layout className="animate-fade-in" style={{ height: '100vh' }}>
-      <Header>
-        <EnvironmentBar />
-      </Header>
       <Layout hasSider>
-        <Sider width={256} style={{ overflow: 'hidden' }}>
-          <SidebarLayout />
+        <Sider width={220} style={{ overflow: 'hidden' }}>
+          <ProjectList />
         </Sider>
         <Content style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           <RequestEditor />
           <ResponseViewer />
         </Content>
+        <Sider width={256} style={{ overflow: 'hidden' }}>
+          <Sidebar />
+        </Sider>
       </Layout>
       <Footer>
         <StatusBar />

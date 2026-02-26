@@ -154,6 +154,31 @@ export function parseConfig(configStr: string): RequestConfig {
   }
 }
 
+export function parseQueryParamsFromUrl(url: string): {
+  path: string;
+  params: KeyValuePair[];
+} {
+  const qIndex = url.indexOf('?');
+  if (qIndex === -1) return { path: url, params: [] };
+
+  const path = url.slice(0, qIndex);
+  const queryString = url.slice(qIndex + 1);
+  const params = queryString
+    .split('&')
+    .filter(Boolean)
+    .map((pair) => {
+      const eqIndex = pair.indexOf('=');
+      if (eqIndex === -1) return { key: decodeURIComponent(pair), value: '', enabled: true };
+      return {
+        key: decodeURIComponent(pair.slice(0, eqIndex)),
+        value: decodeURIComponent(pair.slice(eqIndex + 1)),
+        enabled: true,
+      };
+    });
+
+  return { path, params };
+}
+
 export function parseSharedHeaders(json: string): KeyValuePair[] {
   try {
     const parsed = JSON.parse(json);

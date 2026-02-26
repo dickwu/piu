@@ -9,16 +9,18 @@ import {
   CopyOutlined,
   EditOutlined,
   SettingOutlined,
+  HistoryOutlined,
 } from '@ant-design/icons';
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { useCollectionStore } from '../stores/collectionStore';
 import { useRequestEditorStore } from '../stores/requestStore';
 import { useProjectStore } from '../stores/projectStore';
 import type { ApiRequest } from '../types';
-import { parseConfig, parseSharedHeaders, defaultRequestConfig } from '../types';
+import { parseConfig, parseSharedHeaders, defaultRequestConfig, parseQueryParamsFromUrl } from '../types';
 import type { DataNode } from 'antd/es/tree';
 import { CollectionFormModal } from './CollectionFormModal';
 import { RequestFormModal } from './RequestFormModal';
+import { ProjectHistoryModal } from './CollectionHistoryModal';
 
 const METHOD_COLORS: Record<string, string> = {
   GET: '#34d399',
@@ -65,6 +67,9 @@ export function Sidebar() {
   const [reqFormRequestId, setReqFormRequestId] = useState<string | null>(null);
   const [reqFormCollectionId, setReqFormCollectionId] = useState<string | null>(null);
 
+  // Project history modal state
+  const [historyOpen, setHistoryOpen] = useState(false);
+
   // Load requests for all collections
   useEffect(() => {
     for (const col of collections) {
@@ -97,6 +102,10 @@ export function Sidebar() {
     setCollFormCollectionId(collectionId);
     setCollFormParentId(null);
     setCollFormOpen(true);
+  }, []);
+
+  const handleCloseHistory = useCallback(() => {
+    setHistoryOpen(false);
   }, []);
 
   const handleCloseCollForm = useCallback(() => {
@@ -180,8 +189,15 @@ export function Sidebar() {
 
   const handleSaveReqForm = useCallback(
     async (data: { name: string; method: string; url: string }) => {
+      const { path: cleanUrl, params: parsedParams } = parseQueryParamsFromUrl(data.url);
+
       if (reqFormMode === 'create' && reqFormCollectionId) {
-        const config = { ...defaultRequestConfig(), method: data.method, url: data.url };
+        const config = {
+          ...defaultRequestConfig(),
+          method: data.method,
+          url: cleanUrl,
+          params: parsedParams,
+        };
         const req = await createRequest(
           reqFormCollectionId,
           data.name,
@@ -195,7 +211,12 @@ export function Sidebar() {
         const existing = findRequestById(reqFormRequestId);
         if (existing) {
           const existingConfig = parseConfig(existing.config);
-          const updatedConfig = { ...existingConfig, method: data.method, url: data.url };
+          const updatedConfig = {
+            ...existingConfig,
+            method: data.method,
+            url: cleanUrl,
+            params: [...existingConfig.params, ...parsedParams],
+          };
           await updateRequest(reqFormRequestId, {
             name: data.name,
             config: JSON.stringify(updatedConfig),
@@ -335,39 +356,6 @@ export function Sidebar() {
         return {
           key: `col-${col.id}`,
           title: (
-            <Dropdown
-              trigger={['contextMenu']}
-              menu={{
-                items: [
-                  {
-                    key: 'add-request',
-                    icon: <PlusOutlined />,
-                    label: 'New Request',
-                    onClick: () => openRequestCreate(col.id),
-                  },
-                  {
-                    key: 'add-sub',
-                    icon: <FolderOutlined />,
-                    label: 'New Sub-collection',
-                    onClick: () => openCollectionCreate(col.id),
-                  },
-                  {
-                    key: 'settings',
-                    icon: <SettingOutlined />,
-                    label: 'Settings',
-                    onClick: () => openCollectionEdit(col.id),
-                  },
-                  { type: 'divider' },
-                  {
-                    key: 'delete',
-                    icon: <DeleteOutlined />,
-                    label: 'Delete',
-                    danger: true,
-                    onClick: () => deleteCollection(col.id),
-                  },
-                ],
-              }}
-            >
               <span className="flex items-center gap-1.5">
                 <span
                   className="truncate text-xs font-semibold"
@@ -417,6 +405,31 @@ export function Sidebar() {
                       }}
                     />
                   </Tooltip>
+                  <Tooltip title="Settings" placement="top" mouseEnterDelay={0.5}>
+                    <Button
+                      size="small"
+                      type="text"
+                      icon={<SettingOutlined style={{ fontSize: 10 }} />}
+                      style={{ width: 18, height: 18, minWidth: 18, padding: 0 }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openCollectionEdit(col.id);
+                      }}
+                    />
+                  </Tooltip>
+                  <Tooltip title="Delete" placement="top" mouseEnterDelay={0.5}>
+                    <Button
+                      size="small"
+                      type="text"
+                      danger
+                      icon={<DeleteOutlined style={{ fontSize: 10 }} />}
+                      style={{ width: 18, height: 18, minWidth: 18, padding: 0 }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteCollection(col.id);
+                      }}
+                    />
+                  </Tooltip>
                 </div>
                 {!col.path_prefix && (
                   <span
@@ -431,7 +444,6 @@ export function Sidebar() {
                   </span>
                 )}
               </span>
-            </Dropdown>
           ),
           icon: <FolderOutlined />,
           children: [...childNodes, ...requestNodes],
@@ -463,11 +475,21 @@ export function Sidebar() {
           >
             Collections
           </span>
-          <Button
-            size="small"
-            icon={<PlusOutlined />}
-            onClick={() => openCollectionCreate(null)}
-          />
+          <div className="flex items-center gap-1">
+            <Tooltip title="History" placement="top" mouseEnterDelay={0.5}>
+              <Button
+                size="small"
+                type="text"
+                icon={<HistoryOutlined />}
+                onClick={() => setHistoryOpen(true)}
+              />
+            </Tooltip>
+            <Button
+              size="small"
+              icon={<PlusOutlined />}
+              onClick={() => openCollectionCreate(null)}
+            />
+          </div>
         </div>
 
         <div
@@ -530,6 +552,11 @@ export function Sidebar() {
         initialUrl={reqFormConfig?.url}
         onClose={handleCloseReqForm}
         onSave={handleSaveReqForm}
+      />
+
+      <ProjectHistoryModal
+        open={historyOpen}
+        onClose={handleCloseHistory}
       />
     </>
   );

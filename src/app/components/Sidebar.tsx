@@ -34,6 +34,7 @@ export function Sidebar() {
     requests,
     selectedCollectionId,
     selectedRequestId,
+    settingsDrawerCollectionId,
     loadRequests,
     createCollection,
     deleteCollection,
@@ -42,6 +43,7 @@ export function Sidebar() {
     duplicateRequest,
     setSelectedCollection,
     setSelectedRequest,
+    setSettingsDrawerCollectionId,
   } = useCollectionStore();
 
   const { setActiveRequest } = useRequestEditorStore();
@@ -52,7 +54,6 @@ export function Sidebar() {
     'collection',
   );
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [settingsCollectionId, setSettingsCollectionId] = useState<string | null>(null);
 
   // Load requests for all collections
   useEffect(() => {
@@ -191,7 +192,7 @@ export function Sidebar() {
                     key: 'settings',
                     icon: <SettingOutlined />,
                     label: 'Settings',
-                    onClick: () => setSettingsCollectionId(col.id),
+                    onClick: () => setSettingsDrawerCollectionId(col.id),
                   },
                   { type: 'divider' },
                   {
@@ -257,12 +258,7 @@ export function Sidebar() {
 
   return (
     <>
-      <div
-        className="flex h-full w-64 flex-col"
-        style={{
-          backgroundColor: 'var(--bg-secondary)',
-        }}
-      >
+      <div className="flex h-full flex-col">
         <div className="sidebar-header flex items-center justify-between p-3">
           <span
             className="text-xs font-bold uppercase tracking-wider"
@@ -342,9 +338,9 @@ export function Sidebar() {
       </Modal>
 
       <CollectionSettingsDrawer
-        collectionId={settingsCollectionId}
-        open={settingsCollectionId !== null}
-        onClose={() => setSettingsCollectionId(null)}
+        collectionId={settingsDrawerCollectionId}
+        open={settingsDrawerCollectionId !== null}
+        onClose={() => setSettingsDrawerCollectionId(null)}
       />
     </>
   );

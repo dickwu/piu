@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import { Layout } from 'antd';
 import { Sidebar } from './components/Sidebar';
 import { RequestEditor } from './components/RequestEditor';
 import { ResponseViewer } from './components/ResponseViewer';
@@ -12,6 +13,8 @@ import { useEnvironmentStore } from './stores/environmentStore';
 import { useProjectStore } from './stores/projectStore';
 import { useResponseStore } from './stores/responseStore';
 import type { UnlistenFn } from '@tauri-apps/api/event';
+
+const { Header, Sider, Content, Footer } = Layout;
 
 export default function Home() {
   const loadCollections = useCollectionStore((s) => s.loadCollections);
@@ -50,18 +53,23 @@ export default function Home() {
   }, [activeProjectId, loadCollections, loadEnvironments, loadActiveEnvironment]);
 
   return (
-    <div className="animate-fade-in flex h-screen flex-col" style={{ backgroundColor: 'var(--bg-primary)' }}>
-      <ProjectSelector />
-      <EnvironmentBar />
-      <div className="flex flex-1 overflow-hidden">
-        <Sidebar />
-        <div className="panel-separator" />
-        <div className="flex flex-1 flex-col overflow-hidden">
+    <Layout className="animate-fade-in" style={{ height: '100vh' }}>
+      <Header>
+        <ProjectSelector />
+        <EnvironmentBar />
+      </Header>
+      <Layout hasSider>
+        <Sider width={256} style={{ overflow: 'hidden' }}>
+          <Sidebar />
+        </Sider>
+        <Content style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           <RequestEditor />
           <ResponseViewer />
-        </div>
-      </div>
-      <StatusBar />
-    </div>
+        </Content>
+      </Layout>
+      <Footer>
+        <StatusBar />
+      </Footer>
+    </Layout>
   );
 }

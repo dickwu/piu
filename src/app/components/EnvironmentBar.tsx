@@ -16,6 +16,8 @@ export function EnvironmentBar() {
     environments,
     activeEnvironment,
     variables,
+    envSettingsOpen,
+    setEnvSettingsOpen,
     setActiveEnvironment,
     createEnvironment,
     updateEnvironment,
@@ -24,8 +26,6 @@ export function EnvironmentBar() {
   } = useEnvironmentStore();
 
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
-
-  const [showEnvModal, setShowEnvModal] = useState(false);
   const [showChangelog, setShowChangelog] = useState(false);
   const [newEnvName, setNewEnvName] = useState('');
   const [editingHost, setEditingHost] = useState('');
@@ -45,9 +45,10 @@ export function EnvironmentBar() {
   const handleOpenVarEditor = useCallback(async () => {
     if (!activeEnvironment) return;
     await loadVariables(activeEnvironment.id);
-    const vars = variables.get(activeEnvironment.id) ?? [];
+    const freshVars =
+      useEnvironmentStore.getState().variables.get(activeEnvironment.id) ?? [];
     setEditingVars(
-      vars.map((v) => ({
+      freshVars.map((v) => ({
         id: v.id,
         key: v.key,
         value: v.value,
@@ -55,8 +56,8 @@ export function EnvironmentBar() {
       })),
     );
     setEditingHost(activeEnvironment.host ?? '');
-    setShowEnvModal(true);
-  }, [activeEnvironment, variables, loadVariables]);
+    setEnvSettingsOpen(true);
+  }, [activeEnvironment, loadVariables, setEnvSettingsOpen]);
 
   const handleSaveVars = useCallback(async () => {
     if (!activeEnvironment) return;
@@ -68,7 +69,7 @@ export function EnvironmentBar() {
       });
     }
     await setVariables(activeEnvironment.id, editingVars);
-    setShowEnvModal(false);
+    setEnvSettingsOpen(false);
   }, [activeEnvironment, editingHost, editingVars, setVariables, updateEnvironment]);
 
   const addVariable = useCallback(() => {
@@ -172,9 +173,9 @@ export function EnvironmentBar() {
 
       <Modal
         title={`Environment - ${activeEnvironment?.name ?? ''}`}
-        open={showEnvModal}
+        open={envSettingsOpen}
         onOk={handleSaveVars}
-        onCancel={() => setShowEnvModal(false)}
+        onCancel={() => setEnvSettingsOpen(false)}
         width={700}
       >
         <div className="mb-3">

@@ -7,7 +7,9 @@ interface EnvironmentStore {
   activeEnvironment: Environment | null;
   variables: Map<string, EnvVariable[]>;
   loading: boolean;
+  envSettingsOpen: boolean;
 
+  setEnvSettingsOpen: (open: boolean) => void;
   loadEnvironments: (projectId?: string) => Promise<void>;
   loadActiveEnvironment: (projectId: string) => Promise<void>;
   loadVariables: (environmentId: string) => Promise<void>;
@@ -34,6 +36,9 @@ export const useEnvironmentStore = create<EnvironmentStore>((set, get) => ({
   activeEnvironment: null,
   variables: new Map(),
   loading: false,
+  envSettingsOpen: false,
+
+  setEnvSettingsOpen: (open) => set({ envSettingsOpen: open }),
 
   loadEnvironments: async (projectId?: string) => {
     const environments = await invoke<Environment[]>('list_environments', {

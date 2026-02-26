@@ -262,25 +262,6 @@ body::before {
   gap: 4px;
 }
 
-/* Panel separator */
-.panel-separator {
-  width: 1px;
-  background: var(--border);
-  transition: background-color var(--transition-base);
-  flex-shrink: 0;
-  position: relative;
-}
-
-.panel-separator:hover {
-  background: var(--accent);
-}
-
-.panel-separator::after {
-  content: '';
-  position: absolute;
-  inset: 0 -3px;
-}
-
 /* ============================================================
    Ant Design Dark Overrides
    ============================================================ */
@@ -505,4 +486,26 @@ body::before {
 /* List */
 .ant-list-item {
   border-block-end-color: var(--border) !important;
+}
+
+/* Layout */
+.ant-layout {
+  background: var(--bg-primary) !important;
+}
+
+.ant-layout-header {
+  background: transparent !important;
+  height: auto !important;
+  line-height: normal !important;
+  padding: 0 !important;
+}
+
+.ant-layout-footer {
+  background: transparent !important;
+  padding: 0 !important;
+}
+
+.ant-layout-sider {
+  background: var(--bg-secondary) !important;
+  border-right: 1px solid var(--border) !important;
 }

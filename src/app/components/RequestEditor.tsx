@@ -2,14 +2,29 @@
 
 import { Select, Input, Button, Tabs, Space } from 'antd';
 import { SendOutlined, SaveOutlined } from '@ant-design/icons';
-import { useCallback } from 'react';
+import { useCallback, useState, useMemo } from 'react';
 import { useRequestEditorStore } from '../stores/requestStore';
 import { useCollectionStore } from '../stores/collectionStore';
 import { useResponseStore } from '../stores/responseStore';
+import { useEnvironmentStore } from '../stores/environmentStore';
 import { HeadersEditor } from './HeadersEditor';
 import { ParamsEditor } from './ParamsEditor';
 import { BodyEditor } from './BodyEditor';
 import { AuthEditor } from './AuthEditor';
+import { ConfigValidationModal } from './ConfigValidationModal';
+
+function extractPathFromUrl(input: string): string {
+  const trimmed = input.trim();
+  if (/^https?:\/\//i.test(trimmed)) {
+    try {
+      const parsed = new URL(trimmed);
+      return parsed.pathname + parsed.search + parsed.hash;
+    } catch {
+      return trimmed;
+    }
+  }
+  return input;
+}
 
 const HTTP_METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'];
 
@@ -27,8 +42,26 @@ export function RequestEditor() {
   const { activeRequestId, config, activeTab, isDirty, updateConfig, setActiveTab } =
     useRequestEditorStore();
   const updateRequest = useCollectionStore((s) => s.updateRequest);
+  const collections = useCollectionStore((s) => s.collections);
+  const requests = useCollectionStore((s) => s.requests);
   const { executeRequest, loading } = useResponseStore();
   const resetDirty = useRequestEditorStore((s) => s.resetDirty);
+  const activeEnvironment = useEnvironmentStore((s) => s.activeEnvironment);
+  const [showConfigModal, setShowConfigModal] = useState(false);
+
+  const collection = useMemo(() => {
+    if (!activeRequestId) return undefined;
+    for (const [collectionId, reqs] of requests.entries()) {
+      if (reqs.some((r) => r.id === activeRequestId)) {
+        return collections.find((c) => c.id === collectionId);
+      }
+    }
+    return undefined;
+  }, [activeRequestId, collections, requests]);
+
+  const hostPart = activeEnvironment?.host?.replace(/\/+$/, '') ?? '';
+  const prefixPart = collection?.path_prefix?.replace(/\/+$/, '') ?? '';
+  const basePart = hostPart + prefixPart;
 
   const handleSave = useCallback(async () => {
     if (!activeRequestId) return;
@@ -40,6 +73,15 @@ export function RequestEditor() {
 
   const handleSend = useCallback(async () => {
     if (!activeRequestId) return;
+
+    // Validate: environment host must be set for the Rust backend to build a full URL
+    const env = useEnvironmentStore.getState().activeEnvironment;
+    const hostConfigured = env?.host && env.host.trim().length > 0;
+
+    if (!hostConfigured) {
+      setShowConfigModal(true);
+      return;
+    }
 
     // Save first if dirty
     if (isDirty) {
@@ -98,11 +140,28 @@ export function RequestEditor() {
         />
         <Input
           className="input-mono"
-          placeholder="Enter relative URL (e.g. /api/users)"
+          placeholder="/users/123"
           value={config.url}
-          onChange={(e) => updateConfig({ url: e.target.value })}
+          onChange={(e) => updateConfig({ url: extractPathFromUrl(e.target.value) })}
           onPressEnter={handleSend}
           style={{ flex: 1 }}
+          addonBefore={
+            <span
+              style={{
+                fontFamily: 'var(--font-code)',
+                fontSize: 12,
+                color: basePart ? 'var(--text-tertiary)' : 'var(--warning)',
+                maxWidth: 300,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                display: 'inline-block',
+              }}
+              title={basePart || 'No host configured - set an environment host'}
+            >
+              {basePart || '(no host)'}
+            </span>
+          }
         />
         <Space.Compact>
           {isDirty && (
@@ -122,6 +181,13 @@ export function RequestEditor() {
           </Button>
         </Space.Compact>
       </div>
+
+      <ConfigValidationModal
+        open={showConfigModal}
+        onClose={() => setShowConfigModal(false)}
+        missingHost={!hostPart}
+        activeRequestId={activeRequestId}
+      />
 
       {/* Config Tabs */}
       <Tabs

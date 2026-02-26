@@ -67,6 +67,14 @@ export function Providers({ children }: { children: ReactNode }) {
             headerBg: '#16161f',
             rowHoverBg: '#22222e',
           },
+          Layout: {
+            headerBg: 'transparent',
+            bodyBg: '#0a0a0f',
+            footerBg: 'transparent',
+            siderBg: '#101018',
+            headerPadding: '0',
+            footerPadding: '0',
+          },
         },
       }}
     >

@@ -8,6 +8,7 @@ interface CollectionStore {
   selectedCollectionId: string | null;
   selectedRequestId: string | null;
   loading: boolean;
+  settingsDrawerCollectionId: string | null;
 
   loadCollections: (projectId?: string) => Promise<void>;
   loadRequests: (collectionId: string) => Promise<void>;
@@ -47,6 +48,7 @@ interface CollectionStore {
   getCollectionForRequest: (requestId: string) => Collection | undefined;
   setSelectedCollection: (id: string | null) => void;
   setSelectedRequest: (id: string | null) => void;
+  setSettingsDrawerCollectionId: (id: string | null) => void;
 }
 
 export const useCollectionStore = create<CollectionStore>((set, get) => ({
@@ -55,6 +57,7 @@ export const useCollectionStore = create<CollectionStore>((set, get) => ({
   selectedCollectionId: null,
   selectedRequestId: null,
   loading: false,
+  settingsDrawerCollectionId: null,
 
   loadCollections: async (projectId?: string) => {
     set({ loading: true });
@@ -161,4 +164,5 @@ export const useCollectionStore = create<CollectionStore>((set, get) => ({
 
   setSelectedCollection: (id) => set({ selectedCollectionId: id }),
   setSelectedRequest: (id) => set({ selectedRequestId: id }),
+  setSettingsDrawerCollectionId: (id) => set({ settingsDrawerCollectionId: id }),
 }));

@@ -7,6 +7,7 @@ import { useRequestEditorStore } from '../stores/requestStore';
 import { useCollectionStore } from '../stores/collectionStore';
 import { useResponseStore } from '../stores/responseStore';
 import { useEnvironmentStore } from '../stores/environmentStore';
+import { parseQueryParamsFromUrl } from '../types';
 import { HeadersEditor } from './HeadersEditor';
 import { ParamsEditor } from './ParamsEditor';
 import { BodyEditor } from './BodyEditor';
@@ -138,31 +139,39 @@ export function RequestEditor() {
             value: m,
           }))}
         />
-        <Input
-          className="input-mono"
-          placeholder="/users/123"
-          value={config.url}
-          onChange={(e) => updateConfig({ url: extractPathFromUrl(e.target.value) })}
-          onPressEnter={handleSend}
-          style={{ flex: 1 }}
-          addonBefore={
-            <span
-              style={{
-                fontFamily: 'var(--font-code)',
-                fontSize: 12,
-                color: basePart ? 'var(--text-tertiary)' : 'var(--warning)',
-                maxWidth: 300,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-                display: 'inline-block',
-              }}
-              title={basePart || 'No host configured - set an environment host'}
-            >
-              {basePart || '(no host)'}
-            </span>
-          }
-        />
+        <Space.Compact style={{ flex: 1 }}>
+          <Button
+            style={{
+              fontFamily: 'var(--font-code)',
+              fontSize: 12,
+              color: basePart ? 'var(--text-tertiary)' : 'var(--warning)',
+              maxWidth: 300,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              cursor: 'default',
+              pointerEvents: 'none',
+            }}
+            title={basePart || 'No host configured - set an environment host'}
+          >
+            {basePart || '(no host)'}
+          </Button>
+          <Input
+            className="input-mono"
+            placeholder="/users/123"
+            value={config.url}
+            onChange={(e) => {
+              const extracted = extractPathFromUrl(e.target.value);
+              const { path, params: newParams } = parseQueryParamsFromUrl(extracted);
+              if (newParams.length > 0) {
+                updateConfig({ url: path, params: [...config.params, ...newParams] });
+              } else {
+                updateConfig({ url: extracted });
+              }
+            }}
+            onPressEnter={handleSend}
+          />
+        </Space.Compact>
         <Space.Compact>
           {isDirty && (
             <Button icon={<SaveOutlined />} onClick={handleSave}>

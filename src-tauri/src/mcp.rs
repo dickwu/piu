@@ -180,6 +180,47 @@ struct ChangelogParam {
     offset: Option<i64>,
 }
 
+
+#[derive(Deserialize, JsonSchema)]
+struct ModelIdParam {
+    #[schemars(description = "The data model's unique ID")]
+    model_id: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct CreateModelParam {
+    #[schemars(description = "Project ID this model belongs to")]
+    project_id: String,
+    #[schemars(description = "Model name (e.g. 'User', 'OrderResponse')")]
+    name: String,
+    #[schemars(description = "Model description")]
+    description: Option<String>,
+    #[schemars(description = "Fields as JSON array: [{\"name\":\"id\",\"field_type\":\"string\",\"description\":\"User ID\",\"required\":true,\"example\":\"usr_123\",\"ref_model_id\":null}]")]
+    fields: Option<String>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct UpdateModelParam {
+    #[schemars(description = "The data model's unique ID")]
+    model_id: String,
+    #[schemars(description = "New model name")]
+    name: Option<String>,
+    #[schemars(description = "New model description (null to clear)")]
+    description: Option<Option<String>>,
+    #[schemars(description = "Updated fields as JSON array")]
+    fields: Option<String>,
+    #[schemars(description = "New sort order")]
+    sort_order: Option<i64>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct ValidateResponseParam {
+    #[schemars(description = "The data model's unique ID to validate against")]
+    model_id: String,
+    #[schemars(description = "The JSON response body to validate")]
+    response_body: String,
+}
+
 // ============ Helper Functions ============
 
 fn mcp_err(msg: impl std::fmt::Display) -> McpError {
@@ -1037,6 +1078,358 @@ impl PiuMcp {
         }))
     }
 
+    // ---- Data Models ----
+
+    #[tool(
+        description = "List all data models for a project with field counts and descriptions."
+    )]
+    async fn list_models(
+        &self,
+        Parameters(p): Parameters<ProjectIdParam>,
+    ) -> Result<CallToolResult, McpError> {
+        let models = db::models::list_models(&p.project_id)
+            .await
+            .map_err(mcp_err)?;
+        let result: Vec<serde_json::Value> = models
+            .iter()
+            .map(|m| {
+                let fields: Vec<serde_json::Value> =
+                    serde_json::from_str(&m.fields).unwrap_or_default();
+                serde_json::json!({
+                    "id": m.id,
+                    "project_id": m.project_id,
+                    "name": m.name,
+                    "description": m.description,
+                    "field_count": fields.len(),
+                    "sort_order": m.sort_order,
+                    "version": m.version,
+                    "created_at": m.created_at,
+                    "updated_at": m.updated_at,
+                })
+            })
+            .collect();
+        text_result(&serde_json::json!({ "models": result, "total": result.len() }))
+    }
+
+    #[tool(
+        description = "Get detailed info about a data model including all parsed fields with their types, descriptions, required status, examples, and model references."
+    )]
+    async fn get_model(
+        &self,
+        Parameters(p): Parameters<ModelIdParam>,
+    ) -> Result<CallToolResult, McpError> {
+        let model = db::models::get_model(&p.model_id)
+            .await
+            .map_err(mcp_err)?
+            .ok_or_else(|| mcp_err(format!("Model {} not found", p.model_id)))?;
+
+        let fields: Vec<serde_json::Value> =
+            serde_json::from_str(&model.fields).unwrap_or_default();
+
+        text_result(&serde_json::json!({
+            "id": model.id,
+            "project_id": model.project_id,
+            "name": model.name,
+            "description": model.description,
+            "fields": fields,
+            "field_count": fields.len(),
+            "sort_order": model.sort_order,
+            "version": model.version,
+            "created_at": model.created_at,
+            "updated_at": model.updated_at,
+        }))
+    }
+
+    #[tool(
+        description = "Create a new data model in a project with a name, optional description, and optional field definitions."
+    )]
+    async fn create_model(
+        &self,
+        Parameters(p): Parameters<CreateModelParam>,
+    ) -> Result<CallToolResult, McpError> {
+        if let Some(ref fields_json) = p.fields {
+            db::models::validate_model_refs(&p.project_id, fields_json)
+                .await
+                .map_err(mcp_err)?;
+        }
+        let id = uuid::Uuid::new_v4().to_string();
+        let model = db::models::create_model(
+            &id,
+            &p.project_id,
+            &p.name,
+            p.description.as_deref(),
+            p.fields.as_deref(),
+        )
+        .await
+        .map_err(mcp_err)?;
+
+        let fields: Vec<serde_json::Value> =
+            serde_json::from_str(&model.fields).unwrap_or_default();
+
+        text_result(&serde_json::json!({
+            "id": model.id,
+            "project_id": model.project_id,
+            "name": model.name,
+            "description": model.description,
+            "fields": fields,
+            "field_count": fields.len(),
+            "sort_order": model.sort_order,
+            "version": model.version,
+            "created_at": model.created_at,
+            "updated_at": model.updated_at,
+        }))
+    }
+
+    #[tool(
+        description = "Update a data model's name, description, fields, or sort order."
+    )]
+    async fn update_model(
+        &self,
+        Parameters(p): Parameters<UpdateModelParam>,
+    ) -> Result<CallToolResult, McpError> {
+        if let Some(ref fields_json) = p.fields {
+            // Retrieve project_id for ref validation
+            let existing = db::models::get_model(&p.model_id)
+                .await
+                .map_err(mcp_err)?
+                .ok_or_else(|| mcp_err(format!("Model {} not found", p.model_id)))?;
+            db::models::validate_model_refs(&existing.project_id, fields_json)
+                .await
+                .map_err(mcp_err)?;
+        }
+
+        let desc = p.description.as_ref().map(|o| o.as_deref());
+        let model = db::models::update_model(
+            &p.model_id,
+            p.name.as_deref(),
+            desc,
+            p.fields.as_deref(),
+            p.sort_order,
+        )
+        .await
+        .map_err(mcp_err)?;
+
+        let fields: Vec<serde_json::Value> =
+            serde_json::from_str(&model.fields).unwrap_or_default();
+
+        text_result(&serde_json::json!({
+            "id": model.id,
+            "project_id": model.project_id,
+            "name": model.name,
+            "description": model.description,
+            "fields": fields,
+            "field_count": fields.len(),
+            "sort_order": model.sort_order,
+            "version": model.version,
+            "created_at": model.created_at,
+            "updated_at": model.updated_at,
+        }))
+    }
+
+    #[tool(
+        description = "Delete a data model. References to this model in other models' fields will be automatically cleared."
+    )]
+    async fn delete_model(
+        &self,
+        Parameters(p): Parameters<ModelIdParam>,
+    ) -> Result<CallToolResult, McpError> {
+        db::models::delete_model(&p.model_id)
+            .await
+            .map_err(mcp_err)?;
+        text_result(&serde_json::json!({ "deleted": p.model_id }))
+    }
+
+    #[tool(
+        description = "Generate a sample JSON request body from a data model's field definitions. Uses example values when available, with recursive model reference expansion."
+    )]
+    async fn generate_body_from_model(
+        &self,
+        Parameters(p): Parameters<ModelIdParam>,
+    ) -> Result<CallToolResult, McpError> {
+        let model = db::models::get_model(&p.model_id)
+            .await
+            .map_err(mcp_err)?
+            .ok_or_else(|| mcp_err(format!("Model {} not found", p.model_id)))?;
+
+        // Load all sibling models for ref expansion
+        let all_models = db::models::list_models(&model.project_id)
+            .await
+            .unwrap_or_default();
+
+        fn build_sample(
+            fields_json: &str,
+            all_models: &[db::models::DataModel],
+            visited: &mut std::collections::HashSet<String>,
+            depth: u8,
+        ) -> serde_json::Value {
+            if depth > 5 {
+                return serde_json::json!({});
+            }
+            let fields: Vec<serde_json::Value> =
+                serde_json::from_str(fields_json).unwrap_or_default();
+            let mut obj = serde_json::Map::new();
+            for field in &fields {
+                let name = field.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                if name.is_empty() {
+                    continue;
+                }
+                let field_type = field
+                    .get("field_type")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("string");
+                let example = field.get("example").and_then(|v| v.as_str());
+                let ref_model_id = field
+                    .get("ref_model_id")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty());
+
+
+                let value = if let Some(ref_id) = ref_model_id {
+                    let raw = if visited.contains(ref_id) {
+                        serde_json::json!(null)
+                    } else if let Some(ref_model) = all_models.iter().find(|m| m.id == ref_id) {
+                        visited.insert(ref_id.to_string());
+                        let v = build_sample(&ref_model.fields, all_models, visited, depth + 1);
+                        visited.remove(ref_id);
+                        v
+                    } else {
+                        serde_json::json!({})
+                    };
+                    if field_type == "array" {
+                        serde_json::json!([raw])
+                    } else {
+                        raw
+                    }
+                } else if let Some(ex) = example {
+                    // Try to parse as JSON value first; fall back to string
+                    serde_json::from_str(ex).unwrap_or_else(|_| serde_json::Value::String(ex.to_string()))
+                } else {
+                    match field_type {
+                        "string" => serde_json::json!(""),
+                        "number" | "integer" => serde_json::json!(0),
+                        "boolean" => serde_json::json!(false),
+                        "array" => serde_json::json!([]),
+                        "object" => serde_json::json!({}),
+                        _ => serde_json::json!(null),
+                    }
+                };
+                obj.insert(name.to_string(), value);
+            }
+            serde_json::Value::Object(obj)
+        }
+
+        let mut visited = std::collections::HashSet::new();
+        visited.insert(model.id.clone());
+        let sample = build_sample(&model.fields, &all_models, &mut visited, 0);
+        let pretty = serde_json::to_string_pretty(&sample).unwrap_or_else(|_| "{}".to_string());
+
+        text_result(&serde_json::json!({
+            "model_id": model.id,
+            "model_name": model.name,
+            "sample_body": pretty,
+        }))
+    }
+
+    #[tool(
+        description = "Validate a JSON response body against a data model's field definitions. Checks required fields and basic type matching."
+    )]
+    async fn validate_response_against_model(
+        &self,
+        Parameters(p): Parameters<ValidateResponseParam>,
+    ) -> Result<CallToolResult, McpError> {
+        let model = db::models::get_model(&p.model_id)
+            .await
+            .map_err(mcp_err)?
+            .ok_or_else(|| mcp_err(format!("Model {} not found", p.model_id)))?;
+
+        let fields: Vec<serde_json::Value> =
+            serde_json::from_str(&model.fields).unwrap_or_default();
+
+        let response: serde_json::Value = serde_json::from_str(&p.response_body)
+            .map_err(|e| mcp_err(format!("Invalid JSON response body: {}", e)))?;
+
+        let response_obj = response.as_object();
+
+        let mut results: Vec<serde_json::Value> = Vec::new();
+        let mut valid_count = 0usize;
+        let mut missing_count = 0usize;
+        let mut mismatch_count = 0usize;
+
+        for field in &fields {
+            let name = match field.get("name").and_then(|v| v.as_str()) {
+                Some(n) if !n.is_empty() => n,
+                _ => continue,
+            };
+            let expected_type = field
+                .get("field_type")
+                .and_then(|v| v.as_str())
+                .unwrap_or("string");
+            let required = field
+                .get("required")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+
+            let actual_value = response_obj.and_then(|obj| obj.get(name));
+
+            let (status, actual_type) = match actual_value {
+                None => {
+                    if required {
+                        missing_count += 1;
+                        ("missing", "absent")
+                    } else {
+                        // optional and absent — treat as valid
+                        valid_count += 1;
+                        ("valid", "absent")
+                    }
+                }
+                Some(v) => {
+                    let actual = match v {
+                        serde_json::Value::String(_) => "string",
+                        serde_json::Value::Number(n) => {
+                            if n.is_f64() { "number" } else { "integer" }
+                        }
+                        serde_json::Value::Bool(_) => "boolean",
+                        serde_json::Value::Array(_) => "array",
+                        serde_json::Value::Object(_) => "object",
+                        serde_json::Value::Null => "null",
+                    };
+                    // Loose type matching: integer satisfies number
+                    let matches = actual == expected_type
+                        || (expected_type == "number" && actual == "integer")
+                        || (expected_type == "integer" && actual == "number");
+                    if matches {
+                        valid_count += 1;
+                        ("valid", actual)
+                    } else {
+                        mismatch_count += 1;
+                        ("type_mismatch", actual)
+                    }
+                }
+            };
+
+            results.push(serde_json::json!({
+                "field": name,
+                "expected_type": expected_type,
+                "actual_type": actual_type,
+                "required": required,
+                "status": status,
+            }));
+        }
+
+        text_result(&serde_json::json!({
+            "model_id": model.id,
+            "model_name": model.name,
+            "is_valid": missing_count == 0 && mismatch_count == 0,
+            "summary": {
+                "valid": valid_count,
+                "missing": missing_count,
+                "type_mismatch": mismatch_count,
+                "total_fields": results.len(),
+            },
+            "fields": results,
+        }))
+    }
+
     // ---- Execution ----
 
     #[tool(
@@ -1298,14 +1691,14 @@ impl ServerHandler for PiuMcp {
                 name: "piu-mcp".into(),
                 title: Some("PIU MCP Server".into()),
                 version: env!("CARGO_PKG_VERSION").into(),
-                description: Some("Manage projects, collections, API requests, environments, and execute HTTP calls.".into()),
+                description: Some("Manage projects, collections, API requests, environments, data models, and execute HTTP calls.".into()),
                 icons: None,
                 website_url: None,
             },
             instructions: Some(
                 "PIU API management server. Manage projects, collections, API requests, \
-                 environments, variables, and execute HTTP requests with full URL resolution \
-                 and variable interpolation."
+                 environments, variables, data models (with typed fields and documentation), \
+                 and execute HTTP requests with full URL resolution and variable interpolation."
                     .into(),
             ),
         }

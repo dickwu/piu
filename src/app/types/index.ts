@@ -43,6 +43,8 @@ export interface RequestConfig {
   body: RequestBody;
   auth: AuthConfig;
   description?: string;
+  requestModelId?: string;
+  responseModelId?: string;
 }
 
 export interface KeyValuePair {
@@ -107,6 +109,47 @@ export interface ChangelogEntry {
   summary: string;
   diff: string | null;
   created_at: number;
+}
+
+// Data model types
+
+export type FieldType = 'string' | 'number' | 'boolean' | 'array' | 'object' | 'null' | 'any';
+
+export interface ModelField {
+  name: string;
+  field_type: FieldType;
+  description: string;
+  required: boolean;
+  example: string | null;
+  ref_model_id: string | null;
+}
+
+export interface DataModel {
+  id: string;
+  project_id: string;
+  name: string;
+  description: string | null;
+  fields: string; // JSON array of ModelField
+  sort_order: number;
+  version: number;
+  created_at: number;
+  updated_at: number;
+}
+
+export function parseModelFields(fieldsJson: string): ModelField[] {
+  try {
+    const parsed = JSON.parse(fieldsJson);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (item): item is ModelField =>
+        typeof item === 'object' &&
+        item !== null &&
+        typeof item.name === 'string' &&
+        typeof item.field_type === 'string',
+    );
+  } catch {
+    return [];
+  }
 }
 
 // Execution progress via Tauri events

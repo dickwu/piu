@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect } from 'react';
-import { Layout } from 'antd';
 import { ProjectList } from './components/ProjectList';
 import { Sidebar } from './components/Sidebar';
 import { RequestEditor } from './components/RequestEditor';
@@ -11,9 +10,8 @@ import { useCollectionStore } from './stores/collectionStore';
 import { useEnvironmentStore } from './stores/environmentStore';
 import { useProjectStore } from './stores/projectStore';
 import { useResponseStore } from './stores/responseStore';
+import { useModelStore } from './stores/modelStore';
 import type { UnlistenFn } from '@tauri-apps/api/event';
-
-const { Sider, Content, Footer } = Layout;
 
 export default function Home() {
   const loadCollections = useCollectionStore((s) => s.loadCollections);
@@ -21,6 +19,7 @@ export default function Home() {
   const loadActiveEnvironment = useEnvironmentStore((s) => s.loadActiveEnvironment);
   const { loadProjects, getActiveProject, activeProjectId } = useProjectStore();
   const initListener = useResponseStore((s) => s.initListener);
+  const loadModels = useModelStore((s) => s.loadModels);
 
   // Initialize Tauri event listener for request progress
   useEffect(() => {
@@ -48,26 +47,31 @@ export default function Home() {
     loadEnvironments(activeProjectId ?? undefined);
     if (activeProjectId) {
       loadActiveEnvironment(activeProjectId);
+      loadModels(activeProjectId);
     }
-  }, [activeProjectId, loadCollections, loadEnvironments, loadActiveEnvironment]);
+  }, [activeProjectId, loadCollections, loadEnvironments, loadActiveEnvironment, loadModels]);
 
   return (
-    <Layout className="animate-fade-in" style={{ height: '100vh' }}>
-      <Layout hasSider>
-        <Sider width={220} style={{ overflow: 'hidden' }}>
+    <div className="app-shell animate-fade-in">
+      {/* Three-panel layout with Apple-style spacing */}
+      <div className="panel-layout">
+        <aside className="panel-sidebar panel-sidebar-left">
           <ProjectList />
-        </Sider>
-        <Content style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        </aside>
+
+        <main className="panel-content">
           <RequestEditor />
           <ResponseViewer />
-        </Content>
-        <Sider width={256} style={{ overflow: 'hidden' }}>
+        </main>
+
+        <aside className="panel-sidebar panel-sidebar-right">
           <Sidebar />
-        </Sider>
-      </Layout>
-      <Footer>
+        </aside>
+      </div>
+
+      <footer className="app-footer">
         <StatusBar />
-      </Footer>
-    </Layout>
+      </footer>
+    </div>
   );
 }

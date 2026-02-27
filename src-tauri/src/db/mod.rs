@@ -14,6 +14,7 @@ pub mod changelog;
 pub mod collections;
 pub mod environments;
 pub mod projects;
+pub mod models;
 pub mod requests;
 
 // Re-export types
@@ -21,6 +22,7 @@ pub use changelog::ChangelogEntry;
 pub use collections::Collection;
 pub use environments::{EnvVariable, Environment};
 pub use projects::Project;
+pub use models::DataModel;
 pub use requests::ApiRequest;
 
 // ============ Connection and Initialization ============
@@ -40,13 +42,14 @@ pub async fn init_db(db_path: &Path) -> DbResult<()> {
     conn.execute("PRAGMA foreign_keys = ON;", ()).await?;
 
     conn.execute_batch(&format!(
-        "{}{}{}{}{}{}",
+        "{}{}{}{}{}{}{}",
         projects::get_table_sql(),
         collections::get_table_sql(),
         requests::get_table_sql(),
         environments::get_table_sql(),
         changelog::get_table_sql(),
         app_state::get_table_sql(),
+        models::get_table_sql(),
     ))
     .await?;
 
@@ -204,6 +207,11 @@ pub use environments::{
 
 // Re-export changelog functions
 pub use changelog::get_changelog;
+
+// Re-export model functions
+pub use models::{
+    create_model, delete_model, get_model, list_models, update_model, validate_model_refs,
+};
 
 // Re-export app_state functions
 pub use app_state::{get_app_state, set_app_state};

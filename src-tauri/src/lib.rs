@@ -128,6 +128,13 @@ pub fn run() {
             commands::list_env_variables,
             // Changelog commands
             commands::get_changelog,
+            // Model commands
+            commands::create_model,
+            commands::update_model,
+            commands::delete_model,
+            commands::get_model,
+            commands::list_models,
+            commands::generate_json_from_model,
             // MCP server commands
             commands::start_mcp_server,
             commands::stop_mcp_server,

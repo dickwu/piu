@@ -1,7 +1,7 @@
 'use client';
 
 import { Select, Input, Button, Tabs, Space } from 'antd';
-import { SendOutlined, SaveOutlined } from '@ant-design/icons';
+import { SendOutlined, SaveOutlined, ApiOutlined } from '@ant-design/icons';
 import { useCallback, useState, useMemo } from 'react';
 import { useRequestEditorStore } from '../stores/requestStore';
 import { useCollectionStore } from '../stores/collectionStore';
@@ -96,10 +96,24 @@ export function RequestEditor() {
   if (!activeRequestId) {
     return (
       <div
-        className="flex flex-1 flex-col items-center justify-center gap-2"
+        className="flex flex-1 flex-col items-center justify-center gap-3"
         style={{ color: 'var(--text-tertiary)' }}
       >
-        <span style={{ fontSize: 14, fontFamily: 'var(--font-ui)', fontWeight: 600 }}>
+        <div
+          style={{
+            width: 48,
+            height: 48,
+            borderRadius: 'var(--radius-lg)',
+            background: 'var(--bg-tertiary)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            opacity: 0.6,
+          }}
+        >
+          <ApiOutlined style={{ fontSize: 22, color: 'var(--text-tertiary)' }} />
+        </div>
+        <span style={{ fontSize: 14, fontFamily: 'var(--font-ui)', fontWeight: 600, color: 'var(--text-secondary)' }}>
           Select a request from the sidebar
         </span>
         <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
@@ -116,8 +130,8 @@ export function RequestEditor() {
     >
       {/* URL Bar */}
       <div
-        className="flex items-center gap-3 border-b p-3"
-        style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-secondary)' }}
+        className="glass-header flex items-center gap-3 p-3"
+        style={{ position: 'relative' }}
       >
         <Select
           value={config.method}
@@ -234,6 +248,8 @@ export function RequestEditor() {
               <BodyEditor
                 body={config.body}
                 onChange={(body) => updateConfig({ body })}
+                requestModelId={config.requestModelId}
+                onModelChange={(modelId) => updateConfig({ requestModelId: modelId })}
               />
             ),
           },

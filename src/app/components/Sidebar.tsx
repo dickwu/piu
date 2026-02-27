@@ -10,6 +10,8 @@ import {
   EditOutlined,
   SettingOutlined,
   HistoryOutlined,
+  SwapOutlined,
+  DatabaseOutlined,
 } from '@ant-design/icons';
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { useCollectionStore } from '../stores/collectionStore';
@@ -21,6 +23,8 @@ import type { DataNode } from 'antd/es/tree';
 import { CollectionFormModal } from './CollectionFormModal';
 import { RequestFormModal } from './RequestFormModal';
 import { ProjectHistoryModal } from './CollectionHistoryModal';
+import { MoveRequestModal } from './MoveRequestModal';
+import { ModelManager } from './ModelManager';
 
 const METHOD_COLORS: Record<string, string> = {
   GET: '#34d399',
@@ -69,6 +73,13 @@ export function Sidebar() {
 
   // Project history modal state
   const [historyOpen, setHistoryOpen] = useState(false);
+
+  // Move request modal state
+  const [moveModalOpen, setMoveModalOpen] = useState(false);
+  const [moveRequest, setMoveRequest] = useState<ApiRequest | null>(null);
+
+  // Model manager drawer state
+  const [modelManagerOpen, setModelManagerOpen] = useState(false);
 
   // Load requests for all collections
   useEffect(() => {
@@ -174,6 +185,18 @@ export function Sidebar() {
     setReqFormOpen(false);
     setReqFormRequestId(null);
     setReqFormCollectionId(null);
+  }, []);
+
+  // --- Move request helpers ---
+
+  const openMoveModal = useCallback((req: ApiRequest) => {
+    setMoveRequest(req);
+    setMoveModalOpen(true);
+  }, []);
+
+  const handleCloseMoveModal = useCallback(() => {
+    setMoveModalOpen(false);
+    setMoveRequest(null);
   }, []);
 
   const findRequestById = useCallback(
@@ -307,6 +330,12 @@ export function Sidebar() {
                       icon: <CopyOutlined />,
                       label: 'Duplicate',
                       onClick: () => duplicateRequest(req.id),
+                    },
+                    {
+                      key: 'move',
+                      icon: <SwapOutlined />,
+                      label: 'Move to...',
+                      onClick: () => openMoveModal(req),
                     },
                     { type: 'divider' },
                     {
@@ -460,6 +489,7 @@ export function Sidebar() {
     openRequestEdit,
     openCollectionCreate,
     openCollectionEdit,
+    openMoveModal,
     duplicateRequest,
     deleteRequest,
     deleteCollection,
@@ -468,7 +498,8 @@ export function Sidebar() {
   return (
     <>
       <div className="flex h-full flex-col">
-        <div className="sidebar-header flex items-center justify-between p-3">
+        {/* Liquid Glass header — floats above scrolling collection tree */}
+        <div className="glass-header flex items-center justify-between p-3">
           <span
             className="text-xs font-bold uppercase tracking-wider"
             style={{ fontFamily: 'var(--font-ui)', color: 'var(--text-secondary)' }}
@@ -476,6 +507,14 @@ export function Sidebar() {
             Collections
           </span>
           <div className="flex items-center gap-1">
+            <Tooltip title="Model Manager" placement="top" mouseEnterDelay={0.5}>
+              <Button
+                size="small"
+                type="text"
+                icon={<DatabaseOutlined />}
+                onClick={() => setModelManagerOpen(true)}
+              />
+            </Tooltip>
             <Tooltip title="History" placement="top" mouseEnterDelay={0.5}>
               <Button
                 size="small"
@@ -492,8 +531,9 @@ export function Sidebar() {
           </div>
         </div>
 
+        {/* Glass scroll area with edge fade effects */}
         <div
-          className="flex-1 overflow-auto p-2"
+          className="glass-scroll-area glass-tree flex-1 p-2"
           onContextMenu={(e) => e.preventDefault()}
         >
           {treeData.length === 0 ? (
@@ -518,8 +558,9 @@ export function Sidebar() {
           )}
         </div>
 
+        {/* Liquid Glass footer — action bar */}
         {selectedCollectionId && (
-          <div className="border-t p-2" style={{ borderColor: 'var(--border)' }}>
+          <div className="glass-footer p-2">
             <Button
               size="small"
               type="dashed"
@@ -557,6 +598,17 @@ export function Sidebar() {
       <ProjectHistoryModal
         open={historyOpen}
         onClose={handleCloseHistory}
+      />
+
+      <MoveRequestModal
+        open={moveModalOpen}
+        request={moveRequest}
+        onClose={handleCloseMoveModal}
+      />
+
+      <ModelManager
+        open={modelManagerOpen}
+        onClose={() => setModelManagerOpen(false)}
       />
     </>
   );

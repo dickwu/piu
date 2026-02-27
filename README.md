@@ -8,7 +8,7 @@ Built with **Tauri 2.0** (Rust backend) + **React 19** + **Next.js** + **Ant Des
 
 ## Features
 
-- 📁 **Nested Collections** — Organize API requests in hierarchical folders
+- 📁 **Nested Collections** — Organize API requests in hierarchical folders with drag-to-move support
 - 🗂️ **Project sidebar** — Switch projects from a compact sidebar panel with name, description, and env count badge
 - 🚀 **Rust-side HTTP execution** — All requests run via `reqwest` on the Tauri backend (no CORS issues)
 - 🗃️ **JSON-based config storage** — Every request config stored as a JSON blob in SQLite
@@ -19,6 +19,9 @@ Built with **Tauri 2.0** (Rust backend) + **React 19** + **Next.js** + **Ant Des
 - 🔑 **Auth support** — Bearer token, Basic auth, API key
 - ⚡ **Response viewer** — Status, headers, body (auto-formatted JSON), timing
 - 🔄 **Auto-updater** — Built-in Tauri updater with signed artifacts
+- 🧩 **Data Models** — Per-project typed schemas with named fields, descriptions, required flags, and example values. Link a model to a request to generate sample JSON bodies or validate response shapes inline
+- 🤖 **MCP Server** — 35 built-in tools let Claude (or any MCP client) create projects, send requests, manage collections, and now create/query/validate data models — all without leaving the chat
+- 📦 **Move-to-Collection** — Right-click any request in the sidebar to move it to a different collection via a tree picker
 
 ## Tech Stack
 
@@ -67,8 +70,8 @@ bun tauri dev
 piu/
 ├── src/                        # React/Next.js frontend
 │   └── app/
-│       ├── components/         # UI components
-│       ├── stores/             # Zustand state stores
+│       ├── components/         # UI components (editors, viewers, modals, sidebar)
+│       ├── stores/             # Zustand state stores (6 stores)
 │       └── types/              # TypeScript types (mirrors Rust structs)
 └── src-tauri/                  # Rust backend
     └── src/
@@ -76,10 +79,13 @@ piu/
         │   ├── collections.rs  # Collection CRUD + versioning
         │   ├── requests.rs     # API request CRUD + JSON config
         │   ├── environments.rs # Env variables
+        │   ├── models.rs       # Data model CRUD (fields as JSON)
         │   └── changelog.rs    # Version history
-        ├── commands/           # Tauri IPC commands
+        ├── commands/           # Tauri IPC commands (~35 handlers)
+        ├── mcp.rs              # In-process MCP server (35 tools)
         └── http/
-            └── executor.rs     # reqwest HTTP engine + {{var}} interpolation
+            ├── executor.rs     # reqwest HTTP engine
+            └── orchestrator.rs # URL resolution + {{var}} interpolation + auth
 ```
 
 ## How it works

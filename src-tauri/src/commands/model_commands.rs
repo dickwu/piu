@@ -90,10 +90,8 @@ pub async fn generate_json_from_model(model_id: String) -> Result<String, String
         .await
         .map_err(|e| e.to_string())?;
 
-    let model_map: HashMap<String, db::DataModel> = all_models
-        .into_iter()
-        .map(|m| (m.id.clone(), m))
-        .collect();
+    let model_map: HashMap<String, db::DataModel> =
+        all_models.into_iter().map(|m| (m.id.clone(), m)).collect();
 
     let mut visited = HashSet::new();
     let value = generate_json_for_model(&model, &model_map, &mut visited, 0);
@@ -115,8 +113,7 @@ fn generate_json_for_model(
 
     visited.insert(model.id.clone());
 
-    let fields: Vec<serde_json::Value> =
-        serde_json::from_str(&model.fields).unwrap_or_default();
+    let fields: Vec<serde_json::Value> = serde_json::from_str(&model.fields).unwrap_or_default();
 
     let mut obj = serde_json::Map::new();
 
@@ -139,9 +136,7 @@ fn generate_json_for_model(
             .map(str::to_string);
 
         let value = match field_type {
-            "string" => serde_json::Value::String(
-                example.unwrap_or_default(),
-            ),
+            "string" => serde_json::Value::String(example.unwrap_or_default()),
             "number" => {
                 let n = example
                     .as_deref()
@@ -160,8 +155,12 @@ fn generate_json_for_model(
                 if let Some(ref rid) = ref_model_id {
                     if let Some(ref_model) = model_map.get(rid) {
                         let mut child_visited = visited.clone();
-                        let item =
-                            generate_json_for_model(ref_model, model_map, &mut child_visited, depth + 1);
+                        let item = generate_json_for_model(
+                            ref_model,
+                            model_map,
+                            &mut child_visited,
+                            depth + 1,
+                        );
                         serde_json::Value::Array(vec![item])
                     } else {
                         serde_json::Value::Array(vec![])

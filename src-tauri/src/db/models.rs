@@ -46,8 +46,8 @@ pub struct ModelField {
 /// Validate that every non-null `ref_model_id` in `fields_json` refers to
 /// a data_model that exists within `project_id`.
 pub async fn validate_model_refs(project_id: &str, fields_json: &str) -> DbResult<()> {
-    let fields: Vec<ModelField> = serde_json::from_str(fields_json)
-        .map_err(|e| format!("Invalid fields JSON: {}", e))?;
+    let fields: Vec<ModelField> =
+        serde_json::from_str(fields_json).map_err(|e| format!("Invalid fields JSON: {}", e))?;
 
     for field in &fields {
         if let Some(ref ref_id) = field.ref_model_id {

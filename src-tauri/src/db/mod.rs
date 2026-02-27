@@ -13,16 +13,16 @@ pub mod app_state;
 pub mod changelog;
 pub mod collections;
 pub mod environments;
-pub mod projects;
 pub mod models;
+pub mod projects;
 pub mod requests;
 
 // Re-export types
 pub use changelog::ChangelogEntry;
 pub use collections::Collection;
 pub use environments::{EnvVariable, Environment};
-pub use projects::Project;
 pub use models::DataModel;
+pub use projects::Project;
 pub use requests::ApiRequest;
 
 // ============ Connection and Initialization ============

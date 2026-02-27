@@ -180,7 +180,6 @@ struct ChangelogParam {
     offset: Option<i64>,
 }
 
-
 #[derive(Deserialize, JsonSchema)]
 struct ModelIdParam {
     #[schemars(description = "The data model's unique ID")]
@@ -195,7 +194,9 @@ struct CreateModelParam {
     name: String,
     #[schemars(description = "Model description")]
     description: Option<String>,
-    #[schemars(description = "Fields as JSON array: [{\"name\":\"id\",\"field_type\":\"string\",\"description\":\"User ID\",\"required\":true,\"example\":\"usr_123\",\"ref_model_id\":null}]")]
+    #[schemars(
+        description = "Fields as JSON array: [{\"name\":\"id\",\"field_type\":\"string\",\"description\":\"User ID\",\"required\":true,\"example\":\"usr_123\",\"ref_model_id\":null}]"
+    )]
     fields: Option<String>,
 }
 
@@ -1080,9 +1081,7 @@ impl PiuMcp {
 
     // ---- Data Models ----
 
-    #[tool(
-        description = "List all data models for a project with field counts and descriptions."
-    )]
+    #[tool(description = "List all data models for a project with field counts and descriptions.")]
     async fn list_models(
         &self,
         Parameters(p): Parameters<ProjectIdParam>,
@@ -1180,9 +1179,7 @@ impl PiuMcp {
         }))
     }
 
-    #[tool(
-        description = "Update a data model's name, description, fields, or sort order."
-    )]
+    #[tool(description = "Update a data model's name, description, fields, or sort order.")]
     async fn update_model(
         &self,
         Parameters(p): Parameters<UpdateModelParam>,
@@ -1283,7 +1280,6 @@ impl PiuMcp {
                     .and_then(|v| v.as_str())
                     .filter(|s| !s.is_empty());
 
-
                 let value = if let Some(ref_id) = ref_model_id {
                     let raw = if visited.contains(ref_id) {
                         serde_json::json!(null)
@@ -1302,7 +1298,8 @@ impl PiuMcp {
                     }
                 } else if let Some(ex) = example {
                     // Try to parse as JSON value first; fall back to string
-                    serde_json::from_str(ex).unwrap_or_else(|_| serde_json::Value::String(ex.to_string()))
+                    serde_json::from_str(ex)
+                        .unwrap_or_else(|_| serde_json::Value::String(ex.to_string()))
                 } else {
                     match field_type {
                         "string" => serde_json::json!(""),
@@ -1386,7 +1383,11 @@ impl PiuMcp {
                     let actual = match v {
                         serde_json::Value::String(_) => "string",
                         serde_json::Value::Number(n) => {
-                            if n.is_f64() { "number" } else { "integer" }
+                            if n.is_f64() {
+                                "number"
+                            } else {
+                                "integer"
+                            }
                         }
                         serde_json::Value::Bool(_) => "boolean",
                         serde_json::Value::Array(_) => "array",

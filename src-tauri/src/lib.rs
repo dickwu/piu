@@ -5,6 +5,7 @@ mod commands;
 pub mod db;
 pub mod http;
 pub mod mcp;
+pub mod sync;
 
 const APP_NAME: &str = "piu";
 
@@ -140,6 +141,11 @@ pub fn run() {
             commands::stop_mcp_server,
             commands::get_mcp_server_status,
             commands::run_claude_mcp_install,
+            // Sync server commands
+            commands::start_sync_server,
+            commands::stop_sync_server,
+            commands::get_sync_server_status,
+            commands::sync_connect,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

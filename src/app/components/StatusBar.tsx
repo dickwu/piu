@@ -10,6 +10,7 @@ import {
   WarningOutlined,
   SettingOutlined,
   ApiOutlined,
+  SyncOutlined,
 } from '@ant-design/icons';
 import { invoke } from '@tauri-apps/api/core';
 import { useUpdateStore } from '../stores/updateStore';
@@ -17,6 +18,7 @@ import { useEnvironmentStore } from '../stores/environmentStore';
 import { useProjectStore } from '../stores/projectStore';
 import { ProjectSettingsModal } from './ProjectSettingsModal';
 import { McpServerModal } from './McpServerModal';
+import { SyncServerModal } from './SyncServerModal';
 
 const UPDATE_CHECK_DELAY_MS = 3000;
 
@@ -36,7 +38,9 @@ export function StatusBar() {
 
   const [showSettings, setShowSettings] = useState(false);
   const [showMcp, setShowMcp] = useState(false);
+  const [showSync, setShowSync] = useState(false);
   const [mcpRunning, setMcpRunning] = useState(false);
+  const [syncRunning, setSyncRunning] = useState(false);
 
   const refreshMcpStatus = useCallback(async () => {
     try {
@@ -47,9 +51,19 @@ export function StatusBar() {
     }
   }, []);
 
+  const refreshSyncStatus = useCallback(async () => {
+    try {
+      const s = await invoke<{ running: boolean }>('get_sync_server_status');
+      setSyncRunning(s.running);
+    } catch {
+      setSyncRunning(false);
+    }
+  }, []);
+
   useEffect(() => {
     refreshMcpStatus();
-  }, [refreshMcpStatus]);
+    refreshSyncStatus();
+  }, [refreshMcpStatus, refreshSyncStatus]);
 
   useEffect(() => {
     if (activeEnvironment) {
@@ -253,6 +267,34 @@ export function StatusBar() {
               }}
             />
           </Button>
+          <Button
+            type="text"
+            size="small"
+            icon={<SyncOutlined style={{ fontSize: 12, color: syncRunning ? '#3b82f6' : undefined }} />}
+            onClick={() => setShowSync(true)}
+            style={{
+              padding: '0 6px',
+              height: 24,
+              minWidth: 80,
+              color: 'var(--text-tertiary)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+            }}
+            title="Project Sync"
+          >
+            <span>Sync</span>
+            <span
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: '50%',
+                background: syncRunning ? '#3b82f6' : '#7a7a8e',
+                display: 'inline-block',
+                flexShrink: 0,
+              }}
+            />
+          </Button>
         </div>
 
         {/* Right: version + update status */}
@@ -273,6 +315,8 @@ export function StatusBar() {
       />
 
       <McpServerModal open={showMcp} onClose={() => { setShowMcp(false); refreshMcpStatus(); }} />
+
+      <SyncServerModal open={showSync} onClose={() => { setShowSync(false); refreshSyncStatus(); }} />
     </>
   );
 }

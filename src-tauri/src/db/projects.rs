@@ -171,6 +171,22 @@ pub async fn delete_project(id: &str) -> DbResult<()> {
     Ok(())
 }
 
+pub async fn get_project(id: &str) -> DbResult<Option<Project>> {
+    let conn = get_connection()?.lock().await;
+    let mut rows = conn
+        .query(
+            &format!("SELECT {} FROM projects WHERE id = ?1", SELECT_COLUMNS),
+            turso::params![id],
+        )
+        .await?;
+
+    if let Some(row) = rows.next().await? {
+        Ok(Some(project_from_row(&row)?))
+    } else {
+        Ok(None)
+    }
+}
+
 pub async fn list_projects() -> DbResult<Vec<Project>> {
     let conn = get_connection()?.lock().await;
     let mut rows = conn

@@ -222,6 +222,23 @@ export function parseQueryParamsFromUrl(url: string): {
   return { path, params };
 }
 
+// Sync types
+
+export interface SyncServerStatus {
+  running: boolean;
+  port?: number;
+  join_key?: string;
+  project_id?: string;
+}
+
+export interface SyncResult {
+  pulled_created: number;
+  pulled_updated: number;
+  pushed: number;
+  deleted: number;
+  errors: string[];
+}
+
 export function parseSharedHeaders(json: string): KeyValuePair[] {
   try {
     const parsed = JSON.parse(json);

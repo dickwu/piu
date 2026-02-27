@@ -22,6 +22,7 @@ Built with **Tauri 2.0** (Rust backend) + **React 19** + **Next.js** + **Ant Des
 - 🧩 **Data Models** — Per-project typed schemas with named fields, descriptions, required flags, and example values. Link a model to a request to generate sample JSON bodies or validate response shapes inline
 - 🤖 **MCP Server** — 35 built-in tools let Claude (or any MCP client) create projects, send requests, manage collections, and now create/query/validate data models — all without leaving the chat
 - 📦 **Move-to-Collection** — Right-click any request in the sidebar to move it to a different collection via a tree picker
+- 🔄 **PIU-to-PIU Sync** — Sync projects between PIU instances over LAN. One hosts, another connects with IP + port + shared join key. Last-writer-wins conflict resolution via version fields
 
 ## Tech Stack
 
@@ -83,6 +84,7 @@ piu/
         │   └── changelog.rs    # Version history
         ├── commands/           # Tauri IPC commands (~35 handlers)
         ├── mcp.rs              # In-process MCP server (35 tools)
+        ├── sync.rs             # PIU-to-PIU sync protocol (Axum server + reqwest client)
         └── http/
             ├── executor.rs     # reqwest HTTP engine
             └── orchestrator.rs # URL resolution + {{var}} interpolation + auth

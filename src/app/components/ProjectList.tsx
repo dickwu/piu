@@ -67,7 +67,8 @@ export function ProjectList() {
   return (
     <>
       <div className="flex h-full flex-col">
-        <div className="sidebar-section-header">
+        {/* Liquid Glass header — matches right sidebar */}
+        <div className="glass-header sidebar-section-header">
           <span
             className="text-xs font-bold uppercase tracking-wider"
             style={{ fontFamily: 'var(--font-ui)', color: 'var(--text-secondary)' }}
@@ -81,7 +82,7 @@ export function ProjectList() {
           />
         </div>
 
-        <div style={{ flex: 1, overflowY: 'auto' }}>
+        <div className="glass-scroll-area" style={{ flex: 1 }}>
           {projects.length === 0 ? (
             <div
               className="p-4 text-center text-xs"

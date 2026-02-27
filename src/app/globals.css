@@ -162,6 +162,160 @@ body::before {
 }
 
 /* ============================================================
+   App Shell & Panel Layout (Apple HIG-aligned)
+   Semantic HTML layout replacing Ant Design Layout components.
+   Creates visual depth with subtle panel separation and hierarchy.
+   ============================================================ */
+
+.app-shell {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-primary);
+  overflow: hidden;
+}
+
+.panel-layout {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  /* Subtle inset padding creates Apple-style floating panel feel */
+  padding: 6px 6px 0;
+  gap: 1px;
+}
+
+.panel-sidebar {
+  flex-shrink: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  /* Subtle elevation separates sidebars from the base layer */
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.2),
+    0 0 0 1px var(--border);
+}
+
+.panel-sidebar-left {
+  width: 220px;
+  /* Left sidebar also uses Liquid Glass material */
+  -webkit-backdrop-filter: blur(24px) saturate(1.3);
+  backdrop-filter: blur(24px) saturate(1.3);
+  background: rgba(16, 16, 24, 0.75);
+}
+
+.panel-sidebar-right {
+  width: 256px;
+  /* Right sidebar uses Liquid Glass material (regular variant) */
+  -webkit-backdrop-filter: blur(24px) saturate(1.3);
+  backdrop-filter: blur(24px) saturate(1.3);
+  background: rgba(16, 16, 24, 0.75);
+}
+
+.panel-content {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-primary);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  /* Content area is the primary focus — slightly elevated */
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.25),
+    0 0 0 1px var(--border);
+}
+
+.app-footer {
+  background: transparent;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+/* ============================================================
+   Liquid Glass Material System
+   Apple HIG Liquid Glass adapted for dark-mode desktop (Tauri).
+   Regular variant: blur 20-40px, opacity 0.6-0.8, saturation 1.2-1.5x
+   ============================================================ */
+
+/* Base glass material — regular variant for sidebars */
+.glass {
+  -webkit-backdrop-filter: blur(24px) saturate(1.3);
+  backdrop-filter: blur(24px) saturate(1.3);
+  background: rgba(16, 16, 24, 0.72);
+}
+
+/* Glass header — floats above scrolling content */
+.glass-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  -webkit-backdrop-filter: blur(20px) saturate(1.3);
+  backdrop-filter: blur(20px) saturate(1.3);
+  background: rgba(22, 22, 31, 0.78);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.2);
+}
+
+/* Glass footer — fixed action bar at bottom */
+.glass-footer {
+  -webkit-backdrop-filter: blur(20px) saturate(1.3);
+  backdrop-filter: blur(20px) saturate(1.3);
+  background: rgba(22, 22, 31, 0.78);
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+  box-shadow: 0 -1px 0 rgba(0, 0, 0, 0.2);
+}
+
+/* Scroll area with edge fade effects */
+.glass-scroll-area {
+  position: relative;
+  overflow: auto;
+  /* Scroll edge: content fades into glass at top/bottom */
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0px,
+    black 12px,
+    black calc(100% - 12px),
+    transparent 100%
+  );
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0px,
+    black 12px,
+    black calc(100% - 12px),
+    transparent 100%
+  );
+}
+
+/* Glass-aware tree node: subtler background on hover/select */
+.glass-tree .ant-tree-node-content-wrapper {
+  transition: background-color var(--transition-fast) !important;
+}
+
+.glass-tree .ant-tree-node-content-wrapper:hover {
+  background-color: rgba(255, 255, 255, 0.04) !important;
+}
+
+.glass-tree .ant-tree-node-selected {
+  background-color: rgba(249, 115, 22, 0.1) !important;
+  border-radius: var(--radius-sm);
+  box-shadow: inset 0 0 0 1px rgba(249, 115, 22, 0.08);
+}
+
+/* Glass separator — ultra-thin divider on translucent surfaces */
+.glass-separator {
+  height: 1px;
+  background: linear-gradient(
+    to right,
+    transparent,
+    rgba(255, 255, 255, 0.06) 20%,
+    rgba(255, 255, 255, 0.06) 80%,
+    transparent
+  );
+}
+
+/* ============================================================
    Animation Keyframes
    ============================================================ */
 
@@ -223,17 +377,18 @@ body::before {
   letter-spacing: -0.01em;
 }
 
-/* Code block for response body */
+/* Code block for response body — glass-aware */
 .code-block {
   font-family: var(--font-code);
   font-size: 13px;
   line-height: 1.6;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border);
+  background: rgba(16, 16, 24, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.04);
   border-radius: var(--radius-md);
   padding: 16px;
   color: var(--text-primary);
   user-select: text;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
 /* Ensure form elements remain selectable */
@@ -419,21 +574,27 @@ input, textarea, [contenteditable="true"] {
   color: var(--text-primary) !important;
 }
 
-/* Modal */
+/* Modal — Liquid Glass overlay */
 .ant-modal-content {
-  background: var(--bg-surface) !important;
-  border: 1px solid var(--border) !important;
+  background: rgba(22, 22, 31, 0.88) !important;
+  -webkit-backdrop-filter: blur(40px) saturate(1.4) !important;
+  backdrop-filter: blur(40px) saturate(1.4) !important;
+  border: 1px solid rgba(255, 255, 255, 0.06) !important;
   border-radius: var(--radius-lg) !important;
+  box-shadow:
+    0 24px 80px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(255, 255, 255, 0.03) !important;
 }
 
 .ant-modal-mask {
-  backdrop-filter: blur(8px) !important;
-  background: rgba(0, 0, 0, 0.6) !important;
+  -webkit-backdrop-filter: blur(12px) saturate(1.2) !important;
+  backdrop-filter: blur(12px) saturate(1.2) !important;
+  background: rgba(0, 0, 0, 0.5) !important;
 }
 
 .ant-modal-header {
   background: transparent !important;
-  border-bottom: 1px solid var(--border) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04) !important;
 }
 
 .ant-modal-title {
@@ -441,19 +602,22 @@ input, textarea, [contenteditable="true"] {
   font-weight: 700 !important;
 }
 
-/* Drawer */
+/* Drawer — Liquid Glass overlay */
 .ant-drawer .ant-drawer-content {
-  background: var(--bg-surface) !important;
+  background: rgba(22, 22, 31, 0.9) !important;
+  -webkit-backdrop-filter: blur(40px) saturate(1.4) !important;
+  backdrop-filter: blur(40px) saturate(1.4) !important;
 }
 
 .ant-drawer .ant-drawer-mask {
+  -webkit-backdrop-filter: blur(12px) saturate(1.2) !important;
   backdrop-filter: blur(12px) saturate(1.2) !important;
-  background: rgba(10, 10, 15, 0.7) !important;
+  background: rgba(0, 0, 0, 0.5) !important;
 }
 
 .ant-drawer .ant-drawer-header {
   background: transparent !important;
-  border-bottom: 1px solid var(--border) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04) !important;
 }
 
 /* Tags */
@@ -477,15 +641,20 @@ input, textarea, [contenteditable="true"] {
   font-weight: 600;
 }
 
-/* Select dropdown */
+/* Select dropdown — Liquid Glass */
 .ant-select-dropdown {
-  background: var(--bg-surface) !important;
-  border: 1px solid var(--border) !important;
+  background: rgba(22, 22, 31, 0.88) !important;
+  -webkit-backdrop-filter: blur(32px) saturate(1.3) !important;
+  backdrop-filter: blur(32px) saturate(1.3) !important;
+  border: 1px solid rgba(255, 255, 255, 0.06) !important;
   border-radius: var(--radius-md) !important;
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.4),
+    0 0 0 1px rgba(255, 255, 255, 0.03) !important;
 }
 
 .ant-select-item-option-active {
-  background: var(--bg-hover) !important;
+  background: rgba(255, 255, 255, 0.05) !important;
 }
 
 .ant-select-item-option-selected {
@@ -521,15 +690,20 @@ input, textarea, [contenteditable="true"] {
   background: var(--bg-hover) !important;
 }
 
-/* Dropdown menu */
+/* Dropdown menu — Liquid Glass */
 .ant-dropdown .ant-dropdown-menu {
-  background: var(--bg-surface) !important;
-  border: 1px solid var(--border) !important;
+  background: rgba(22, 22, 31, 0.88) !important;
+  -webkit-backdrop-filter: blur(32px) saturate(1.3) !important;
+  backdrop-filter: blur(32px) saturate(1.3) !important;
+  border: 1px solid rgba(255, 255, 255, 0.06) !important;
   border-radius: var(--radius-md) !important;
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.4),
+    0 0 0 1px rgba(255, 255, 255, 0.03) !important;
 }
 
 .ant-dropdown .ant-dropdown-menu-item:hover {
-  background: var(--bg-hover) !important;
+  background: rgba(255, 255, 255, 0.05) !important;
 }
 
 /* Spin */
@@ -553,24 +727,7 @@ input, textarea, [contenteditable="true"] {
   border-block-end-color: var(--border) !important;
 }
 
-/* Layout */
+/* Legacy: Ant Design Layout overrides retained for any stray antd layout usage */
 .ant-layout {
   background: var(--bg-primary) !important;
-}
-
-.ant-layout-header {
-  background: transparent !important;
-  height: auto !important;
-  line-height: normal !important;
-  padding: 0 !important;
-}
-
-.ant-layout-footer {
-  background: transparent !important;
-  padding: 0 !important;
-}
-
-.ant-layout-sider {
-  background: var(--bg-secondary) !important;
-  border-right: 1px solid var(--border) !important;
 }

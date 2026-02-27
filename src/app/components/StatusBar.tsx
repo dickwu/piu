@@ -119,7 +119,7 @@ export function StatusBar() {
             size="small"
             icon={<DownloadOutlined />}
             onClick={downloadAndInstall}
-            style={{ padding: 0, height: 'auto', fontSize: 11, color: 'var(--accent)' }}
+            style={{ padding: 0, height: 'auto', fontSize: 11, lineHeight: '24px', color: 'var(--accent)' }}
           >
             v{status.version} available
           </Button>
@@ -143,7 +143,7 @@ export function StatusBar() {
             size="small"
             icon={<ReloadOutlined />}
             onClick={handleRestart}
-            style={{ padding: 0, height: 'auto', fontSize: 11, color: 'var(--success)' }}
+            style={{ padding: 0, height: 'auto', fontSize: 11, lineHeight: '24px', color: 'var(--success)' }}
           >
             Restart to apply v{status.version}
           </Button>
@@ -155,7 +155,7 @@ export function StatusBar() {
             size="small"
             icon={<WarningOutlined />}
             onClick={checkForUpdate}
-            style={{ padding: 0, height: 'auto', fontSize: 11, color: 'var(--warning)' }}
+            style={{ padding: 0, height: 'auto', fontSize: 11, lineHeight: '24px', color: 'var(--warning)' }}
           >
             Retry update
           </Button>
@@ -166,12 +166,10 @@ export function StatusBar() {
   return (
     <>
       <div
-        className="flex items-center justify-between border-t px-4"
+        className="glass-footer flex items-center justify-between px-4"
         style={{
-          borderColor: 'var(--border)',
-          backgroundColor: 'var(--bg-secondary)',
-          height: 26,
-          fontSize: 10,
+          height: 30,
+          fontSize: 11,
           color: 'var(--text-tertiary)',
           fontFamily: 'var(--font-code)',
           paddingLeft: 20,
@@ -182,7 +180,7 @@ export function StatusBar() {
         <div className="flex items-center gap-2">
           <Select
             size="small"
-            style={{ width: 160, fontSize: 10 }}
+            style={{ width: 160, fontSize: 11 }}
             placeholder="No Environment"
             value={activeEnvironment?.id}
             onChange={(id) => {
@@ -198,7 +196,7 @@ export function StatusBar() {
                     <span
                       style={{
                         color: 'var(--text-tertiary)',
-                        fontSize: 9,
+                        fontSize: 10,
                         marginLeft: 4,
                         fontFamily: 'var(--font-code)',
                       }}
@@ -215,14 +213,14 @@ export function StatusBar() {
           <Button
             type="text"
             size="small"
-            icon={<SettingOutlined style={{ fontSize: 11 }} />}
+            icon={<SettingOutlined style={{ fontSize: 12 }} />}
             onClick={handleOpenSettings}
             disabled={!activeProjectId}
             style={{
               padding: 0,
-              width: 20,
-              height: 20,
-              minWidth: 20,
+              width: 24,
+              height: 24,
+              minWidth: 24,
               color: 'var(--text-tertiary)',
             }}
             title="Project Settings"
@@ -230,11 +228,11 @@ export function StatusBar() {
           <Button
             type="text"
             size="small"
-            icon={<ApiOutlined style={{ fontSize: 11, color: mcpRunning ? '#10b981' : undefined }} />}
+            icon={<ApiOutlined style={{ fontSize: 12, color: mcpRunning ? '#10b981' : undefined }} />}
             onClick={() => setShowMcp(true)}
             style={{
               padding: '0 6px',
-              height: 20,
+              height: 24,
               minWidth: 80,
               color: 'var(--text-tertiary)',
               display: 'flex',

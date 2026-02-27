@@ -7,7 +7,7 @@ use turso::{Builder, Connection};
 // turso 0.4.0 has race conditions in its page cache when accessed concurrently
 static DB_CONNECTION: OnceLock<Mutex<Connection>> = OnceLock::new();
 
-pub(crate) type DbResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
+pub type DbResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 pub mod app_state;
 pub mod changelog;
@@ -25,7 +25,7 @@ pub use requests::ApiRequest;
 
 // ============ Connection and Initialization ============
 
-pub(crate) fn get_connection() -> DbResult<&'static Mutex<Connection>> {
+pub fn get_connection() -> DbResult<&'static Mutex<Connection>> {
     DB_CONNECTION
         .get()
         .ok_or_else(|| "Database not initialized".into())

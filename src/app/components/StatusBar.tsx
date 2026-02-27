@@ -9,11 +9,14 @@ import {
   ReloadOutlined,
   WarningOutlined,
   SettingOutlined,
+  ApiOutlined,
 } from '@ant-design/icons';
+import { invoke } from '@tauri-apps/api/core';
 import { useUpdateStore } from '../stores/updateStore';
 import { useEnvironmentStore } from '../stores/environmentStore';
 import { useProjectStore } from '../stores/projectStore';
 import { ProjectSettingsModal } from './ProjectSettingsModal';
+import { McpServerModal } from './McpServerModal';
 
 const UPDATE_CHECK_DELAY_MS = 3000;
 
@@ -32,6 +35,21 @@ export function StatusBar() {
   const { activeProjectId, setSettingsProjectId, settingsProjectId } = useProjectStore();
 
   const [showSettings, setShowSettings] = useState(false);
+  const [showMcp, setShowMcp] = useState(false);
+  const [mcpRunning, setMcpRunning] = useState(false);
+
+  const refreshMcpStatus = useCallback(async () => {
+    try {
+      const s = await invoke<{ running: boolean }>('get_mcp_server_status');
+      setMcpRunning(s.running);
+    } catch {
+      setMcpRunning(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshMcpStatus();
+  }, [refreshMcpStatus]);
 
   useEffect(() => {
     if (activeEnvironment) {
@@ -209,6 +227,34 @@ export function StatusBar() {
             }}
             title="Project Settings"
           />
+          <Button
+            type="text"
+            size="small"
+            icon={<ApiOutlined style={{ fontSize: 11, color: mcpRunning ? '#10b981' : undefined }} />}
+            onClick={() => setShowMcp(true)}
+            style={{
+              padding: '0 6px',
+              height: 20,
+              minWidth: 80,
+              color: 'var(--text-tertiary)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+            }}
+            title="MCP Server"
+          >
+            <span>MCP</span>
+            <span
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: '50%',
+                background: mcpRunning ? '#10b981' : '#7a7a8e',
+                display: 'inline-block',
+                flexShrink: 0,
+              }}
+            />
+          </Button>
         </div>
 
         {/* Right: version + update status */}
@@ -227,6 +273,8 @@ export function StatusBar() {
         open={showSettings}
         onClose={handleCloseSettings}
       />
+
+      <McpServerModal open={showMcp} onClose={() => { setShowMcp(false); refreshMcpStatus(); }} />
     </>
   );
 }

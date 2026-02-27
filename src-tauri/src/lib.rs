@@ -2,8 +2,9 @@ use tauri::Manager;
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 
 mod commands;
-mod db;
-mod http;
+pub mod db;
+pub mod http;
+pub mod mcp;
 
 const APP_NAME: &str = "piu";
 
@@ -127,6 +128,11 @@ pub fn run() {
             commands::list_env_variables,
             // Changelog commands
             commands::get_changelog,
+            // MCP server commands
+            commands::start_mcp_server,
+            commands::stop_mcp_server,
+            commands::get_mcp_server_status,
+            commands::run_claude_mcp_install,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

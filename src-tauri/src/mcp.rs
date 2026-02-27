@@ -1,0 +1,1313 @@
+use crate::db;
+use crate::http;
+use rmcp::{
+    handler::server::tool::ToolRouter, handler::server::wrapper::Parameters, model::*, tool,
+    tool_handler, tool_router, ErrorData as McpError, ServerHandler,
+};
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+
+// ============ Parameter Structs ============
+
+#[derive(Deserialize, JsonSchema)]
+struct ProjectIdParam {
+    #[schemars(description = "The project's unique ID")]
+    project_id: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct CreateProjectParam {
+    #[schemars(description = "Project name")]
+    name: String,
+    #[schemars(description = "Optional project description")]
+    description: Option<String>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct UpdateProjectParam {
+    #[schemars(description = "The project's unique ID")]
+    project_id: String,
+    #[schemars(description = "New project name")]
+    name: Option<String>,
+    #[schemars(description = "New project description (null to clear)")]
+    description: Option<Option<String>>,
+    #[schemars(description = "New sort order")]
+    sort_order: Option<i64>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct CollectionIdParam {
+    #[schemars(description = "The collection's unique ID")]
+    collection_id: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct CreateCollectionParam {
+    #[schemars(description = "Project ID this collection belongs to")]
+    project_id: String,
+    #[schemars(description = "Collection name")]
+    name: String,
+    #[schemars(description = "Parent collection ID for nesting")]
+    parent_id: Option<String>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct UpdateCollectionParam {
+    #[schemars(description = "The collection's unique ID")]
+    collection_id: String,
+    #[schemars(description = "New collection name")]
+    name: Option<String>,
+    #[schemars(description = "New parent collection ID (null to make root-level)")]
+    parent_id: Option<Option<String>>,
+    #[schemars(description = "New sort order")]
+    sort_order: Option<i64>,
+    #[schemars(description = "URL path prefix (e.g. '/v1')")]
+    path_prefix: Option<Option<String>>,
+    #[schemars(description = "Collection description")]
+    description: Option<Option<String>>,
+    #[schemars(
+        description = "Shared headers as JSON array: [{\"key\":\"X-Api\",\"value\":\"v2\",\"enabled\":true}]"
+    )]
+    shared_headers: Option<String>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct RequestIdParam {
+    #[schemars(description = "The API request's unique ID")]
+    request_id: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct CreateRequestParam {
+    #[schemars(description = "Collection ID this request belongs to")]
+    collection_id: String,
+    #[schemars(description = "Request name")]
+    name: String,
+    #[schemars(
+        description = "Request config as JSON string: {\"method\":\"GET\",\"url\":\"/path\",\"headers\":[],\"params\":[],\"body\":{\"type\":\"json\",\"content\":\"\"},\"auth\":{\"type\":\"none\"},\"description\":\"\"}"
+    )]
+    config: Option<String>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct UpdateRequestParam {
+    #[schemars(description = "The API request's unique ID")]
+    request_id: String,
+    #[schemars(description = "New request name")]
+    name: Option<String>,
+    #[schemars(description = "New request config as JSON string")]
+    config: Option<String>,
+    #[schemars(description = "Move to a different collection")]
+    collection_id: Option<String>,
+    #[schemars(description = "New sort order")]
+    sort_order: Option<i64>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct EnvironmentIdParam {
+    #[schemars(description = "The environment's unique ID")]
+    environment_id: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct CreateEnvironmentParam {
+    #[schemars(description = "Project ID this environment belongs to")]
+    project_id: String,
+    #[schemars(description = "Environment name (e.g. 'Development', 'Production')")]
+    name: String,
+    #[schemars(description = "Base host URL (e.g. 'https://api.example.com')")]
+    host: Option<String>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct UpdateEnvironmentParam {
+    #[schemars(description = "The environment's unique ID")]
+    environment_id: String,
+    #[schemars(description = "New environment name")]
+    name: Option<String>,
+    #[schemars(description = "New base host URL (null to clear)")]
+    host: Option<Option<String>>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct SetActiveEnvParam {
+    #[schemars(description = "Environment ID to activate")]
+    environment_id: String,
+    #[schemars(description = "Project ID the environment belongs to")]
+    project_id: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct EnvVarInput {
+    #[schemars(description = "Variable name")]
+    key: String,
+    #[schemars(description = "Variable value")]
+    value: String,
+    #[schemars(description = "Whether this variable is enabled")]
+    enabled: bool,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct SetEnvVarsParam {
+    #[schemars(description = "The environment's unique ID")]
+    environment_id: String,
+    #[schemars(description = "List of variables to set (replaces all existing)")]
+    variables: Vec<EnvVarInput>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct SearchParam {
+    #[schemars(description = "Search query (matches request name, URL, or config content)")]
+    query: String,
+    #[schemars(description = "Filter by project ID")]
+    project_id: Option<String>,
+    #[schemars(description = "Filter by HTTP method (GET, POST, etc.)")]
+    method: Option<String>,
+    #[schemars(description = "Maximum results to return (default 50)")]
+    limit: Option<i64>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct ChangelogParam {
+    #[schemars(description = "Filter by entity type: project, collection, request, environment")]
+    entity_type: Option<String>,
+    #[schemars(description = "Filter by entity ID")]
+    entity_id: Option<String>,
+    #[schemars(description = "Maximum entries to return (default 50)")]
+    limit: Option<i64>,
+    #[schemars(description = "Number of entries to skip (default 0)")]
+    offset: Option<i64>,
+}
+
+// ============ Helper Functions ============
+
+fn mcp_err(msg: impl std::fmt::Display) -> McpError {
+    McpError::internal_error(msg.to_string(), None)
+}
+
+fn text_result(value: &impl Serialize) -> Result<CallToolResult, McpError> {
+    let json = serde_json::to_string_pretty(value).map_err(mcp_err)?;
+    Ok(CallToolResult::success(vec![Content::text(json)]))
+}
+
+fn parse_config(config_str: &str) -> serde_json::Value {
+    serde_json::from_str(config_str).unwrap_or_else(|_| serde_json::json!({}))
+}
+
+fn enrich_request(req: &db::ApiRequest) -> serde_json::Value {
+    let config = parse_config(&req.config);
+    serde_json::json!({
+        "id": req.id,
+        "collection_id": req.collection_id,
+        "name": req.name,
+        "sort_order": req.sort_order,
+        "method": config.get("method").and_then(|v| v.as_str()).unwrap_or("GET"),
+        "url": config.get("url").and_then(|v| v.as_str()).unwrap_or(""),
+        "headers": config.get("headers"),
+        "params": config.get("params"),
+        "body": config.get("body"),
+        "auth": config.get("auth"),
+        "description": config.get("description"),
+        "version": req.version,
+        "created_at": req.created_at,
+        "updated_at": req.updated_at,
+    })
+}
+
+// ============ PiuMcp Service ============
+
+#[derive(Clone)]
+pub struct PiuMcp {
+    tool_router: ToolRouter<Self>,
+}
+
+impl Default for PiuMcp {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[tool_router]
+impl PiuMcp {
+    pub fn new() -> Self {
+        Self {
+            tool_router: Self::tool_router(),
+        }
+    }
+
+    // ---- Projects ----
+
+    #[tool(
+        description = "List all projects with their collection counts, request counts, and environment counts. Returns full project metadata including description, version, and timestamps."
+    )]
+    async fn list_projects(&self) -> Result<CallToolResult, McpError> {
+        let projects = db::list_projects().await.map_err(mcp_err)?;
+        let mut result = Vec::new();
+        for p in &projects {
+            let collections = db::list_collections(Some(&p.id)).await.unwrap_or_default();
+            let envs = db::list_environments(Some(&p.id)).await.unwrap_or_default();
+            let mut request_count = 0usize;
+            for c in &collections {
+                request_count += db::list_requests(&c.id).await.unwrap_or_default().len();
+            }
+            result.push(serde_json::json!({
+                "id": p.id,
+                "name": p.name,
+                "description": p.description,
+                "sort_order": p.sort_order,
+                "version": p.version,
+                "created_at": p.created_at,
+                "updated_at": p.updated_at,
+                "collection_count": collections.len(),
+                "request_count": request_count,
+                "environment_count": envs.len(),
+            }));
+        }
+        text_result(&serde_json::json!({ "projects": result, "total": result.len() }))
+    }
+
+    #[tool(
+        description = "Get detailed project info including all collections (with request counts), all environments (with variable counts), and the active environment."
+    )]
+    async fn get_project(
+        &self,
+        Parameters(p): Parameters<ProjectIdParam>,
+    ) -> Result<CallToolResult, McpError> {
+        let projects = db::list_projects().await.map_err(mcp_err)?;
+        let project = projects
+            .iter()
+            .find(|proj| proj.id == p.project_id)
+            .ok_or_else(|| mcp_err(format!("Project {} not found", p.project_id)))?;
+
+        let collections = db::list_collections(Some(&p.project_id))
+            .await
+            .unwrap_or_default();
+        let mut col_details = Vec::new();
+        for c in &collections {
+            let reqs = db::list_requests(&c.id).await.unwrap_or_default();
+            col_details.push(serde_json::json!({
+                "id": c.id,
+                "name": c.name,
+                "parent_id": c.parent_id,
+                "path_prefix": c.path_prefix,
+                "description": c.description,
+                "shared_headers": parse_config(&c.shared_headers),
+                "request_count": reqs.len(),
+                "version": c.version,
+            }));
+        }
+
+        let envs = db::list_environments(Some(&p.project_id))
+            .await
+            .unwrap_or_default();
+        let mut env_details = Vec::new();
+        for e in &envs {
+            let vars = db::list_env_variables(&e.id).await.unwrap_or_default();
+            env_details.push(serde_json::json!({
+                "id": e.id,
+                "name": e.name,
+                "host": e.host,
+                "is_active": e.is_active,
+                "variable_count": vars.len(),
+                "version": e.version,
+            }));
+        }
+
+        let active_env = db::get_active_environment(&p.project_id)
+            .await
+            .unwrap_or(None);
+        let active_env_detail = if let Some(ref env) = active_env {
+            let vars = db::list_env_variables(&env.id).await.unwrap_or_default();
+            Some(serde_json::json!({
+                "id": env.id,
+                "name": env.name,
+                "host": env.host,
+                "variables": vars,
+            }))
+        } else {
+            None
+        };
+
+        text_result(&serde_json::json!({
+            "project": project,
+            "collections": col_details,
+            "environments": env_details,
+            "active_environment": active_env_detail,
+        }))
+    }
+
+    #[tool(
+        description = "Get a complete tree view of a project: all collections (nested hierarchy) with every request (fully parsed configs showing method, URL, headers, params, body, auth), all environments with their variables, method statistics, and the active environment. This is the most comprehensive tool for understanding a project's full API surface."
+    )]
+    async fn get_project_overview(
+        &self,
+        Parameters(p): Parameters<ProjectIdParam>,
+    ) -> Result<CallToolResult, McpError> {
+        let projects = db::list_projects().await.map_err(mcp_err)?;
+        let project = projects
+            .iter()
+            .find(|proj| proj.id == p.project_id)
+            .ok_or_else(|| mcp_err(format!("Project {} not found", p.project_id)))?;
+
+        let collections = db::list_collections(Some(&p.project_id))
+            .await
+            .unwrap_or_default();
+
+        // Fetch all requests grouped by collection
+        let mut requests_by_col: HashMap<String, Vec<serde_json::Value>> = HashMap::new();
+        let mut total_requests = 0usize;
+        let mut methods: HashMap<String, usize> = HashMap::new();
+
+        for c in &collections {
+            let reqs = db::list_requests(&c.id).await.unwrap_or_default();
+            let enriched: Vec<serde_json::Value> = reqs.iter().map(enrich_request).collect();
+            for req in &enriched {
+                let m = req
+                    .get("method")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("GET")
+                    .to_string();
+                *methods.entry(m).or_insert(0) += 1;
+            }
+            total_requests += enriched.len();
+            requests_by_col.insert(c.id.clone(), enriched);
+        }
+
+        // Build nested tree
+        fn build_tree(
+            parent_id: Option<&str>,
+            collections: &[db::Collection],
+            requests_by_col: &HashMap<String, Vec<serde_json::Value>>,
+        ) -> Vec<serde_json::Value> {
+            collections
+                .iter()
+                .filter(|c| c.parent_id.as_deref() == parent_id)
+                .map(|c| {
+                    serde_json::json!({
+                        "id": c.id,
+                        "name": c.name,
+                        "path_prefix": c.path_prefix,
+                        "description": c.description,
+                        "shared_headers": serde_json::from_str::<serde_json::Value>(&c.shared_headers).unwrap_or_default(),
+                        "requests": requests_by_col.get(&c.id).unwrap_or(&Vec::new()),
+                        "children": build_tree(Some(&c.id), collections, requests_by_col),
+                    })
+                })
+                .collect()
+        }
+
+        let tree = build_tree(None, &collections, &requests_by_col);
+
+        // Environments
+        let envs = db::list_environments(Some(&p.project_id))
+            .await
+            .unwrap_or_default();
+        let mut env_details = Vec::new();
+        for e in &envs {
+            let vars = db::list_env_variables(&e.id).await.unwrap_or_default();
+            env_details.push(serde_json::json!({
+                "id": e.id,
+                "name": e.name,
+                "host": e.host,
+                "is_active": e.is_active,
+                "variables": vars,
+            }));
+        }
+
+        let active_env = db::get_active_environment(&p.project_id)
+            .await
+            .unwrap_or(None);
+        let active_env_detail = if let Some(ref env) = active_env {
+            let vars = db::list_env_variables(&env.id).await.unwrap_or_default();
+            Some(serde_json::json!({
+                "id": env.id,
+                "name": env.name,
+                "host": env.host,
+                "variables": vars,
+            }))
+        } else {
+            None
+        };
+
+        text_result(&serde_json::json!({
+            "project": project,
+            "active_environment": active_env_detail,
+            "environments": env_details,
+            "collection_tree": tree,
+            "stats": {
+                "total_collections": collections.len(),
+                "total_requests": total_requests,
+                "total_environments": envs.len(),
+                "methods": methods,
+            },
+        }))
+    }
+
+    #[tool(description = "Create a new project with a name and optional description.")]
+    async fn create_project(
+        &self,
+        Parameters(p): Parameters<CreateProjectParam>,
+    ) -> Result<CallToolResult, McpError> {
+        let id = uuid::Uuid::new_v4().to_string();
+        let project = db::create_project(&id, &p.name, p.description.as_deref())
+            .await
+            .map_err(mcp_err)?;
+        text_result(&project)
+    }
+
+    #[tool(
+        description = "Update a project's name, description, or sort order. Only provided fields are changed."
+    )]
+    async fn update_project(
+        &self,
+        Parameters(p): Parameters<UpdateProjectParam>,
+    ) -> Result<CallToolResult, McpError> {
+        let desc = p.description.as_ref().map(|d| d.as_deref());
+        let project = db::update_project(&p.project_id, p.name.as_deref(), desc, p.sort_order)
+            .await
+            .map_err(mcp_err)?;
+        text_result(&project)
+    }
+
+    #[tool(
+        description = "Delete a project and all its collections, requests, environments, and variables (cascading delete)."
+    )]
+    async fn delete_project(
+        &self,
+        Parameters(p): Parameters<ProjectIdParam>,
+    ) -> Result<CallToolResult, McpError> {
+        db::delete_project(&p.project_id).await.map_err(mcp_err)?;
+        text_result(&serde_json::json!({ "deleted": p.project_id }))
+    }
+
+    // ---- Collections ----
+
+    #[tool(
+        description = "List all collections for a project with request counts, parsed shared headers, path prefix, parent info, and version metadata."
+    )]
+    async fn list_collections(
+        &self,
+        Parameters(p): Parameters<ProjectIdParam>,
+    ) -> Result<CallToolResult, McpError> {
+        let collections = db::list_collections(Some(&p.project_id))
+            .await
+            .map_err(mcp_err)?;
+        let mut result = Vec::new();
+        for c in &collections {
+            let reqs = db::list_requests(&c.id).await.unwrap_or_default();
+            result.push(serde_json::json!({
+                "id": c.id,
+                "name": c.name,
+                "parent_id": c.parent_id,
+                "path_prefix": c.path_prefix,
+                "description": c.description,
+                "shared_headers": serde_json::from_str::<serde_json::Value>(&c.shared_headers).unwrap_or_default(),
+                "project_id": c.project_id,
+                "request_count": reqs.len(),
+                "version": c.version,
+                "sort_order": c.sort_order,
+                "created_at": c.created_at,
+                "updated_at": c.updated_at,
+            }));
+        }
+        text_result(&serde_json::json!({ "collections": result, "total": result.len() }))
+    }
+
+    #[tool(
+        description = "Get detailed info about a collection including all its API requests (with fully parsed configs: method, URL, headers, params, body, auth), shared headers, path prefix, and the parent chain from root to this collection."
+    )]
+    async fn get_collection(
+        &self,
+        Parameters(p): Parameters<CollectionIdParam>,
+    ) -> Result<CallToolResult, McpError> {
+        let col = db::collections::get_collection(&p.collection_id)
+            .await
+            .map_err(mcp_err)?
+            .ok_or_else(|| mcp_err(format!("Collection {} not found", p.collection_id)))?;
+
+        let reqs = db::list_requests(&col.id).await.unwrap_or_default();
+        let enriched_reqs: Vec<serde_json::Value> = reqs.iter().map(enrich_request).collect();
+
+        // Build parent chain
+        let mut chain = Vec::new();
+        let mut current_parent = col.parent_id.clone();
+        while let Some(pid) = current_parent {
+            if let Ok(Some(parent)) = db::collections::get_collection(&pid).await {
+                chain.push(serde_json::json!({
+                    "id": parent.id,
+                    "name": parent.name,
+                    "path_prefix": parent.path_prefix,
+                }));
+                current_parent = parent.parent_id;
+            } else {
+                break;
+            }
+        }
+        chain.reverse();
+
+        text_result(&serde_json::json!({
+            "id": col.id,
+            "name": col.name,
+            "parent_id": col.parent_id,
+            "path_prefix": col.path_prefix,
+            "description": col.description,
+            "shared_headers": serde_json::from_str::<serde_json::Value>(&col.shared_headers).unwrap_or_default(),
+            "project_id": col.project_id,
+            "version": col.version,
+            "sort_order": col.sort_order,
+            "created_at": col.created_at,
+            "updated_at": col.updated_at,
+            "requests": enriched_reqs,
+            "parent_chain": chain,
+        }))
+    }
+
+    #[tool(
+        description = "Create a new collection in a project, optionally nested under a parent collection."
+    )]
+    async fn create_collection(
+        &self,
+        Parameters(p): Parameters<CreateCollectionParam>,
+    ) -> Result<CallToolResult, McpError> {
+        let id = uuid::Uuid::new_v4().to_string();
+        let col = db::create_collection(&id, &p.name, p.parent_id.as_deref(), Some(&p.project_id))
+            .await
+            .map_err(mcp_err)?;
+        text_result(&col)
+    }
+
+    #[tool(
+        description = "Update a collection's name, parent, path prefix, description, shared headers, or sort order."
+    )]
+    async fn update_collection(
+        &self,
+        Parameters(p): Parameters<UpdateCollectionParam>,
+    ) -> Result<CallToolResult, McpError> {
+        let parent_id = p.parent_id.as_ref().map(|o| o.as_deref());
+        let path_prefix = p.path_prefix.as_ref().map(|o| o.as_deref());
+        let description = p.description.as_ref().map(|o| o.as_deref());
+
+        let col = db::update_collection(
+            &p.collection_id,
+            p.name.as_deref(),
+            parent_id,
+            p.sort_order,
+            path_prefix,
+            description,
+            p.shared_headers.as_deref(),
+        )
+        .await
+        .map_err(mcp_err)?;
+        text_result(&col)
+    }
+
+    #[tool(
+        description = "Delete a collection and all its child collections and requests (cascading delete)."
+    )]
+    async fn delete_collection(
+        &self,
+        Parameters(p): Parameters<CollectionIdParam>,
+    ) -> Result<CallToolResult, McpError> {
+        db::delete_collection(&p.collection_id)
+            .await
+            .map_err(mcp_err)?;
+        text_result(&serde_json::json!({ "deleted": p.collection_id }))
+    }
+
+    // ---- API Requests ----
+
+    #[tool(
+        description = "List all API requests in a collection with fully parsed config summaries: method, URL, header count, param count, body type, auth type, and description."
+    )]
+    async fn list_requests(
+        &self,
+        Parameters(p): Parameters<CollectionIdParam>,
+    ) -> Result<CallToolResult, McpError> {
+        let reqs = db::list_requests(&p.collection_id).await.map_err(mcp_err)?;
+        let enriched: Vec<serde_json::Value> = reqs.iter().map(enrich_request).collect();
+        text_result(&serde_json::json!({ "requests": enriched, "total": enriched.len() }))
+    }
+
+    #[tool(
+        description = "Get complete details of an API request: fully parsed config (method, URL, all headers, all params, body, auth details, description), collection context (path prefix, shared headers), project info, environment context (resolved host, active variables), the fully resolved URL, effective headers (merged shared + request + auth), and which {{variables}} are used."
+    )]
+    async fn get_request(
+        &self,
+        Parameters(p): Parameters<RequestIdParam>,
+    ) -> Result<CallToolResult, McpError> {
+        let req = db::get_request(&p.request_id)
+            .await
+            .map_err(mcp_err)?
+            .ok_or_else(|| mcp_err(format!("Request {} not found", p.request_id)))?;
+
+        let config: http::types::RequestConfig =
+            serde_json::from_str(&req.config).unwrap_or_else(|_| http::types::RequestConfig {
+                method: "GET".to_string(),
+                url: String::new(),
+                headers: Vec::new(),
+                params: Vec::new(),
+                body: Default::default(),
+                auth: Default::default(),
+                description: None,
+            });
+
+        // Collection context
+        let col = db::collections::get_collection(&req.collection_id)
+            .await
+            .unwrap_or(None);
+
+        let col_info = col.as_ref().map(|c| {
+            serde_json::json!({
+                "id": c.id,
+                "name": c.name,
+                "path_prefix": c.path_prefix,
+                "shared_headers": serde_json::from_str::<serde_json::Value>(&c.shared_headers).unwrap_or_default(),
+            })
+        });
+
+        // Project context
+        let project_id = col.as_ref().and_then(|c| c.project_id.as_deref());
+        let project_info = if let Some(pid) = project_id {
+            let projects = db::list_projects().await.unwrap_or_default();
+            projects
+                .iter()
+                .find(|pr| pr.id == pid)
+                .map(|pr| serde_json::json!({ "id": pr.id, "name": pr.name }))
+        } else {
+            None
+        };
+
+        // Resolve URL and variables
+        let mut resolved_url = config.url.clone();
+        let mut variables_used: Vec<String> = Vec::new();
+        let mut variables_resolved: HashMap<String, String> = HashMap::new();
+
+        // Apply collection path prefix
+        if let Some(ref c) = col {
+            if let Some(ref prefix) = c.path_prefix {
+                let prefix = prefix.trim_end_matches('/');
+                if !prefix.is_empty() {
+                    let path = if resolved_url.starts_with('/') {
+                        resolved_url.clone()
+                    } else if resolved_url.is_empty() {
+                        "/".to_string()
+                    } else {
+                        format!("/{}", resolved_url)
+                    };
+                    resolved_url = format!("{}{}", prefix, path);
+                }
+            }
+        }
+
+        // Apply environment host and load variables
+        if let Some(pid) = project_id {
+            if let Ok(Some(env)) = db::get_active_environment(pid).await {
+                if let Some(ref host) = env.host {
+                    let host = host.trim_end_matches('/');
+                    if !host.is_empty() {
+                        let path = if resolved_url.starts_with('/') {
+                            resolved_url.clone()
+                        } else if resolved_url.is_empty() {
+                            String::new()
+                        } else {
+                            format!("/{}", resolved_url)
+                        };
+                        resolved_url = format!("{}{}", host, path);
+                    }
+                }
+                if let Ok(vars) = db::list_env_variables(&env.id).await {
+                    for v in &vars {
+                        if v.enabled {
+                            variables_resolved.insert(v.key.clone(), v.value.clone());
+                        }
+                    }
+                }
+            }
+        }
+
+        // Find {{variable}} references in all config fields
+        let auth_header = [
+            config.auth.header_name.as_deref().unwrap_or(""),
+            config.auth.header_value.as_deref().unwrap_or(""),
+        ]
+        .concat();
+        let all_text = format!(
+            "{} {} {} {} {} {} {} {}",
+            config.url,
+            config
+                .headers
+                .iter()
+                .map(|h| format!("{}{}", h.key, h.value))
+                .collect::<Vec<_>>()
+                .join(""),
+            config
+                .params
+                .iter()
+                .map(|p| format!("{}{}", p.key, p.value))
+                .collect::<Vec<_>>()
+                .join(""),
+            config.body.content,
+            config.auth.token.as_deref().unwrap_or(""),
+            config.auth.username.as_deref().unwrap_or(""),
+            config.auth.password.as_deref().unwrap_or(""),
+            auth_header,
+        );
+        let mut i = 0;
+        let bytes = all_text.as_bytes();
+        while i < bytes.len().saturating_sub(3) {
+            if bytes[i] == b'{' && bytes.get(i + 1) == Some(&b'{') {
+                if let Some(end) = all_text[i + 2..].find("}}") {
+                    let var_name = &all_text[i + 2..i + 2 + end];
+                    if !var_name.is_empty() && !variables_used.contains(&var_name.to_string()) {
+                        variables_used.push(var_name.to_string());
+                    }
+                    i += end + 4;
+                    continue;
+                }
+            }
+            i += 1;
+        }
+
+        // Build effective headers (shared + request + auth)
+        let shared_headers: Vec<http::types::KeyValuePair> = col
+            .as_ref()
+            .map(|c| serde_json::from_str(&c.shared_headers).unwrap_or_default())
+            .unwrap_or_default();
+
+        let request_header_keys: std::collections::HashSet<String> = config
+            .headers
+            .iter()
+            .filter(|h| h.enabled && !h.key.is_empty())
+            .map(|h| h.key.to_lowercase())
+            .collect();
+
+        let mut effective_headers: Vec<serde_json::Value> = shared_headers
+            .iter()
+            .filter(|h| h.enabled && !h.key.is_empty() && !request_header_keys.contains(&h.key.to_lowercase()))
+            .map(|h| {
+                serde_json::json!({ "key": h.key, "value": h.value, "source": "collection", "enabled": h.enabled })
+            })
+            .collect();
+
+        for h in &config.headers {
+            if h.enabled && !h.key.is_empty() {
+                effective_headers.push(
+                    serde_json::json!({ "key": h.key, "value": h.value, "source": "request", "enabled": true }),
+                );
+            }
+        }
+
+        text_result(&serde_json::json!({
+            "id": req.id,
+            "name": req.name,
+            "collection": col_info,
+            "project": project_info,
+            "config": {
+                "method": config.method,
+                "url": config.url,
+                "headers": config.headers,
+                "params": config.params,
+                "body": config.body,
+                "auth": config.auth,
+                "description": config.description,
+            },
+            "resolved": {
+                "full_url": resolved_url,
+                "effective_headers": effective_headers,
+                "variables_used": variables_used,
+                "variables_resolved": variables_resolved,
+            },
+            "version": req.version,
+            "sort_order": req.sort_order,
+            "created_at": req.created_at,
+            "updated_at": req.updated_at,
+        }))
+    }
+
+    #[tool(
+        description = "Create a new API request in a collection. Config is optional; defaults to a GET request with empty URL."
+    )]
+    async fn create_request(
+        &self,
+        Parameters(p): Parameters<CreateRequestParam>,
+    ) -> Result<CallToolResult, McpError> {
+        let id = uuid::Uuid::new_v4().to_string();
+        let req = db::create_request(&id, &p.collection_id, &p.name, p.config.as_deref())
+            .await
+            .map_err(mcp_err)?;
+        text_result(&enrich_request(&req))
+    }
+
+    #[tool(
+        description = "Update an API request's name, config (as JSON string), collection, or sort order. Only provided fields are changed."
+    )]
+    async fn update_request(
+        &self,
+        Parameters(p): Parameters<UpdateRequestParam>,
+    ) -> Result<CallToolResult, McpError> {
+        let req = db::update_request(
+            &p.request_id,
+            p.name.as_deref(),
+            p.config.as_deref(),
+            p.collection_id.as_deref(),
+            p.sort_order,
+        )
+        .await
+        .map_err(mcp_err)?;
+        text_result(&enrich_request(&req))
+    }
+
+    #[tool(description = "Delete an API request.")]
+    async fn delete_request(
+        &self,
+        Parameters(p): Parameters<RequestIdParam>,
+    ) -> Result<CallToolResult, McpError> {
+        db::delete_request(&p.request_id).await.map_err(mcp_err)?;
+        text_result(&serde_json::json!({ "deleted": p.request_id }))
+    }
+
+    #[tool(
+        description = "Duplicate an existing API request within the same collection. The copy gets ' (copy)' appended to its name."
+    )]
+    async fn duplicate_request(
+        &self,
+        Parameters(p): Parameters<RequestIdParam>,
+    ) -> Result<CallToolResult, McpError> {
+        let new_id = uuid::Uuid::new_v4().to_string();
+        let req = db::duplicate_request(&p.request_id, &new_id)
+            .await
+            .map_err(mcp_err)?;
+        text_result(&enrich_request(&req))
+    }
+
+    // ---- Environments ----
+
+    #[tool(
+        description = "List all environments for a project with host URL, active status, variable counts, and version metadata."
+    )]
+    async fn list_environments(
+        &self,
+        Parameters(p): Parameters<ProjectIdParam>,
+    ) -> Result<CallToolResult, McpError> {
+        let envs = db::list_environments(Some(&p.project_id))
+            .await
+            .map_err(mcp_err)?;
+        let mut result = Vec::new();
+        for e in &envs {
+            let vars = db::list_env_variables(&e.id).await.unwrap_or_default();
+            let enabled_count = vars.iter().filter(|v| v.enabled).count();
+            result.push(serde_json::json!({
+                "id": e.id,
+                "name": e.name,
+                "host": e.host,
+                "is_active": e.is_active,
+                "sort_order": e.sort_order,
+                "variable_count": vars.len(),
+                "enabled_variable_count": enabled_count,
+                "version": e.version,
+                "created_at": e.created_at,
+                "updated_at": e.updated_at,
+            }));
+        }
+        text_result(&serde_json::json!({ "environments": result, "total": result.len() }))
+    }
+
+    #[tool(
+        description = "Get detailed information about an environment including all its variables (keys, values, enabled status)."
+    )]
+    async fn get_environment(
+        &self,
+        Parameters(p): Parameters<EnvironmentIdParam>,
+    ) -> Result<CallToolResult, McpError> {
+        let envs = db::list_environments(None).await.map_err(mcp_err)?;
+        let env = envs
+            .iter()
+            .find(|e| e.id == p.environment_id)
+            .ok_or_else(|| mcp_err(format!("Environment {} not found", p.environment_id)))?;
+
+        let vars = db::list_env_variables(&env.id).await.map_err(mcp_err)?;
+
+        text_result(&serde_json::json!({
+            "id": env.id,
+            "name": env.name,
+            "host": env.host,
+            "is_active": env.is_active,
+            "project_id": env.project_id,
+            "sort_order": env.sort_order,
+            "version": env.version,
+            "created_at": env.created_at,
+            "updated_at": env.updated_at,
+            "variables": vars,
+        }))
+    }
+
+    #[tool(description = "Create a new environment in a project with an optional base host URL.")]
+    async fn create_environment(
+        &self,
+        Parameters(p): Parameters<CreateEnvironmentParam>,
+    ) -> Result<CallToolResult, McpError> {
+        let id = uuid::Uuid::new_v4().to_string();
+        let env = db::create_environment(&id, &p.name, Some(&p.project_id), p.host.as_deref())
+            .await
+            .map_err(mcp_err)?;
+        text_result(&env)
+    }
+
+    #[tool(description = "Update an environment's name or host URL.")]
+    async fn update_environment(
+        &self,
+        Parameters(p): Parameters<UpdateEnvironmentParam>,
+    ) -> Result<CallToolResult, McpError> {
+        let host = p.host.as_ref().map(|o| o.as_deref());
+        let env = db::update_environment(&p.environment_id, p.name.as_deref(), host)
+            .await
+            .map_err(mcp_err)?;
+        text_result(&env)
+    }
+
+    #[tool(description = "Delete an environment and all its variables.")]
+    async fn delete_environment(
+        &self,
+        Parameters(p): Parameters<EnvironmentIdParam>,
+    ) -> Result<CallToolResult, McpError> {
+        db::delete_environment(&p.environment_id)
+            .await
+            .map_err(mcp_err)?;
+        text_result(&serde_json::json!({ "deleted": p.environment_id }))
+    }
+
+    #[tool(
+        description = "Set an environment as the active environment for its project. Only one environment can be active per project; all others are deactivated."
+    )]
+    async fn set_active_environment(
+        &self,
+        Parameters(p): Parameters<SetActiveEnvParam>,
+    ) -> Result<CallToolResult, McpError> {
+        db::set_active_environment(&p.environment_id, &p.project_id)
+            .await
+            .map_err(mcp_err)?;
+        text_result(&serde_json::json!({
+            "activated": p.environment_id,
+            "project_id": p.project_id,
+        }))
+    }
+
+    // ---- Environment Variables ----
+
+    #[tool(
+        description = "List all variables for an environment with their keys, values, and enabled status."
+    )]
+    async fn list_env_variables(
+        &self,
+        Parameters(p): Parameters<EnvironmentIdParam>,
+    ) -> Result<CallToolResult, McpError> {
+        let vars = db::list_env_variables(&p.environment_id)
+            .await
+            .map_err(mcp_err)?;
+        text_result(&serde_json::json!({ "variables": vars, "total": vars.len() }))
+    }
+
+    #[tool(
+        description = "Replace all variables for an environment. This is an upsert-all operation: all existing variables are deleted and replaced with the provided list."
+    )]
+    async fn set_env_variables(
+        &self,
+        Parameters(p): Parameters<SetEnvVarsParam>,
+    ) -> Result<CallToolResult, McpError> {
+        let variables: Vec<(String, String, String, bool)> = p
+            .variables
+            .iter()
+            .map(|v| {
+                (
+                    uuid::Uuid::new_v4().to_string(),
+                    v.key.clone(),
+                    v.value.clone(),
+                    v.enabled,
+                )
+            })
+            .collect();
+        let count = variables.len();
+        db::set_env_variables(&p.environment_id, variables)
+            .await
+            .map_err(mcp_err)?;
+        text_result(&serde_json::json!({
+            "environment_id": p.environment_id,
+            "variables_set": count,
+        }))
+    }
+
+    // ---- Execution ----
+
+    #[tool(
+        description = "Execute an API request by its ID. Resolves the full URL from environment host + collection path prefix + request URL, interpolates {{variables}} from the active environment, merges collection shared headers with request headers, applies auth (bearer/basic/api_key), and sends the HTTP request. Returns status code, status text, response headers, response body, size in bytes, and timing in milliseconds."
+    )]
+    async fn execute_request(
+        &self,
+        Parameters(p): Parameters<RequestIdParam>,
+    ) -> Result<CallToolResult, McpError> {
+        // Replicate orchestrator.rs logic without Tauri event emission
+        let req = db::get_request(&p.request_id)
+            .await
+            .map_err(mcp_err)?
+            .ok_or_else(|| mcp_err(format!("Request {} not found", p.request_id)))?;
+
+        let mut config: http::types::RequestConfig = serde_json::from_str(&req.config)
+            .map_err(|e| mcp_err(format!("Invalid config: {e}")))?;
+
+        // Resolve collection context
+        let collection = db::collections::get_collection(&req.collection_id)
+            .await
+            .map_err(mcp_err)?;
+
+        if let Some(ref col) = collection {
+            if let Some(ref prefix) = col.path_prefix {
+                let prefix = prefix.trim_end_matches('/');
+                if !prefix.is_empty() {
+                    let url = if config.url.starts_with('/') {
+                        config.url.clone()
+                    } else if config.url.is_empty() {
+                        "/".to_string()
+                    } else {
+                        format!("/{}", config.url)
+                    };
+                    config.url = format!("{}{}", prefix, url);
+                }
+            }
+
+            let shared_headers: Vec<http::types::KeyValuePair> =
+                serde_json::from_str(&col.shared_headers).unwrap_or_default();
+            let request_header_keys: std::collections::HashSet<String> = config
+                .headers
+                .iter()
+                .filter(|h| h.enabled && !h.key.is_empty())
+                .map(|h| h.key.to_lowercase())
+                .collect();
+            let extra_headers: Vec<http::types::KeyValuePair> = shared_headers
+                .into_iter()
+                .filter(|h| {
+                    h.enabled
+                        && !h.key.is_empty()
+                        && !request_header_keys.contains(&h.key.to_lowercase())
+                })
+                .collect();
+            let mut merged = extra_headers;
+            merged.extend(config.headers);
+            config.headers = merged;
+        }
+
+        // Resolve environment
+        let project_id = collection.as_ref().and_then(|c| c.project_id.as_deref());
+        let mut env_variables = HashMap::new();
+        let mut env_name: Option<String> = None;
+
+        if let Some(pid) = project_id {
+            if let Ok(Some(env)) = db::get_active_environment(pid).await {
+                env_name = Some(env.name.clone());
+                if let Some(ref host) = env.host {
+                    let host = host.trim_end_matches('/');
+                    if !host.is_empty() {
+                        let path = if config.url.starts_with('/') {
+                            config.url.clone()
+                        } else if config.url.is_empty() {
+                            String::new()
+                        } else {
+                            format!("/{}", config.url)
+                        };
+                        config.url = format!("{}{}", host, path);
+                    }
+                }
+                if let Ok(vars) = db::list_env_variables(&env.id).await {
+                    for v in vars {
+                        if v.enabled {
+                            env_variables.insert(v.key, v.value);
+                        }
+                    }
+                }
+            }
+        }
+
+        let resolved_url = config.url.clone();
+
+        // Execute
+        let response = http::executor::execute(&config, &env_variables)
+            .await
+            .map_err(mcp_err)?;
+
+        text_result(&serde_json::json!({
+            "status": response.status,
+            "status_text": response.status_text,
+            "headers": response.headers,
+            "body": response.body,
+            "size": response.size,
+            "timing": response.timing,
+            "request_context": {
+                "resolved_url": resolved_url,
+                "method": config.method,
+                "environment": env_name,
+                "variables_interpolated": env_variables.keys().collect::<Vec<_>>(),
+            },
+        }))
+    }
+
+    // ---- Search ----
+
+    #[tool(
+        description = "Search across all API requests by name, URL, method, or config content. Optionally filter by project ID or HTTP method. Returns matching requests with their collection and project context."
+    )]
+    async fn search_requests(
+        &self,
+        Parameters(p): Parameters<SearchParam>,
+    ) -> Result<CallToolResult, McpError> {
+        let limit = p.limit.unwrap_or(50);
+        let conn = db::get_connection().map_err(mcp_err)?;
+        let conn = conn.lock().await;
+
+        let mut results = Vec::new();
+
+        // Get all collections, optionally filtered by project
+        let collections: Vec<db::Collection> = if let Some(ref pid) = p.project_id {
+            drop(conn);
+            db::list_collections(Some(pid)).await.unwrap_or_default()
+        } else {
+            drop(conn);
+            db::list_collections(None).await.unwrap_or_default()
+        };
+
+        let projects = db::list_projects().await.unwrap_or_default();
+
+        for col in &collections {
+            let reqs = db::list_requests(&col.id).await.unwrap_or_default();
+            for req in &reqs {
+                let config = parse_config(&req.config);
+                let method = config
+                    .get("method")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("GET");
+                let url = config.get("url").and_then(|v| v.as_str()).unwrap_or("");
+
+                // Filter by method if specified
+                if let Some(ref filter_method) = p.method {
+                    if !method.eq_ignore_ascii_case(filter_method) {
+                        continue;
+                    }
+                }
+
+                // Match against name, URL, or config content
+                let name_lower = req.name.to_lowercase();
+                let url_lower = url.to_lowercase();
+                let config_lower = req.config.to_lowercase();
+                let query_lower = p.query.to_lowercase();
+
+                if name_lower.contains(&query_lower)
+                    || url_lower.contains(&query_lower)
+                    || config_lower.contains(&query_lower)
+                {
+                    let project_name = col
+                        .project_id
+                        .as_ref()
+                        .and_then(|pid| projects.iter().find(|pr| pr.id == *pid))
+                        .map(|pr| pr.name.as_str());
+
+                    results.push(serde_json::json!({
+                        "id": req.id,
+                        "name": req.name,
+                        "method": method,
+                        "url": url,
+                        "collection": {
+                            "id": col.id,
+                            "name": col.name,
+                            "path_prefix": col.path_prefix,
+                        },
+                        "project": {
+                            "id": col.project_id,
+                            "name": project_name,
+                        },
+                        "version": req.version,
+                        "updated_at": req.updated_at,
+                    }));
+
+                    if results.len() >= limit as usize {
+                        break;
+                    }
+                }
+            }
+            if results.len() >= limit as usize {
+                break;
+            }
+        }
+
+        text_result(&serde_json::json!({
+            "results": results,
+            "total": results.len(),
+            "query": p.query,
+        }))
+    }
+
+    // ---- Changelog ----
+
+    #[tool(
+        description = "Query the audit trail of changes. Filter by entity type (project, collection, request, environment) and/or entity ID. Returns change summaries, version numbers, JSON diffs, and timestamps."
+    )]
+    async fn get_changelog(
+        &self,
+        Parameters(p): Parameters<ChangelogParam>,
+    ) -> Result<CallToolResult, McpError> {
+        let entries = db::get_changelog(
+            p.entity_type.as_deref(),
+            p.entity_id.as_deref(),
+            p.limit.unwrap_or(50),
+            p.offset.unwrap_or(0),
+        )
+        .await
+        .map_err(mcp_err)?;
+
+        let enriched: Vec<serde_json::Value> = entries
+            .iter()
+            .map(|e| {
+                let diff_parsed = e
+                    .diff
+                    .as_ref()
+                    .and_then(|d| serde_json::from_str::<serde_json::Value>(d).ok());
+                serde_json::json!({
+                    "id": e.id,
+                    "entity_type": e.entity_type,
+                    "entity_id": e.entity_id,
+                    "entity_name": e.entity_name,
+                    "version": e.version,
+                    "summary": e.summary,
+                    "diff": diff_parsed,
+                    "created_at": e.created_at,
+                })
+            })
+            .collect();
+
+        text_result(&serde_json::json!({ "entries": enriched, "total": enriched.len() }))
+    }
+}
+
+// ============ ServerHandler ============
+
+#[tool_handler]
+impl ServerHandler for PiuMcp {
+    fn get_info(&self) -> ServerInfo {
+        ServerInfo {
+            protocol_version: ProtocolVersion::V_2025_03_26,
+            capabilities: ServerCapabilities::builder().enable_tools().build(),
+            server_info: Implementation {
+                name: "piu-mcp".into(),
+                title: Some("PIU MCP Server".into()),
+                version: env!("CARGO_PKG_VERSION").into(),
+                description: Some("Manage projects, collections, API requests, environments, and execute HTTP calls.".into()),
+                icons: None,
+                website_url: None,
+            },
+            instructions: Some(
+                "PIU API management server. Manage projects, collections, API requests, \
+                 environments, variables, and execute HTTP requests with full URL resolution \
+                 and variable interpolation."
+                    .into(),
+            ),
+        }
+    }
+}

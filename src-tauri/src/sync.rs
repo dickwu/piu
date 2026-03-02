@@ -183,6 +183,10 @@ pub async fn handle_handshake(
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
         request_count += reqs.len() as u64;
     }
+    let root_reqs = db::list_root_requests(&state.project_id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    request_count += root_reqs.len() as u64;
 
     let environments = db::list_environments(Some(&state.project_id))
         .await
@@ -277,6 +281,8 @@ pub async fn handle_pull(
         let reqs = db::list_requests(&col.id).await.map_err(err)?;
         server_requests.extend(reqs);
     }
+    let root_reqs = db::list_root_requests(&state.project_id).await.map_err(err)?;
+    server_requests.extend(root_reqs);
 
     let newer_requests: Vec<db::ApiRequest> = server_requests
         .iter()
@@ -573,6 +579,10 @@ pub async fn sync_with_remote(
             .map_err(|e| e.to_string())?;
         local_requests.extend(reqs);
     }
+    let local_root_reqs = db::list_root_requests(local_project_id)
+        .await
+        .map_err(|e| e.to_string())?;
+    local_requests.extend(local_root_reqs);
 
     let local_environments = db::list_environments(Some(local_project_id))
         .await
@@ -811,6 +821,11 @@ pub async fn sync_with_remote(
             .map_err(|e| e.to_string())?;
         fresh_requests.extend(reqs);
     }
+    let fresh_root_reqs = db::list_root_requests(local_project_id)
+        .await
+        .map_err(|e| e.to_string())?;
+    fresh_requests.extend(fresh_root_reqs);
+
     let fresh_environments = db::list_environments(Some(local_project_id))
         .await
         .map_err(|e| e.to_string())?;
@@ -1064,11 +1079,37 @@ async fn upsert_request(req: &db::ApiRequest) -> Result<bool, String> {
         }
     }
 
+    // Derive project_id: use the field on the wire payload if present.
+    // For backward compat with older peers that don't send project_id, fall back
+    // to looking up the collection's project_id when collection_id is available.
+    let project_id: Option<String> = if req.project_id.is_some() {
+        req.project_id.clone()
+    } else if let Some(ref col_id) = req.collection_id {
+        // collection was already upserted before requests, so it should exist
+        let mut rows = conn
+            .query(
+                "SELECT project_id FROM collections WHERE id = ?1",
+                turso::params![col_id.clone()],
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+        let pid: Option<String> = if let Some(row) = rows.next().await.map_err(|e| e.to_string())? {
+            row.get::<Option<String>>(0).map_err(|e| e.to_string())?
+        } else {
+            None
+        };
+        drop(rows);
+        pid
+    } else {
+        None
+    };
+
     conn.execute(
-        "INSERT INTO api_requests (id, collection_id, name, sort_order, config, version, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+        "INSERT INTO api_requests (id, collection_id, project_id, name, sort_order, config, version, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
          ON CONFLICT(id) DO UPDATE SET
             collection_id = excluded.collection_id,
+            project_id = excluded.project_id,
             name = excluded.name,
             sort_order = excluded.sort_order,
             config = excluded.config,
@@ -1078,6 +1119,7 @@ async fn upsert_request(req: &db::ApiRequest) -> Result<bool, String> {
         turso::params![
             req.id.clone(),
             req.collection_id.clone(),
+            project_id,
             req.name.clone(),
             req.sort_order,
             req.config.clone(),

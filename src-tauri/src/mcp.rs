@@ -702,9 +702,11 @@ impl PiuMcp {
             });
 
         // Collection context
-        let col = db::collections::get_collection(&req.collection_id)
-            .await
-            .unwrap_or(None);
+        let col = if let Some(cid) = req.collection_id.as_deref() {
+            db::collections::get_collection(cid).await.unwrap_or(None)
+        } else {
+            None
+        };
 
         let col_info = col.as_ref().map(|c| {
             serde_json::json!({
@@ -882,9 +884,24 @@ impl PiuMcp {
         Parameters(p): Parameters<CreateRequestParam>,
     ) -> Result<CallToolResult, McpError> {
         let id = uuid::Uuid::new_v4().to_string();
-        let req = db::create_request(&id, &p.collection_id, &p.name, p.config.as_deref())
+        // Resolve project_id from collection
+        let col = db::collections::get_collection(&p.collection_id)
             .await
-            .map_err(mcp_err)?;
+            .map_err(mcp_err)?
+            .ok_or_else(|| mcp_err(format!("Collection {} not found", p.collection_id)))?;
+        let project_id = col
+            .project_id
+            .as_deref()
+            .ok_or_else(|| mcp_err("Collection has no project_id".to_string()))?;
+        let req = db::create_request(
+            &id,
+            Some(&p.collection_id),
+            project_id,
+            &p.name,
+            p.config.as_deref(),
+        )
+        .await
+        .map_err(mcp_err)?;
         text_result(&enrich_request(&req))
     }
 
@@ -901,6 +918,7 @@ impl PiuMcp {
             p.config.as_deref(),
             p.collection_id.as_deref(),
             p.sort_order,
+            false,
         )
         .await
         .map_err(mcp_err)?;
@@ -1502,9 +1520,13 @@ impl PiuMcp {
             .map_err(|e| mcp_err(format!("Invalid config: {e}")))?;
 
         // Resolve collection context
-        let collection = db::collections::get_collection(&req.collection_id)
-            .await
-            .map_err(mcp_err)?;
+        let collection = if let Some(cid) = req.collection_id.as_deref() {
+            db::collections::get_collection(cid)
+                .await
+                .map_err(mcp_err)?
+        } else {
+            None
+        };
 
         if let Some(ref col) = collection {
             if let Some(ref prefix) = col.path_prefix {
@@ -1543,7 +1565,11 @@ impl PiuMcp {
         }
 
         // Resolve environment
-        let project_id = collection.as_ref().and_then(|c| c.project_id.as_deref());
+        // Prefer project_id from collection; fall back to request.project_id for root requests
+        let project_id = collection
+            .as_ref()
+            .and_then(|c| c.project_id.as_deref())
+            .or(req.project_id.as_deref());
         let mut env_variables = HashMap::new();
         let mut env_name: Option<String> = None;
 

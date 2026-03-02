@@ -115,6 +115,8 @@ pub fn run() {
             commands::list_requests,
             commands::get_request,
             commands::duplicate_request,
+            commands::list_root_requests,
+            commands::count_requests_in_collection,
             // HTTP execution
             commands::execute_request,
             commands::execute_request_by_id,

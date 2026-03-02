@@ -32,9 +32,13 @@ pub async fn orchestrate_request(
         .map_err(|e| format!("Invalid request config: {}", e))?;
 
     // 3. Resolve collection context
-    let collection = db::collections::get_collection(&request.collection_id)
-        .await
-        .map_err(|e| e.to_string())?;
+    let collection = if let Some(cid) = request.collection_id.as_deref() {
+        db::collections::get_collection(cid)
+            .await
+            .map_err(|e| e.to_string())?
+    } else {
+        None
+    };
 
     if let Some(ref col) = collection {
         // Apply path_prefix
@@ -78,7 +82,11 @@ pub async fn orchestrate_request(
     }
 
     // 4. Resolve environment (host + variables)
-    let project_id = collection.as_ref().and_then(|c| c.project_id.as_deref());
+    // Prefer project_id from collection; fall back to request.project_id for root requests
+    let project_id = collection
+        .as_ref()
+        .and_then(|c| c.project_id.as_deref())
+        .or(request.project_id.as_deref());
     let mut env_variables = HashMap::new();
 
     if let Some(pid) = project_id {

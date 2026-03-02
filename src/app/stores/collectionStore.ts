@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import type { Collection, ApiRequest } from '@/app/types';
 
+export const ROOT_REQUESTS_KEY = '__root__';
+
 interface CollectionStore {
   collections: Collection[];
   requests: Map<string, ApiRequest[]>;
@@ -12,6 +14,8 @@ interface CollectionStore {
 
   loadCollections: (projectId?: string) => Promise<void>;
   loadRequests: (collectionId: string) => Promise<void>;
+  loadRootRequests: (projectId: string) => Promise<void>;
+  countRequestsInCollection: (collectionId: string) => Promise<number>;
   createCollection: (
     name: string,
     parentId?: string,
@@ -30,17 +34,19 @@ interface CollectionStore {
   ) => Promise<Collection>;
   deleteCollection: (id: string) => Promise<void>;
   createRequest: (
-    collectionId: string,
+    collectionId: string | null,
     name: string,
     config?: string,
+    projectId?: string,
   ) => Promise<ApiRequest>;
   updateRequest: (
     id: string,
     updates: {
       name?: string;
       config?: string;
-      collection_id?: string;
+      collection_id?: string | null;
       sort_order?: number;
+      move_to_root?: boolean;
     },
   ) => Promise<ApiRequest>;
   deleteRequest: (id: string) => Promise<void>;
@@ -82,6 +88,19 @@ export const useCollectionStore = create<CollectionStore>((set, get) => ({
     });
   },
 
+  loadRootRequests: async (projectId: string) => {
+    const requests = await invoke<ApiRequest[]>('list_root_requests', { projectId });
+    set((state) => {
+      const newRequests = new Map(state.requests);
+      newRequests.set(ROOT_REQUESTS_KEY, requests);
+      return { requests: newRequests };
+    });
+  },
+
+  countRequestsInCollection: async (collectionId: string) => {
+    return invoke<number>('count_requests_in_collection', { collectionId });
+  },
+
   createCollection: async (
     name: string,
     parentId?: string,
@@ -115,26 +134,61 @@ export const useCollectionStore = create<CollectionStore>((set, get) => ({
     // Reload will be triggered by the parent component with the current project
   },
 
-  createRequest: async (collectionId, name, config) => {
+  createRequest: async (collectionId, name, config, projectId) => {
     const request = await invoke<ApiRequest>('create_request', {
-      input: { collection_id: collectionId, name, config: config ?? null },
+      input: {
+        collection_id: collectionId,
+        project_id: projectId ?? null,
+        name,
+        config: config ?? null,
+      },
     });
-    await get().loadRequests(collectionId);
+    if (request.collection_id) {
+      await get().loadRequests(request.collection_id);
+    } else if (projectId) {
+      await get().loadRootRequests(projectId);
+    }
     return request;
   },
 
   updateRequest: async (id, updates) => {
+    // Snapshot source collection before update
+    const sourceCollectionId = [...get().requests.entries()]
+      .find(([, reqs]) => reqs.some((r) => r.id === id))?.[0] ?? null;
+
     const request = await invoke<ApiRequest>('update_request', {
       input: { id, ...updates },
     });
+
+    // Reload source collection if the request moved away
+    if (
+      sourceCollectionId &&
+      sourceCollectionId !== ROOT_REQUESTS_KEY &&
+      sourceCollectionId !== request.collection_id
+    ) {
+      await get().loadRequests(sourceCollectionId);
+    }
     if (request.collection_id) {
       await get().loadRequests(request.collection_id);
+    }
+    // If moved to root or was already root, reload root requests
+    if (!request.collection_id && request.project_id) {
+      await get().loadRootRequests(request.project_id);
+    }
+    // If moved FROM root, reload root requests too
+    if (sourceCollectionId === ROOT_REQUESTS_KEY && request.project_id) {
+      await get().loadRootRequests(request.project_id);
     }
     return request;
   },
 
   deleteRequest: async (id: string) => {
-    const { selectedRequestId, selectedCollectionId } = get();
+    const { selectedRequestId, selectedCollectionId, requests } = get();
+    // Check if request is root before deleting
+    const rootRequests = requests.get(ROOT_REQUESTS_KEY) ?? [];
+    const isRoot = rootRequests.some((r) => r.id === id);
+    const rootProjectId = isRoot ? rootRequests.find((r) => r.id === id)?.project_id : null;
+
     await invoke('delete_request', { id });
     if (selectedRequestId === id) {
       set({ selectedRequestId: null });
@@ -142,12 +196,17 @@ export const useCollectionStore = create<CollectionStore>((set, get) => ({
     if (selectedCollectionId) {
       await get().loadRequests(selectedCollectionId);
     }
+    if (isRoot && rootProjectId) {
+      await get().loadRootRequests(rootProjectId);
+    }
   },
 
   duplicateRequest: async (id: string) => {
     const request = await invoke<ApiRequest>('duplicate_request', { id });
     if (request.collection_id) {
       await get().loadRequests(request.collection_id);
+    } else if (request.project_id) {
+      await get().loadRootRequests(request.project_id);
     }
     return request;
   },
@@ -155,6 +214,7 @@ export const useCollectionStore = create<CollectionStore>((set, get) => ({
   getCollectionForRequest: (requestId: string) => {
     const { requests, collections } = get();
     for (const [collectionId, reqs] of requests.entries()) {
+      if (collectionId === ROOT_REQUESTS_KEY) continue;
       if (reqs.some((r) => r.id === requestId)) {
         return collections.find((c) => c.id === collectionId);
       }

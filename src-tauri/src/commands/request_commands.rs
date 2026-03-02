@@ -5,7 +5,8 @@ use tauri::Emitter;
 
 #[derive(Debug, Deserialize)]
 pub struct CreateRequestInput {
-    pub collection_id: String,
+    pub collection_id: Option<String>,
+    pub project_id: Option<String>,
     pub name: String,
     pub config: Option<String>,
 }
@@ -17,6 +18,8 @@ pub struct UpdateRequestInput {
     pub config: Option<String>,
     pub collection_id: Option<String>,
     pub sort_order: Option<i64>,
+    #[serde(default)]
+    pub move_to_root: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -28,9 +31,25 @@ pub struct ExecuteRequestInput {
 #[tauri::command]
 pub async fn create_request(input: CreateRequestInput) -> Result<db::ApiRequest, String> {
     let id = uuid::Uuid::new_v4().to_string();
+
+    // Derive project_id server-side from the collection when collection_id is present
+    let project_id = if let Some(ref cid) = input.collection_id {
+        let col = db::get_collection(cid)
+            .await
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("Collection {} not found", cid))?;
+        col.project_id
+            .ok_or_else(|| format!("Collection {} has no project", cid))?
+    } else {
+        input
+            .project_id
+            .ok_or_else(|| "project_id required for root requests".to_string())?
+    };
+
     db::create_request(
         &id,
-        &input.collection_id,
+        input.collection_id.as_deref(),
+        &project_id,
         &input.name,
         input.config.as_deref(),
     )
@@ -46,6 +65,7 @@ pub async fn update_request(input: UpdateRequestInput) -> Result<db::ApiRequest,
         input.config.as_deref(),
         input.collection_id.as_deref(),
         input.sort_order,
+        input.move_to_root,
     )
     .await
     .map_err(|e| e.to_string())
@@ -83,6 +103,22 @@ pub async fn execute_request(input: ExecuteRequestInput) -> Result<http::HttpRes
 
     let env_variables = input.env_variables.unwrap_or_default();
     http::executor::execute(&config, &env_variables).await
+}
+
+#[tauri::command]
+pub async fn list_root_requests(project_id: String) -> Result<Vec<db::ApiRequest>, String> {
+    db::list_root_requests(&project_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn count_requests_in_collection(
+    collection_id: String,
+) -> Result<i64, String> {
+    db::count_requests_in_collection(&collection_id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Event-based request execution. Fires and forgets — progress streamed via "request-progress" events.

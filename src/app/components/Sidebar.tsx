@@ -1,6 +1,6 @@
 'use client';
 
-import { Button, Tree, Dropdown, Tooltip } from 'antd';
+import { Button, Tree, Dropdown, Tooltip, App } from 'antd';
 import {
   PlusOutlined,
   FolderOutlined,
@@ -12,9 +12,10 @@ import {
   HistoryOutlined,
   SwapOutlined,
   DatabaseOutlined,
+  HomeOutlined,
 } from '@ant-design/icons';
 import { useState, useCallback, useMemo, useEffect } from 'react';
-import { useCollectionStore } from '../stores/collectionStore';
+import { useCollectionStore, ROOT_REQUESTS_KEY } from '../stores/collectionStore';
 import { useRequestEditorStore } from '../stores/requestStore';
 import { useProjectStore } from '../stores/projectStore';
 import type { ApiRequest } from '../types';
@@ -37,13 +38,18 @@ const METHOD_COLORS: Record<string, string> = {
 };
 
 export function Sidebar() {
+  const { modal } = App.useApp();
+
   const {
     collections,
     requests,
     selectedCollectionId,
     selectedRequestId,
     settingsDrawerCollectionId,
+    loadCollections,
     loadRequests,
+    loadRootRequests,
+    countRequestsInCollection,
     createCollection,
     updateCollection,
     deleteCollection,
@@ -87,6 +93,13 @@ export function Sidebar() {
       loadRequests(col.id);
     }
   }, [collections, loadRequests]);
+
+  // Load root requests when active project changes
+  useEffect(() => {
+    if (activeProjectId) {
+      loadRootRequests(activeProjectId);
+    }
+  }, [activeProjectId, loadRootRequests]);
 
   // Sync external store trigger (from ConfigValidationModal) with local modal state
   useEffect(() => {
@@ -199,6 +212,29 @@ export function Sidebar() {
     setMoveRequest(null);
   }, []);
 
+  const handleEmptyCollection = useCallback(
+    (collectionId: string, collectionName: string) => {
+      // Only prompt for leaf collections (no child collections)
+      const hasChildren = collections.some((c) => c.parent_id === collectionId);
+      if (hasChildren) return;
+
+      modal.confirm({
+        title: 'Delete empty collection?',
+        content: `"${collectionName}" has no more requests. Would you like to delete it?`,
+        okText: 'Delete',
+        okButtonProps: { danger: true },
+        cancelText: 'Keep',
+        onOk: async () => {
+          await deleteCollection(collectionId);
+          if (activeProjectId) {
+            await loadCollections(activeProjectId);
+          }
+        },
+      });
+    },
+    [collections, modal, deleteCollection, activeProjectId, loadCollections],
+  );
+
   const findRequestById = useCallback(
     (requestId: string): ApiRequest | undefined => {
       for (const reqs of requests.values()) {
@@ -214,7 +250,7 @@ export function Sidebar() {
     async (data: { name: string; method: string; url: string }) => {
       const { path: cleanUrl, params: parsedParams } = parseQueryParamsFromUrl(data.url);
 
-      if (reqFormMode === 'create' && reqFormCollectionId) {
+      if (reqFormMode === 'create') {
         const config = {
           ...defaultRequestConfig(),
           method: data.method,
@@ -225,10 +261,12 @@ export function Sidebar() {
           reqFormCollectionId,
           data.name,
           JSON.stringify(config),
+          activeProjectId ?? undefined,
         );
-        // Auto-select the new request
         setSelectedRequest(req.id);
-        setSelectedCollection(req.collection_id);
+        if (req.collection_id) {
+          setSelectedCollection(req.collection_id);
+        }
         setActiveRequest(req.id, parseConfig(req.config));
       } else if (reqFormMode === 'edit' && reqFormRequestId) {
         const existing = findRequestById(reqFormRequestId);
@@ -256,6 +294,7 @@ export function Sidebar() {
       reqFormMode,
       reqFormRequestId,
       reqFormCollectionId,
+      activeProjectId,
       activeRequestId,
       createRequest,
       updateRequest,
@@ -270,7 +309,9 @@ export function Sidebar() {
   const handleSelectRequest = useCallback(
     (request: ApiRequest) => {
       setSelectedRequest(request.id);
-      setSelectedCollection(request.collection_id);
+      if (request.collection_id) {
+        setSelectedCollection(request.collection_id);
+      }
       const config = parseConfig(request.config);
       setActiveRequest(request.id, config);
     },
@@ -298,89 +339,99 @@ export function Sidebar() {
     ? parseConfig(reqFormRequest.config)
     : undefined;
 
+  // Build a request node (shared between root requests and collection requests)
+  const buildRequestNode = useCallback(
+    (req: ApiRequest): DataNode => {
+      const config = parseConfig(req.config);
+      const method = config.method || 'GET';
+      return {
+        key: `req-${req.id}`,
+        title: (
+          <Dropdown
+            trigger={['contextMenu']}
+            menu={{
+              items: [
+                {
+                  key: 'edit',
+                  icon: <EditOutlined />,
+                  label: 'Edit',
+                  onClick: () => openRequestEdit(req),
+                },
+                {
+                  key: 'duplicate',
+                  icon: <CopyOutlined />,
+                  label: 'Duplicate',
+                  onClick: () => duplicateRequest(req.id),
+                },
+                {
+                  key: 'move',
+                  icon: <SwapOutlined />,
+                  label: 'Move to...',
+                  onClick: () => openMoveModal(req),
+                },
+                { type: 'divider' },
+                {
+                  key: 'delete',
+                  icon: <DeleteOutlined />,
+                  label: 'Delete',
+                  danger: true,
+                  onClick: () => deleteRequest(req.id),
+                },
+              ],
+            }}
+          >
+            <span
+              className="flex items-center gap-1.5"
+              onClick={() => handleSelectRequest(req)}
+            >
+              <span
+                className={`method-pill method-pill-${method.toLowerCase()}`}
+                style={{ fontSize: 9, minWidth: 36 }}
+              >
+                {method}
+              </span>
+              <span
+                className="truncate text-xs"
+                style={{ fontFamily: 'var(--font-ui)' }}
+              >
+                {req.name}
+              </span>
+              <span
+                className="ml-auto"
+                style={{
+                  color: 'var(--text-tertiary)',
+                  fontFamily: 'var(--font-code)',
+                  fontSize: 9,
+                }}
+              >
+                v{req.version}
+              </span>
+            </span>
+          </Dropdown>
+        ),
+        icon: <ApiOutlined style={{ color: METHOD_COLORS[method] }} />,
+        isLeaf: true,
+      };
+    },
+    [openRequestEdit, duplicateRequest, openMoveModal, deleteRequest, handleSelectRequest],
+  );
+
   // Build tree data from collections and requests
   const treeData = useMemo(() => {
-    const buildTree = (parentId: string | null): DataNode[] => {
+    const rootRequests = requests.get(ROOT_REQUESTS_KEY) ?? [];
+
+    const rootRequestNodes: DataNode[] = rootRequests.map((req) => buildRequestNode(req));
+
+    const buildCollectionTree = (parentId: string | null): DataNode[] => {
       const childCollections = collections.filter(
         (c) => c.parent_id === parentId,
       );
 
       return childCollections.map((col) => {
         const colRequests = requests.get(col.id) ?? [];
-        const childNodes = buildTree(col.id);
+        const childNodes = buildCollectionTree(col.id);
 
-        const requestNodes: DataNode[] = colRequests.map((req) => {
-          const config = parseConfig(req.config);
-          const method = config.method || 'GET';
-          return {
-            key: `req-${req.id}`,
-            title: (
-              <Dropdown
-                trigger={['contextMenu']}
-                menu={{
-                  items: [
-                    {
-                      key: 'edit',
-                      icon: <EditOutlined />,
-                      label: 'Edit',
-                      onClick: () => openRequestEdit(req),
-                    },
-                    {
-                      key: 'duplicate',
-                      icon: <CopyOutlined />,
-                      label: 'Duplicate',
-                      onClick: () => duplicateRequest(req.id),
-                    },
-                    {
-                      key: 'move',
-                      icon: <SwapOutlined />,
-                      label: 'Move to...',
-                      onClick: () => openMoveModal(req),
-                    },
-                    { type: 'divider' },
-                    {
-                      key: 'delete',
-                      icon: <DeleteOutlined />,
-                      label: 'Delete',
-                      danger: true,
-                      onClick: () => deleteRequest(req.id),
-                    },
-                  ],
-                }}
-              >
-                <span
-                  className="flex items-center gap-1.5"
-                  onClick={() => handleSelectRequest(req)}
-                >
-                  <span
-                    className={`method-pill method-pill-${method.toLowerCase()}`}
-                    style={{ fontSize: 9, minWidth: 36 }}
-                  >
-                    {method}
-                  </span>
-                  <span
-                    className="truncate text-xs"
-                    style={{ fontFamily: 'var(--font-ui)' }}
-                  >
-                    {req.name}
-                  </span>
-                  <span
-                    className="ml-auto"
-                    style={{
-                      color: 'var(--text-tertiary)',
-                      fontFamily: 'var(--font-code)',
-                      fontSize: 9,
-                    }}
-                  >
-                    v{req.version}
-                  </span>
-                </span>
-              </Dropdown>
-            ),
-            icon: <ApiOutlined style={{ color: METHOD_COLORS[method] }} />,
-            isLeaf: true,
-          };
-        });
+        const requestNodes: DataNode[] = colRequests.map((req) => buildRequestNode(req));
 
         return {
           key: `col-${col.id}`,
@@ -480,18 +531,14 @@ export function Sidebar() {
       });
     };
 
-    return buildTree(null);
+    return [...rootRequestNodes, ...buildCollectionTree(null)];
   }, [
     collections,
     requests,
-    handleSelectRequest,
+    buildRequestNode,
     openRequestCreate,
-    openRequestEdit,
     openCollectionCreate,
     openCollectionEdit,
-    openMoveModal,
-    duplicateRequest,
-    deleteRequest,
     deleteCollection,
   ]);
 
@@ -558,20 +605,28 @@ export function Sidebar() {
           )}
         </div>
 
-        {/* Liquid Glass footer — action bar */}
-        {selectedCollectionId && (
-          <div className="glass-footer p-2">
-            <Button
-              size="small"
-              type="dashed"
-              block
-              icon={<PlusOutlined />}
-              onClick={() => openRequestCreate(selectedCollectionId)}
-            >
-              New Request
-            </Button>
-          </div>
-        )}
+        {/* Liquid Glass footer — action bar (always visible when project is active) */}
+        <div className="glass-footer p-2">
+          <Button
+            size="small"
+            type="dashed"
+            block
+            icon={<PlusOutlined />}
+            onClick={() => {
+              if (selectedCollectionId) {
+                openRequestCreate(selectedCollectionId);
+              } else if (activeProjectId) {
+                // Create root request
+                setReqFormMode('create');
+                setReqFormRequestId(null);
+                setReqFormCollectionId(null);
+                setReqFormOpen(true);
+              }
+            }}
+          >
+            New Request
+          </Button>
+        </div>
       </div>
 
       <CollectionFormModal
@@ -604,6 +659,7 @@ export function Sidebar() {
         open={moveModalOpen}
         request={moveRequest}
         onClose={handleCloseMoveModal}
+        onEmptyCollection={handleEmptyCollection}
       />
 
       <ModelManager

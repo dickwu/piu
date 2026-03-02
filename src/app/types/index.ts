@@ -26,7 +26,8 @@ export interface Collection {
 
 export interface ApiRequest {
   id: string;
-  collection_id: string;
+  collection_id: string | null;
+  project_id: string | null;
   name: string;
   sort_order: number;
   config: string; // JSON string

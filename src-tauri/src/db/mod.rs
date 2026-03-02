@@ -97,6 +97,18 @@ async fn run_migrations(conn: &Connection) -> DbResult<()> {
     // Data migration: assign orphan collections and environments to a default project
     migrate_orphans_to_default_project(conn).await?;
 
+    // Data migration: add project_id column to api_requests (must run after orphan migration
+    // so that projects exist for the backfill)
+    migrate_requests_schema(conn).await?;
+
+    // Ensure project_id index exists (created by migration for existing DBs,
+    // needed here for new DBs where get_table_sql doesn't include it)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_requests_project ON api_requests(project_id)",
+        (),
+    )
+    .await?;
+
     Ok(())
 }
 
@@ -190,6 +202,96 @@ async fn migrate_orphans_to_default_project(conn: &Connection) -> DbResult<()> {
     Ok(())
 }
 
+async fn migrate_requests_schema(conn: &Connection) -> DbResult<()> {
+    // Check if migration already done by looking for project_id column that is NOT NULL.
+    // PRAGMA table_info columns: cid(0), name(1), type(2), notnull(3), dflt_value(4), pk(5)
+    let mut rows = conn.query("PRAGMA table_info(api_requests)", ()).await?;
+    let mut project_id_is_not_null = false;
+    while let Some(row) = rows.next().await? {
+        let col_name: String = row.get(1)?;
+        if col_name == "project_id" {
+            let notnull: i64 = row.get(3)?;
+            if notnull != 0 {
+                project_id_is_not_null = true;
+            }
+            break;
+        }
+    }
+    drop(rows);
+    if project_id_is_not_null {
+        return Ok(());
+    }
+
+    // Full table rebuild in a transaction
+    conn.execute("BEGIN IMMEDIATE", ()).await?;
+
+    let result = async {
+        conn.execute(
+            "CREATE TABLE api_requests_new (
+                id TEXT PRIMARY KEY,
+                collection_id TEXT REFERENCES collections(id) ON DELETE SET NULL,
+                project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                name TEXT NOT NULL,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                config TEXT NOT NULL DEFAULT '{}',
+                version INTEGER NOT NULL DEFAULT 1,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            )",
+            (),
+        )
+        .await?;
+
+        conn.execute(
+            "INSERT INTO api_requests_new (id, collection_id, project_id, name, sort_order, config, version, created_at, updated_at)
+             SELECT r.id, c.id,
+                    COALESCE(c.project_id, (SELECT id FROM projects ORDER BY created_at ASC, id ASC LIMIT 1)),
+                    r.name, r.sort_order, r.config, r.version, r.created_at, r.updated_at
+             FROM api_requests r
+             LEFT JOIN collections c ON r.collection_id = c.id",
+            (),
+        )
+        .await?;
+
+        conn.execute("DROP TABLE api_requests", ()).await?;
+        conn.execute("ALTER TABLE api_requests_new RENAME TO api_requests", ()).await?;
+        conn.execute(
+            "CREATE INDEX idx_requests_collection ON api_requests(collection_id)",
+            (),
+        )
+        .await?;
+        conn.execute(
+            "CREATE INDEX idx_requests_project ON api_requests(project_id)",
+            (),
+        )
+        .await?;
+
+        // Verify FK integrity — query so we can inspect violations
+        let mut fk_rows = conn
+            .query("PRAGMA foreign_key_check(api_requests)", ())
+            .await?;
+        if fk_rows.next().await?.is_some() {
+            drop(fk_rows);
+            return Err("Migration produced foreign key violations in api_requests".into());
+        }
+        drop(fk_rows);
+
+        Ok::<(), Box<dyn std::error::Error + Send + Sync>>(())
+    }
+    .await;
+
+    match result {
+        Ok(()) => {
+            conn.execute("COMMIT", ()).await?;
+            Ok(())
+        }
+        Err(e) => {
+            let _ = conn.execute("ROLLBACK", ()).await;
+            Err(e)
+        }
+    }
+}
+
 // Re-export project functions
 pub use projects::{create_project, delete_project, get_project, list_projects, update_project};
 
@@ -200,7 +302,8 @@ pub use collections::{
 
 // Re-export request functions
 pub use requests::{
-    create_request, delete_request, duplicate_request, get_request, list_requests, update_request,
+    count_requests_in_collection, create_request, delete_request, duplicate_request, get_request,
+    list_requests, list_root_requests, update_request,
 };
 
 // Re-export environment functions

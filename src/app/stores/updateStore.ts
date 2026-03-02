@@ -32,8 +32,9 @@ export const useUpdateStore = create<UpdateStore>((set, get) => ({
       }
       pendingUpdate = update;
       set({ status: { state: 'available', version: update.version } });
-    } catch {
-      set({ status: { state: 'up_to_date' } });
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : `${error}`;
+      set({ status: { state: 'error', message: msg } });
     }
   },
 

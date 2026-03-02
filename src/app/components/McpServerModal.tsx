@@ -183,7 +183,7 @@ export function McpServerModal({ open, onClose }: McpServerModalProps) {
         url: serverUrl,
       });
       if (output.success) {
-        const text = (output.stdout || 'PIU MCP server added to Claude Code').trim();
+        const text = (output.stdout || 'Piu MCP server added to Claude Code').trim();
         setClaudeResult({ type: 'success', text });
       } else {
         const text = (output.stderr || output.stdout || `Exit code ${output.exit_code}`).trim();

@@ -18,7 +18,7 @@ const jetbrains = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'piu',
+  title: 'Piu',
   description: 'API Management Application',
 };
 

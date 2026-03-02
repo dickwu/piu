@@ -224,7 +224,7 @@ function HostPanel() {
           }}
         >
           <div style={{ fontSize: 13, fontWeight: 600, color: '#e2e2e8', marginBottom: 12 }}>
-            Share these with the other PIU
+            Share these with the other Piu
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 12 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -263,7 +263,7 @@ function HostPanel() {
             lineHeight: 1.5,
           }}
         >
-          Listening on all interfaces (0.0.0.0:{port}). Other PIU instances on your LAN can connect using your machine&apos;s IP address.
+          Listening on all interfaces (0.0.0.0:{port}). Other Piu instances on your LAN can connect using your machine&apos;s IP address.
         </div>
       )}
     </div>

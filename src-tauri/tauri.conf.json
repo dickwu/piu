@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "piu",
+  "productName": "Piu",
   "version": "0.1.15",
   "identifier": "com.piu.app",
   "build": {
@@ -13,7 +13,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "piu",
+        "title": "Piu",
         "width": 1400,
         "height": 900
       }

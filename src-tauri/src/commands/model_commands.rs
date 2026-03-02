@@ -88,13 +88,9 @@ pub async fn create_model(input: CreateModelInput) -> Result<db::DataModel, Stri
 
     // Validate graph after insert (model must exist in DB for cycle detection)
     if proposed_parent.is_some() || !proposed_mixins.is_empty() {
-        if let Err(e) = db::validate_model_graph(
-            &input.project_id,
-            &id,
-            proposed_parent,
-            &proposed_mixins,
-        )
-        .await
+        if let Err(e) =
+            db::validate_model_graph(&input.project_id, &id, proposed_parent, &proposed_mixins)
+                .await
         {
             // Rollback: delete the model we just created
             let _ = db::delete_model(&id).await;

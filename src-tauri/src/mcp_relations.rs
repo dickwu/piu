@@ -75,8 +75,12 @@ pub async fn get_model_relations(project_id: &str) -> Result<RelationsGraph, Str
         }
 
         // Mixin edges
-        let mixin_ids: Vec<String> = serde_json::from_str(&model.mixin_model_ids)
-            .map_err(|e| format!("Malformed mixin_model_ids JSON for model '{}': {}", model.id, e))?;
+        let mixin_ids: Vec<String> = serde_json::from_str(&model.mixin_model_ids).map_err(|e| {
+            format!(
+                "Malformed mixin_model_ids JSON for model '{}': {}",
+                model.id, e
+            )
+        })?;
         for mixin_id in mixin_ids {
             edges.push(RelationEdge {
                 from: model.id.clone(),
@@ -173,8 +177,12 @@ pub async fn get_model_hierarchy(model_id: &str) -> Result<HierarchyResult, Stri
     // Mixins — both "uses" (this model's mixins) and "used_by" (models mixing this one in)
     let mut mixins = Vec::new();
 
-    let own_mixin_ids: Vec<String> = serde_json::from_str(&model.mixin_model_ids)
-        .map_err(|e| format!("Malformed mixin_model_ids JSON for model '{}': {}", model_id, e))?;
+    let own_mixin_ids: Vec<String> = serde_json::from_str(&model.mixin_model_ids).map_err(|e| {
+        format!(
+            "Malformed mixin_model_ids JSON for model '{}': {}",
+            model_id, e
+        )
+    })?;
     for mid in &own_mixin_ids {
         if let Some(m) = model_map.get(mid) {
             mixins.push(MixinEdge {

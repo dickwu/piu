@@ -5,6 +5,7 @@ mod commands;
 pub mod db;
 pub mod http;
 pub mod mcp;
+pub mod mcp_relations;
 pub mod sync;
 
 const APP_NAME: &str = "piu";
@@ -136,6 +137,7 @@ pub fn run() {
             commands::get_model,
             commands::list_models,
             commands::generate_json_from_model,
+            commands::resolve_model_fields,
             // MCP server commands
             commands::start_mcp_server,
             commands::stop_mcp_server,

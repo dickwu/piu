@@ -10,11 +10,12 @@ import {
   App,
 } from 'antd';
 import { PlusOutlined, DeleteOutlined } from '@ant-design/icons';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useModelStore } from '../stores/modelStore';
 import { useProjectStore } from '../stores/projectStore';
 import type { DataModel, ModelField, FieldType } from '../types';
-import { parseModelFields } from '../types';
+import { parseModelFields, parseMixinModelIds } from '../types';
+import { resolveModelFields, getParentChain, getChildModels } from '../utils/modelResolution';
 
 interface ModelFieldEditorProps {
   open: boolean;
@@ -73,6 +74,8 @@ export function ModelFieldEditor({ open, model, onClose }: ModelFieldEditorProps
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [fields, setFields] = useState<ModelField[]>([]);
+  const [parentModelId, setParentModelId] = useState<string | null>(null);
+  const [mixinModelIds, setMixinModelIds] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -81,10 +84,14 @@ export function ModelFieldEditor({ open, model, onClose }: ModelFieldEditorProps
         setName(model.name);
         setDescription(model.description ?? '');
         setFields(parseModelFields(model.fields));
+        setParentModelId(model.parent_model_id ?? null);
+        setMixinModelIds(parseMixinModelIds(model.mixin_model_ids));
       } else {
         setName('');
         setDescription('');
         setFields([]);
+        setParentModelId(null);
+        setMixinModelIds([]);
       }
       setSaving(false);
     }
@@ -128,6 +135,8 @@ export function ModelFieldEditor({ open, model, onClose }: ModelFieldEditorProps
           name: name.trim(),
           description: description.trim() || null,
           fields: fieldsJson,
+          parent_model_id: parentModelId,
+          mixin_model_ids: JSON.stringify(mixinModelIds),
         });
         message.success('Model updated.');
       } else {
@@ -136,6 +145,8 @@ export function ModelFieldEditor({ open, model, onClose }: ModelFieldEditorProps
           name.trim(),
           description.trim() || undefined,
           fieldsJson,
+          parentModelId ?? undefined,
+          JSON.stringify(mixinModelIds),
         );
         message.success('Model created.');
       }
@@ -152,6 +163,8 @@ export function ModelFieldEditor({ open, model, onClose }: ModelFieldEditorProps
     name,
     description,
     fields,
+    parentModelId,
+    mixinModelIds,
     activeProjectId,
     isEditMode,
     model,
@@ -168,6 +181,44 @@ export function ModelFieldEditor({ open, model, onClose }: ModelFieldEditorProps
   const refModelOptions = models
     .filter((m) => !isEditMode || m.id !== model?.id)
     .map((m) => ({ label: m.name, value: m.id }));
+
+  const eligibleParentOptions = useMemo(() => {
+    if (!model) {
+      return models.map((m) => ({ label: m.name, value: m.id }));
+    }
+    const descendants = new Set<string>();
+    const collectDescendants = (id: string) => {
+      getChildModels(id, models).forEach((c) => {
+        if (!descendants.has(c.id)) {
+          descendants.add(c.id);
+          collectDescendants(c.id);
+        }
+      });
+    };
+    collectDescendants(model.id);
+    return models
+      .filter((m) => m.id !== model.id && !descendants.has(m.id))
+      .map((m) => ({ label: m.name, value: m.id }));
+  }, [model, models]);
+
+  const eligibleMixinOptions = useMemo(() => {
+    const parentChainIds = new Set(
+      model ? getParentChain(model.id, models).map((m) => m.id) : [],
+    );
+    return models
+      .filter((m) => m.id !== model?.id && !parentChainIds.has(m.id))
+      .map((m) => ({ label: m.name, value: m.id }));
+  }, [model, models]);
+
+  const resolvedInheritedFields = useMemo(() => {
+    if (!model) return [];
+    const tempModels = models.map((m) =>
+      m.id === model.id
+        ? { ...m, parent_model_id: parentModelId, mixin_model_ids: JSON.stringify(mixinModelIds) }
+        : m,
+    );
+    return resolveModelFields(model.id, tempModels).filter((f) => f.origin !== 'own');
+  }, [model, models, parentModelId, mixinModelIds]);
 
   const isValid = name.trim() !== '';
 
@@ -215,6 +266,76 @@ export function ModelFieldEditor({ open, model, onClose }: ModelFieldEditorProps
             autoSize={{ minRows: 2, maxRows: 4 }}
           />
         </div>
+
+        {/* Parent Model */}
+        <div>
+          <div style={labelStyle}>Parent Model</div>
+          <Select
+            size="small"
+            placeholder="None (no inheritance)"
+            allowClear
+            value={parentModelId ?? undefined}
+            onChange={(val) => setParentModelId(val ?? null)}
+            options={eligibleParentOptions}
+            style={{ width: '100%' }}
+          />
+        </div>
+
+        {/* Mixin Models */}
+        <div>
+          <div style={labelStyle}>Mixin Models</div>
+          <Select
+            mode="multiple"
+            size="small"
+            placeholder="None"
+            value={mixinModelIds}
+            onChange={(vals) => setMixinModelIds(vals)}
+            options={eligibleMixinOptions}
+            style={{ width: '100%' }}
+          />
+        </div>
+
+        {/* Inherited Fields Preview */}
+        {resolvedInheritedFields.length > 0 && (
+          <div
+            style={{
+              marginTop: 8,
+              padding: '8px 10px',
+              borderRadius: 6,
+              backgroundColor: 'var(--bg-tertiary)',
+            }}
+          >
+            <div
+              style={{
+                fontSize: 11,
+                color: 'var(--text-tertiary)',
+                marginBottom: 4,
+              }}
+            >
+              Inherited Fields ({resolvedInheritedFields.length})
+            </div>
+            {resolvedInheritedFields.map((f) => (
+              <div
+                key={`${f.origin_model_id}-${f.name}`}
+                style={{ fontSize: 12, padding: '2px 0' }}
+              >
+                <span style={{ fontWeight: 600 }}>{f.name}</span>
+                <span style={{ color: 'var(--text-tertiary)', marginLeft: 6 }}>
+                  {f.field_type}
+                </span>
+                <span
+                  style={{
+                    color: 'var(--text-quaternary)',
+                    marginLeft: 6,
+                    fontSize: 10,
+                  }}
+                >
+                  from {f.origin_model_name}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Fields section */}
         <div>

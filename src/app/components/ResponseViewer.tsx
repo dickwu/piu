@@ -1,14 +1,16 @@
 'use client';
 
-import { Tabs, Spin, Select, Flex, App } from 'antd';
+import { Tabs, Spin, Flex, App } from 'antd';
 import { CheckCircleOutlined, WarningOutlined } from '@ant-design/icons';
 import { useMemo } from 'react';
 import { useResponseStore } from '../stores/responseStore';
 import { useModelStore } from '../stores/modelStore';
 import { useRequestEditorStore } from '../stores/requestStore';
-import { parseModelFields } from '../types';
-import type { ModelField } from '../types';
 import { AnnotatedJsonViewer } from './AnnotatedJsonViewer';
+import { ModelSelector } from './shared/ModelSelector';
+import { resolveModelFields } from '../utils/modelResolution';
+import { validateJsonAgainstModel } from '../utils/modelValidation';
+import type { ValidationIssue } from '../utils/modelValidation';
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -49,59 +51,6 @@ function phaseLabel(phase: string | null, resolvedUrl: string | null): string {
   }
 }
 
-interface ValidationIssue {
-  field: string;
-  issue: string;
-}
-
-function validateResponseBody(body: string, fields: ModelField[]): ValidationIssue[] {
-  const issues: ValidationIssue[] = [];
-  let parsed: Record<string, unknown>;
-
-  try {
-    parsed = JSON.parse(body) as Record<string, unknown>;
-  } catch {
-    return [{ field: '(root)', issue: 'Response body is not valid JSON' }];
-  }
-
-  for (const field of fields) {
-    const value = parsed[field.name];
-
-    if (field.required && !(field.name in parsed)) {
-      issues.push({ field: field.name, issue: 'Missing required field' });
-      continue;
-    }
-
-    if (value === undefined) continue;
-
-    if (value === null) {
-      const expectedType = field.field_type;
-      if (expectedType === 'null' || expectedType === 'any') continue;
-      issues.push({
-        field: field.name,
-        issue: `Expected ${expectedType}, got null`,
-      });
-      continue;
-    }
-
-    const actualType = Array.isArray(value) ? 'array' : typeof value;
-    const expectedType = field.field_type;
-
-    if (
-      expectedType !== 'any' &&
-      expectedType !== 'null' &&
-      actualType !== expectedType
-    ) {
-      issues.push({
-        field: field.name,
-        issue: `Expected ${expectedType}, got ${actualType}`,
-      });
-    }
-  }
-
-  return issues;
-}
-
 export function ResponseViewer() {
   const { response, loading, error, phase, resolvedUrl } = useResponseStore();
   const models = useModelStore((s) => s.models);
@@ -111,22 +60,15 @@ export function ResponseViewer() {
 
   const responseModelId = config.responseModelId;
 
-  const modelOptions = models.map((m) => ({ label: m.name, value: m.id }));
-
-  const activeModel = useMemo(
-    () => models.find((m) => m.id === responseModelId),
-    [models, responseModelId],
-  );
-
-  const activeFields = useMemo(
-    () => (activeModel ? parseModelFields(activeModel.fields) : []),
-    [activeModel],
+  const resolvedFields = useMemo(
+    () => (responseModelId ? resolveModelFields(responseModelId, models) : []),
+    [responseModelId, models],
   );
 
   const validationIssues = useMemo<ValidationIssue[]>(() => {
-    if (!responseModelId || !activeFields.length || !response) return [];
-    return validateResponseBody(response.body, activeFields);
-  }, [responseModelId, activeFields, response]);
+    if (!responseModelId || !resolvedFields.length || !response) return [];
+    return validateJsonAgainstModel(response.body, resolvedFields, { direction: 'response' });
+  }, [responseModelId, resolvedFields, response]);
 
   const handleModelChange = (value: string | undefined) => {
     updateConfig({ responseModelId: value ?? undefined });
@@ -192,19 +134,9 @@ export function ResponseViewer() {
     );
   }
 
-  const bodyContent = activeModel ? (
+  const bodyContent = responseModelId && resolvedFields.length > 0 ? (
     <div>
-      {activeFields.length > 0 && (
-        <AnnotatedJsonViewer json={response.body} fields={activeFields} />
-      )}
-      {!activeFields.length && (
-        <pre
-          className="code-block overflow-auto"
-          style={{ maxHeight: 'calc(100vh - 400px)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
-        >
-          {formatBody(response.body)}
-        </pre>
-      )}
+      <AnnotatedJsonViewer json={response.body} fields={resolvedFields} />
     </div>
   ) : (
     <pre
@@ -214,6 +146,9 @@ export function ResponseViewer() {
       {formatBody(response.body)}
     </pre>
   );
+
+  const errorCount = validationIssues.filter((i) => i.severity === 'error').length;
+  const warningCount = validationIssues.filter((i) => i.severity === 'warning').length;
 
   return (
     <div className="animate-fade-in flex flex-1 flex-col overflow-hidden">
@@ -250,22 +185,19 @@ export function ResponseViewer() {
             children: (
               <div>
                 <Flex align="center" gap={8} style={{ marginBottom: 8 }}>
-                  <Select
-                    size="small"
+                  <ModelSelector
+                    value={responseModelId}
+                    onChange={(val) => handleModelChange(val)}
                     placeholder="Validate against model..."
-                    allowClear
-                    value={responseModelId ?? undefined}
-                    options={modelOptions}
-                    onChange={(value) => handleModelChange(value ?? undefined)}
                     style={{ minWidth: 200 }}
                   />
-                  {responseModelId && !activeModel && (
+                  {responseModelId && resolvedFields.length === 0 && (
                     <span style={{ fontSize: 12, color: 'var(--warning)' }}>
                       <WarningOutlined style={{ marginRight: 4 }} />
                       Unknown model
                     </span>
                   )}
-                  {responseModelId && activeModel && validationIssues.length === 0 && (
+                  {responseModelId && resolvedFields.length > 0 && validationIssues.length === 0 && (
                     <span style={{ fontSize: 12, color: 'var(--success)' }}>
                       <CheckCircleOutlined style={{ marginRight: 4 }} />
                       All fields valid
@@ -273,7 +205,8 @@ export function ResponseViewer() {
                   )}
                   {responseModelId && validationIssues.length > 0 && (
                     <span style={{ fontSize: 12, color: 'var(--error)' }}>
-                      {validationIssues.length} issue{validationIssues.length > 1 ? 's' : ''}
+                      {errorCount} error{errorCount !== 1 ? 's' : ''}
+                      {warningCount > 0 && `, ${warningCount} warning${warningCount !== 1 ? 's' : ''}`}
                     </span>
                   )}
                 </Flex>
@@ -288,7 +221,14 @@ export function ResponseViewer() {
                     }}
                   >
                     {validationIssues.map((issue, idx) => (
-                      <div key={idx} style={{ fontSize: 12, color: 'var(--error)', fontFamily: 'var(--font-code)' }}>
+                      <div
+                        key={idx}
+                        style={{
+                          fontSize: 12,
+                          color: issue.severity === 'error' ? 'var(--error)' : 'var(--warning)',
+                          fontFamily: 'var(--font-code)',
+                        }}
+                      >
                         <span style={{ fontWeight: 600 }}>{issue.field}</span>
                         {': '}
                         {issue.issue}

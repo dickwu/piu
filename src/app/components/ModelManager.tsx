@@ -11,7 +11,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { useModelStore } from '../stores/modelStore';
 import { useProjectStore } from '../stores/projectStore';
 import type { DataModel } from '../types';
-import { parseModelFields } from '../types';
+import { parseModelFields, parseMixinModelIds } from '../types';
 import { ModelFieldEditor } from './ModelFieldEditor';
 
 interface ModelManagerProps {
@@ -115,6 +115,7 @@ export function ModelManager({ open, onClose }: ModelManagerProps) {
           <Flex vertical gap={0}>
             {models.map((model) => {
               const fieldCount = parseModelFields(model.fields).length;
+              const mixinCount = parseMixinModelIds(model.mixin_model_ids).length;
 
               return (
                 <div
@@ -155,6 +156,28 @@ export function ModelManager({ open, onClose }: ModelManagerProps) {
                       >
                         {model.name}
                       </span>
+                      {model.parent_model_id && (
+                        <span
+                          style={{
+                            fontSize: 11,
+                            color: 'var(--text-tertiary)',
+                            marginLeft: 4,
+                          }}
+                        >
+                          extends {models.find((m) => m.id === model.parent_model_id)?.name ?? '?'}
+                        </span>
+                      )}
+                      {mixinCount > 0 && (
+                        <span
+                          style={{
+                            fontSize: 11,
+                            color: 'var(--text-quaternary)',
+                            marginLeft: 4,
+                          }}
+                        >
+                          + {mixinCount} mixin(s)
+                        </span>
+                      )}
                       <Badge
                         count={fieldCount}
                         showZero

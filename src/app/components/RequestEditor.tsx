@@ -1,12 +1,13 @@
 'use client';
 
-import { Select, Input, Button, Tabs, Space } from 'antd';
+import { Select, Input, Button, Tabs, Space, App } from 'antd';
 import { SendOutlined, SaveOutlined, ApiOutlined } from '@ant-design/icons';
 import { useCallback, useState, useMemo } from 'react';
 import { useRequestEditorStore } from '../stores/requestStore';
 import { useCollectionStore } from '../stores/collectionStore';
 import { useResponseStore } from '../stores/responseStore';
 import { useEnvironmentStore } from '../stores/environmentStore';
+import { useModelStore } from '../stores/modelStore';
 import { parseQueryParamsFromUrl } from '../types';
 import { HeadersEditor } from './HeadersEditor';
 import { ParamsEditor } from './ParamsEditor';
@@ -40,6 +41,7 @@ const METHOD_COLORS: Record<string, string> = {
 };
 
 export function RequestEditor() {
+  const { message } = App.useApp();
   const { activeRequestId, config, activeTab, isDirty, updateConfig, setActiveTab } =
     useRequestEditorStore();
   const updateRequest = useCollectionStore((s) => s.updateRequest);
@@ -84,6 +86,19 @@ export function RequestEditor() {
       return;
     }
 
+    // Soft model validation for request body
+    if (config.requestModelId && config.body.type === 'json' && config.body.content.trim()) {
+      const { resolveModelFields } = await import('../utils/modelResolution');
+      const { validateJsonAgainstModel } = await import('../utils/modelValidation');
+      const allModels = useModelStore.getState().models;
+      const resolved = resolveModelFields(config.requestModelId, allModels);
+      const issues = validateJsonAgainstModel(config.body.content, resolved, { direction: 'request' });
+      const errors = issues.filter(i => i.severity === 'error');
+      if (errors.length > 0) {
+        message.warning(`Request body has ${errors.length} validation issue(s)`);
+      }
+    }
+
     // Save first if dirty
     if (isDirty) {
       await handleSave();
@@ -91,7 +106,7 @@ export function RequestEditor() {
 
     // Rust handles everything: collection context, environment, variable interpolation
     await executeRequest(activeRequestId);
-  }, [activeRequestId, isDirty, handleSave, executeRequest]);
+  }, [activeRequestId, config, isDirty, handleSave, executeRequest, message]);
 
   if (!activeRequestId) {
     return (

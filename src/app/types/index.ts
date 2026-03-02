@@ -130,10 +130,21 @@ export interface DataModel {
   name: string;
   description: string | null;
   fields: string; // JSON array of ModelField
+  parent_model_id: string | null;
+  mixin_model_ids: string; // JSON array of model IDs
   sort_order: number;
   version: number;
   created_at: number;
   updated_at: number;
+}
+
+export type FieldOrigin = 'own' | 'parent' | 'mixin';
+
+export interface ResolvedModelField extends ModelField {
+  origin: FieldOrigin;
+  origin_model_id: string;
+  origin_model_name: string;
+  overridden: boolean;
 }
 
 export function parseModelFields(fieldsJson: string): ModelField[] {
@@ -147,6 +158,16 @@ export function parseModelFields(fieldsJson: string): ModelField[] {
         typeof item.name === 'string' &&
         typeof item.field_type === 'string',
     );
+  } catch {
+    return [];
+  }
+}
+
+export function parseMixinModelIds(json: string): string[] {
+  try {
+    const parsed = JSON.parse(json);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((item): item is string => typeof item === 'string');
   } catch {
     return [];
   }

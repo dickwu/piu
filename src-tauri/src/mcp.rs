@@ -1,5 +1,6 @@
 use crate::db;
 use crate::http;
+use crate::mcp_relations;
 use rmcp::{
     handler::server::tool::ToolRouter, handler::server::wrapper::Parameters, model::*, tool,
     tool_handler, tool_router, ErrorData as McpError, ServerHandler,
@@ -220,6 +221,12 @@ struct ValidateResponseParam {
     model_id: String,
     #[schemars(description = "The JSON response body to validate")]
     response_body: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct GetModelDiagramParam {
+    #[schemars(description = "The project's unique ID")]
+    project_id: String,
 }
 
 // ============ Helper Functions ============
@@ -1158,6 +1165,8 @@ impl PiuMcp {
             &p.name,
             p.description.as_deref(),
             p.fields.as_deref(),
+            None,
+            None,
         )
         .await
         .map_err(mcp_err)?;
@@ -1202,6 +1211,8 @@ impl PiuMcp {
             desc,
             p.fields.as_deref(),
             p.sort_order,
+            None,
+            None,
         )
         .await
         .map_err(mcp_err)?;
@@ -1429,6 +1440,47 @@ impl PiuMcp {
             },
             "fields": results,
         }))
+    }
+
+    // ---- Model Relations ----
+
+    #[tool(
+        description = "Get a relationship graph of all data models in a project. Returns nodes (models) and edges (inheritance, mixin, field references). Use this to understand how models relate to each other."
+    )]
+    async fn get_model_relations(
+        &self,
+        Parameters(p): Parameters<ProjectIdParam>,
+    ) -> Result<CallToolResult, McpError> {
+        let graph = mcp_relations::get_model_relations(&p.project_id)
+            .await
+            .map_err(mcp_err)?;
+        text_result(&serde_json::json!(graph))
+    }
+
+    #[tool(
+        description = "Get the inheritance hierarchy for a specific model: parent chain (ancestors), children (descendants), and mixin relationships. DAG-aware — mixins are returned as separate edges, not flattened into the tree."
+    )]
+    async fn get_model_hierarchy(
+        &self,
+        Parameters(p): Parameters<ModelIdParam>,
+    ) -> Result<CallToolResult, McpError> {
+        let hierarchy = mcp_relations::get_model_hierarchy(&p.model_id)
+            .await
+            .map_err(mcp_err)?;
+        text_result(&serde_json::json!(hierarchy))
+    }
+
+    #[tool(
+        description = "Generate a Mermaid class diagram showing all model relationships in a project. Returns a Mermaid classDiagram string that LLMs and markdown renderers can display directly. Shows inheritance (<|--), mixin (<|..), and field reference (-->) relationships."
+    )]
+    async fn get_model_diagram(
+        &self,
+        Parameters(p): Parameters<GetModelDiagramParam>,
+    ) -> Result<CallToolResult, McpError> {
+        let diagram = mcp_relations::generate_mermaid_diagram(&p.project_id)
+            .await
+            .map_err(mcp_err)?;
+        Ok(CallToolResult::success(vec![Content::text(diagram)]))
     }
 
     // ---- Execution ----

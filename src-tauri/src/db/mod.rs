@@ -73,6 +73,8 @@ async fn run_migrations(conn: &Connection) -> DbResult<()> {
         "ALTER TABLE collections ADD COLUMN project_id TEXT REFERENCES projects(id) ON DELETE CASCADE",
         "ALTER TABLE environments ADD COLUMN project_id TEXT REFERENCES projects(id) ON DELETE CASCADE",
         "ALTER TABLE environments ADD COLUMN host TEXT DEFAULT NULL",
+        "ALTER TABLE data_models ADD COLUMN parent_model_id TEXT DEFAULT NULL",
+        "ALTER TABLE data_models ADD COLUMN mixin_model_ids TEXT NOT NULL DEFAULT '[]'",
     ];
     for sql in &alter_migrations {
         if let Err(e) = conn.execute(sql, ()).await {
@@ -212,7 +214,8 @@ pub use changelog::get_changelog;
 
 // Re-export model functions
 pub use models::{
-    create_model, delete_model, get_model, list_models, update_model, validate_model_refs,
+    create_model, delete_model, get_model, list_models, update_model, validate_model_graph,
+    validate_model_refs,
 };
 
 // Re-export app_state functions

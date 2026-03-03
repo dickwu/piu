@@ -10,6 +10,9 @@ pub struct Project {
     pub version: i64,
     pub created_at: i64,
     pub updated_at: i64,
+    pub source_repo_url: Option<String>,
+    pub source_commit_id: Option<String>,
+    pub backend_type: Option<String>,
 }
 
 pub fn get_table_sql() -> &'static str {
@@ -21,12 +24,15 @@ pub fn get_table_sql() -> &'static str {
         sort_order INTEGER NOT NULL DEFAULT 0,
         version INTEGER NOT NULL DEFAULT 1,
         created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL
+        updated_at INTEGER NOT NULL,
+        source_repo_url TEXT DEFAULT NULL,
+        source_commit_id TEXT DEFAULT NULL,
+        backend_type TEXT DEFAULT NULL
     );
     "
 }
 
-const SELECT_COLUMNS: &str = "id, name, description, sort_order, version, created_at, updated_at";
+const SELECT_COLUMNS: &str = "id, name, description, sort_order, version, created_at, updated_at, source_repo_url, source_commit_id, backend_type";
 
 fn project_from_row(row: &turso::Row) -> Result<Project, Box<dyn std::error::Error + Send + Sync>> {
     Ok(Project {
@@ -37,17 +43,27 @@ fn project_from_row(row: &turso::Row) -> Result<Project, Box<dyn std::error::Err
         version: row.get(4)?,
         created_at: row.get(5)?,
         updated_at: row.get(6)?,
+        source_repo_url: row.get(7)?,
+        source_commit_id: row.get(8)?,
+        backend_type: row.get(9)?,
     })
 }
 
-pub async fn create_project(id: &str, name: &str, description: Option<&str>) -> DbResult<Project> {
+pub async fn create_project(
+    id: &str,
+    name: &str,
+    description: Option<&str>,
+    source_repo_url: Option<&str>,
+    source_commit_id: Option<&str>,
+    backend_type: Option<&str>,
+) -> DbResult<Project> {
     let conn = get_connection()?.lock().await;
     let now = chrono::Utc::now().timestamp_millis();
 
     conn.execute(
-        "INSERT INTO projects (id, name, description, sort_order, version, created_at, updated_at)
-         VALUES (?1, ?2, ?3, 0, 1, ?4, ?4)",
-        turso::params![id, name, description, now],
+        "INSERT INTO projects (id, name, description, sort_order, version, created_at, updated_at, source_repo_url, source_commit_id, backend_type)
+         VALUES (?1, ?2, ?3, 0, 1, ?4, ?4, ?5, ?6, ?7)",
+        turso::params![id, name, description, now, source_repo_url, source_commit_id, backend_type],
     )
     .await?;
 
@@ -62,6 +78,9 @@ pub async fn create_project(id: &str, name: &str, description: Option<&str>) -> 
         version: 1,
         created_at: now,
         updated_at: now,
+        source_repo_url: source_repo_url.map(|s| s.to_string()),
+        source_commit_id: source_commit_id.map(|s| s.to_string()),
+        backend_type: backend_type.map(|s| s.to_string()),
     })
 }
 
@@ -70,6 +89,9 @@ pub async fn update_project(
     name: Option<&str>,
     description: Option<Option<&str>>,
     sort_order: Option<i64>,
+    source_repo_url: Option<Option<&str>>,
+    source_commit_id: Option<Option<&str>>,
+    backend_type: Option<Option<&str>>,
 ) -> DbResult<Project> {
     let conn = get_connection()?.lock().await;
 
@@ -91,12 +113,15 @@ pub async fn update_project(
     let new_name = name.unwrap_or(&old.name);
     let new_description = description.unwrap_or(old.description.as_deref());
     let new_sort_order = sort_order.unwrap_or(old.sort_order);
+    let new_source_repo_url = source_repo_url.unwrap_or(old.source_repo_url.as_deref());
+    let new_source_commit_id = source_commit_id.unwrap_or(old.source_commit_id.as_deref());
+    let new_backend_type = backend_type.unwrap_or(old.backend_type.as_deref());
     let new_version = old.version + 1;
     let now = chrono::Utc::now().timestamp_millis();
 
     conn.execute(
-        "UPDATE projects SET name = ?1, description = ?2, sort_order = ?3, version = ?4, updated_at = ?5 WHERE id = ?6",
-        turso::params![new_name, new_description, new_sort_order, new_version, now, id],
+        "UPDATE projects SET name = ?1, description = ?2, sort_order = ?3, version = ?4, updated_at = ?5, source_repo_url = ?6, source_commit_id = ?7, backend_type = ?8 WHERE id = ?9",
+        turso::params![new_name, new_description, new_sort_order, new_version, now, new_source_repo_url, new_source_commit_id, new_backend_type, id],
     )
     .await?;
 
@@ -110,6 +135,15 @@ pub async fn update_project(
     if sort_order.is_some() && new_sort_order != old.sort_order {
         changes.push("Reordered".to_string());
     }
+    if source_repo_url.is_some() && new_source_repo_url != old.source_repo_url.as_deref() {
+        changes.push("Source repo URL updated".to_string());
+    }
+    if source_commit_id.is_some() && new_source_commit_id != old.source_commit_id.as_deref() {
+        changes.push("Source commit ID updated".to_string());
+    }
+    if backend_type.is_some() && new_backend_type != old.backend_type.as_deref() {
+        changes.push("Backend type updated".to_string());
+    }
     let summary = if changes.is_empty() {
         "Updated project".to_string()
     } else {
@@ -120,6 +154,9 @@ pub async fn update_project(
         "name": { "old": old.name, "new": new_name },
         "description": { "old": old.description, "new": new_description },
         "sort_order": { "old": old.sort_order, "new": new_sort_order },
+        "source_repo_url": { "old": old.source_repo_url, "new": new_source_repo_url },
+        "source_commit_id": { "old": old.source_commit_id, "new": new_source_commit_id },
+        "backend_type": { "old": old.backend_type, "new": new_backend_type },
     });
 
     drop(conn);
@@ -141,6 +178,9 @@ pub async fn update_project(
         version: new_version,
         created_at: old.created_at,
         updated_at: now,
+        source_repo_url: new_source_repo_url.map(|s| s.to_string()),
+        source_commit_id: new_source_commit_id.map(|s| s.to_string()),
+        backend_type: new_backend_type.map(|s| s.to_string()),
     })
 }
 

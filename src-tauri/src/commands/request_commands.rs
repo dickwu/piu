@@ -9,6 +9,7 @@ pub struct CreateRequestInput {
     pub project_id: Option<String>,
     pub name: String,
     pub config: Option<String>,
+    pub source_commit_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -20,6 +21,11 @@ pub struct UpdateRequestInput {
     pub sort_order: Option<i64>,
     #[serde(default)]
     pub move_to_root: bool,
+    #[serde(
+        default,
+        deserialize_with = "super::collection_commands::deserialize_optional_nullable"
+    )]
+    pub source_commit_id: Option<Option<String>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -52,6 +58,7 @@ pub async fn create_request(input: CreateRequestInput) -> Result<db::ApiRequest,
         &project_id,
         &input.name,
         input.config.as_deref(),
+        input.source_commit_id.as_deref(),
     )
     .await
     .map_err(|e| e.to_string())
@@ -59,6 +66,7 @@ pub async fn create_request(input: CreateRequestInput) -> Result<db::ApiRequest,
 
 #[tauri::command]
 pub async fn update_request(input: UpdateRequestInput) -> Result<db::ApiRequest, String> {
+    let source_commit_id_ref = input.source_commit_id.as_ref().map(|opt| opt.as_deref());
     db::update_request(
         &input.id,
         input.name.as_deref(),
@@ -66,6 +74,7 @@ pub async fn update_request(input: UpdateRequestInput) -> Result<db::ApiRequest,
         input.collection_id.as_deref(),
         input.sort_order,
         input.move_to_root,
+        source_commit_id_ref,
     )
     .await
     .map_err(|e| e.to_string())

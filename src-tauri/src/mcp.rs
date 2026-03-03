@@ -23,6 +23,14 @@ struct CreateProjectParam {
     name: String,
     #[schemars(description = "Optional project description")]
     description: Option<String>,
+    #[schemars(
+        description = "Git repository URL this project was imported from (e.g. 'https://github.com/org/repo')"
+    )]
+    source_repo_url: Option<String>,
+    #[schemars(description = "Git commit SHA at the time of import (for tracking sync state)")]
+    source_commit_id: Option<String>,
+    #[schemars(description = "Backend framework type (e.g. 'express', 'fastapi', 'gin', 'axum')")]
+    backend_type: Option<String>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -35,6 +43,12 @@ struct UpdateProjectParam {
     description: Option<Option<String>>,
     #[schemars(description = "New sort order")]
     sort_order: Option<i64>,
+    #[schemars(description = "Git repository URL (null to clear)")]
+    source_repo_url: Option<Option<String>>,
+    #[schemars(description = "Git commit SHA (null to clear)")]
+    source_commit_id: Option<Option<String>>,
+    #[schemars(description = "Backend framework type (null to clear)")]
+    backend_type: Option<Option<String>>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -51,6 +65,14 @@ struct CreateCollectionParam {
     name: String,
     #[schemars(description = "Parent collection ID for nesting")]
     parent_id: Option<String>,
+    #[schemars(
+        description = "URL path prefix prepended to all child request URLs (e.g. '/v1/users')"
+    )]
+    path_prefix: Option<String>,
+    #[schemars(description = "Collection description")]
+    description: Option<String>,
+    #[schemars(description = "Git commit SHA at the time of import")]
+    source_commit_id: Option<String>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -71,6 +93,8 @@ struct UpdateCollectionParam {
         description = "Shared headers as JSON array: [{\"key\":\"X-Api\",\"value\":\"v2\",\"enabled\":true}]"
     )]
     shared_headers: Option<String>,
+    #[schemars(description = "Git commit SHA (null to clear)")]
+    source_commit_id: Option<Option<String>>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -89,6 +113,8 @@ struct CreateRequestParam {
         description = "Request config as JSON string: {\"method\":\"GET\",\"url\":\"/path\",\"headers\":[],\"params\":[],\"body\":{\"type\":\"json\",\"content\":\"\"},\"auth\":{\"type\":\"none\"},\"description\":\"\"}"
     )]
     config: Option<String>,
+    #[schemars(description = "Git commit SHA at the time of import")]
+    source_commit_id: Option<String>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -103,6 +129,8 @@ struct UpdateRequestParam {
     collection_id: Option<String>,
     #[schemars(description = "New sort order")]
     sort_order: Option<i64>,
+    #[schemars(description = "Git commit SHA (null to clear)")]
+    source_commit_id: Option<Option<String>>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -182,6 +210,12 @@ struct ChangelogParam {
 }
 
 #[derive(Deserialize, JsonSchema)]
+struct SyncStatusParam {
+    #[schemars(description = "The project's unique ID")]
+    project_id: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
 struct ModelIdParam {
     #[schemars(description = "The data model's unique ID")]
     model_id: String,
@@ -258,6 +292,7 @@ fn enrich_request(req: &db::ApiRequest) -> serde_json::Value {
         "body": config.get("body"),
         "auth": config.get("auth"),
         "description": config.get("description"),
+        "source_commit_id": req.source_commit_id,
         "version": req.version,
         "created_at": req.created_at,
         "updated_at": req.updated_at,
@@ -288,7 +323,7 @@ impl PiuMcp {
     // ---- Projects ----
 
     #[tool(
-        description = "List all projects with their collection counts, request counts, and environment counts. Returns full project metadata including description, version, and timestamps."
+        description = "List all projects with their collection counts, request counts, and environment counts. Use this first to discover available projects and their IDs. Returns full project metadata including source repository URL, sync commit, and backend framework type."
     )]
     async fn list_projects(&self) -> Result<CallToolResult, McpError> {
         let projects = db::list_projects().await.map_err(mcp_err)?;
@@ -306,6 +341,9 @@ impl PiuMcp {
                 "description": p.description,
                 "sort_order": p.sort_order,
                 "version": p.version,
+                "source_repo_url": p.source_repo_url,
+                "source_commit_id": p.source_commit_id,
+                "backend_type": p.backend_type,
                 "created_at": p.created_at,
                 "updated_at": p.updated_at,
                 "collection_count": collections.len(),
@@ -344,6 +382,7 @@ impl PiuMcp {
                 "shared_headers": parse_config(&c.shared_headers),
                 "request_count": reqs.len(),
                 "version": c.version,
+                "source_commit_id": c.source_commit_id,
             }));
         }
 
@@ -387,7 +426,7 @@ impl PiuMcp {
     }
 
     #[tool(
-        description = "Get a complete tree view of a project: all collections (nested hierarchy) with every request (fully parsed configs showing method, URL, headers, params, body, auth), all environments with their variables, method statistics, and the active environment. This is the most comprehensive tool for understanding a project's full API surface."
+        description = "Get a complete tree view of a project: all collections (nested hierarchy) with every request (fully parsed configs showing method, URL, headers, params, body, auth), all environments with their variables, method statistics, source sync metadata, and the active environment. This is the most comprehensive tool for understanding a project's full API surface. Use this after import to verify all routes were captured."
     )]
     async fn get_project_overview(
         &self,
@@ -439,6 +478,7 @@ impl PiuMcp {
                         "path_prefix": c.path_prefix,
                         "description": c.description,
                         "shared_headers": serde_json::from_str::<serde_json::Value>(&c.shared_headers).unwrap_or_default(),
+                        "source_commit_id": c.source_commit_id,
                         "requests": requests_by_col.get(&c.id).unwrap_or(&Vec::new()),
                         "children": build_tree(Some(&c.id), collections, requests_by_col),
                     })
@@ -493,15 +533,24 @@ impl PiuMcp {
         }))
     }
 
-    #[tool(description = "Create a new project with a name and optional description.")]
+    #[tool(
+        description = "Create a new project. Use as first step when importing a backend — the returned project_id is needed for all subsequent operations. Set source_repo_url and backend_type when importing from a code repository."
+    )]
     async fn create_project(
         &self,
         Parameters(p): Parameters<CreateProjectParam>,
     ) -> Result<CallToolResult, McpError> {
         let id = uuid::Uuid::new_v4().to_string();
-        let project = db::create_project(&id, &p.name, p.description.as_deref())
-            .await
-            .map_err(mcp_err)?;
+        let project = db::create_project(
+            &id,
+            &p.name,
+            p.description.as_deref(),
+            p.source_repo_url.as_deref(),
+            p.source_commit_id.as_deref(),
+            p.backend_type.as_deref(),
+        )
+        .await
+        .map_err(mcp_err)?;
         text_result(&project)
     }
 
@@ -513,9 +562,20 @@ impl PiuMcp {
         Parameters(p): Parameters<UpdateProjectParam>,
     ) -> Result<CallToolResult, McpError> {
         let desc = p.description.as_ref().map(|d| d.as_deref());
-        let project = db::update_project(&p.project_id, p.name.as_deref(), desc, p.sort_order)
-            .await
-            .map_err(mcp_err)?;
+        let source_repo_url = p.source_repo_url.as_ref().map(|o| o.as_deref());
+        let source_commit_id_ref = p.source_commit_id.as_ref().map(|o| o.as_deref());
+        let backend_type = p.backend_type.as_ref().map(|o| o.as_deref());
+        let project = db::update_project(
+            &p.project_id,
+            p.name.as_deref(),
+            desc,
+            p.sort_order,
+            source_repo_url,
+            source_commit_id_ref,
+            backend_type,
+        )
+        .await
+        .map_err(mcp_err)?;
         text_result(&project)
     }
 
@@ -554,6 +614,7 @@ impl PiuMcp {
                 "shared_headers": serde_json::from_str::<serde_json::Value>(&c.shared_headers).unwrap_or_default(),
                 "project_id": c.project_id,
                 "request_count": reqs.len(),
+                "source_commit_id": c.source_commit_id,
                 "version": c.version,
                 "sort_order": c.sort_order,
                 "created_at": c.created_at,
@@ -603,6 +664,7 @@ impl PiuMcp {
             "description": col.description,
             "shared_headers": serde_json::from_str::<serde_json::Value>(&col.shared_headers).unwrap_or_default(),
             "project_id": col.project_id,
+            "source_commit_id": col.source_commit_id,
             "version": col.version,
             "sort_order": col.sort_order,
             "created_at": col.created_at,
@@ -613,16 +675,40 @@ impl PiuMcp {
     }
 
     #[tool(
-        description = "Create a new collection in a project, optionally nested under a parent collection."
+        description = "Create a new collection in a project, optionally nested under a parent. Maps to route groups/middleware. Set path_prefix to match Express routers (e.g. '/api/users'), FastAPI APIRouter prefixes, Go router groups, etc."
     )]
     async fn create_collection(
         &self,
         Parameters(p): Parameters<CreateCollectionParam>,
     ) -> Result<CallToolResult, McpError> {
         let id = uuid::Uuid::new_v4().to_string();
-        let col = db::create_collection(&id, &p.name, p.parent_id.as_deref(), Some(&p.project_id))
+        let col = db::create_collection(
+            &id,
+            &p.name,
+            p.parent_id.as_deref(),
+            Some(&p.project_id),
+            p.source_commit_id.as_deref(),
+        )
+        .await
+        .map_err(mcp_err)?;
+
+        // Apply optional fields that create_collection doesn't accept directly
+        let needs_update = p.path_prefix.is_some() || p.description.is_some();
+        if needs_update {
+            let col = db::update_collection(
+                &id,
+                None,
+                None,
+                None,
+                p.path_prefix.as_deref().map(Some),
+                p.description.as_deref().map(Some),
+                None,
+                None,
+            )
             .await
             .map_err(mcp_err)?;
+            return text_result(&col);
+        }
         text_result(&col)
     }
 
@@ -636,6 +722,7 @@ impl PiuMcp {
         let parent_id = p.parent_id.as_ref().map(|o| o.as_deref());
         let path_prefix = p.path_prefix.as_ref().map(|o| o.as_deref());
         let description = p.description.as_ref().map(|o| o.as_deref());
+        let source_commit_id = p.source_commit_id.as_ref().map(|o| o.as_deref());
 
         let col = db::update_collection(
             &p.collection_id,
@@ -645,6 +732,7 @@ impl PiuMcp {
             path_prefix,
             description,
             p.shared_headers.as_deref(),
+            source_commit_id,
         )
         .await
         .map_err(mcp_err)?;
@@ -869,6 +957,7 @@ impl PiuMcp {
                 "variables_used": variables_used,
                 "variables_resolved": variables_resolved,
             },
+            "source_commit_id": req.source_commit_id,
             "version": req.version,
             "sort_order": req.sort_order,
             "created_at": req.created_at,
@@ -877,7 +966,7 @@ impl PiuMcp {
     }
 
     #[tool(
-        description = "Create a new API request in a collection. Config is optional; defaults to a GET request with empty URL."
+        description = "Create a new API request in a collection. Config.url is the path only (not the host) — host comes from the environment. Use {{param}} for path parameters (e.g. '/users/{{userId}}'). The description field is critical for LLM consumers to understand the endpoint's purpose. Config defaults to GET with empty URL if omitted."
     )]
     async fn create_request(
         &self,
@@ -899,6 +988,7 @@ impl PiuMcp {
             project_id,
             &p.name,
             p.config.as_deref(),
+            p.source_commit_id.as_deref(),
         )
         .await
         .map_err(mcp_err)?;
@@ -912,6 +1002,7 @@ impl PiuMcp {
         &self,
         Parameters(p): Parameters<UpdateRequestParam>,
     ) -> Result<CallToolResult, McpError> {
+        let source_commit_id = p.source_commit_id.as_ref().map(|o| o.as_deref());
         let req = db::update_request(
             &p.request_id,
             p.name.as_deref(),
@@ -919,6 +1010,7 @@ impl PiuMcp {
             p.collection_id.as_deref(),
             p.sort_order,
             false,
+            source_commit_id,
         )
         .await
         .map_err(mcp_err)?;
@@ -1504,7 +1596,7 @@ impl PiuMcp {
     // ---- Execution ----
 
     #[tool(
-        description = "Execute an API request by its ID. Resolves the full URL from environment host + collection path prefix + request URL, interpolates {{variables}} from the active environment, merges collection shared headers with request headers, applies auth (bearer/basic/api_key), and sends the HTTP request. Returns status code, status text, response headers, response body, size in bytes, and timing in milliseconds."
+        description = "Execute an API request by its ID. Resolves the full URL from environment.host + collection.path_prefix + request.url, interpolates {{variables}} from the active environment, merges shared headers, applies auth, and sends the HTTP request. Ensure an environment with a host URL is active before executing. Returns status, headers, body, size, and timing."
     )]
     async fn execute_request(
         &self,
@@ -1625,7 +1717,7 @@ impl PiuMcp {
     // ---- Search ----
 
     #[tool(
-        description = "Search across all API requests by name, URL, method, or config content. Optionally filter by project ID or HTTP method. Returns matching requests with their collection and project context."
+        description = "Search across all API requests by name, URL, method, or config content. Use this to find existing endpoints before creating duplicates during import. Optionally filter by project ID or HTTP method. Returns matching requests with their collection and project context."
     )]
     async fn search_requests(
         &self,
@@ -1695,6 +1787,7 @@ impl PiuMcp {
                             "id": col.project_id,
                             "name": project_name,
                         },
+                        "source_commit_id": req.source_commit_id,
                         "version": req.version,
                         "updated_at": req.updated_at,
                     }));
@@ -1713,6 +1806,111 @@ impl PiuMcp {
             "results": results,
             "total": results.len(),
             "query": p.query,
+        }))
+    }
+
+    // ---- Sync Status ----
+
+    #[tool(
+        description = "Get the sync status of a project imported from a git repository. Returns the project's source repository URL, project-level commit SHA, backend framework type, and per-entity commit tracking. Entities whose source_commit_id differs from the project's are flagged as potentially stale. Use after re-syncing to verify all entities are up to date."
+    )]
+    async fn get_sync_status(
+        &self,
+        Parameters(p): Parameters<SyncStatusParam>,
+    ) -> Result<CallToolResult, McpError> {
+        let projects = db::list_projects().await.map_err(mcp_err)?;
+        let project = projects
+            .iter()
+            .find(|proj| proj.id == p.project_id)
+            .ok_or_else(|| mcp_err(format!("Project {} not found", p.project_id)))?;
+
+        let project_commit = project.source_commit_id.as_deref();
+
+        let collections = db::list_collections(Some(&p.project_id))
+            .await
+            .map_err(mcp_err)?;
+
+        let mut collection_status = Vec::new();
+        let mut request_status = Vec::new();
+        let mut stale_collections = 0usize;
+        let mut stale_requests = 0usize;
+
+        for c in &collections {
+            let is_stale = match (project_commit, c.source_commit_id.as_deref()) {
+                (Some(pc), Some(cc)) => pc != cc,
+                (Some(_), None) => true,
+                _ => false,
+            };
+            if is_stale {
+                stale_collections += 1;
+            }
+            collection_status.push(serde_json::json!({
+                "id": c.id,
+                "name": c.name,
+                "source_commit_id": c.source_commit_id,
+                "is_stale": is_stale,
+            }));
+
+            let reqs = db::list_requests(&c.id).await.map_err(mcp_err)?;
+            for req in &reqs {
+                let req_stale = match (project_commit, req.source_commit_id.as_deref()) {
+                    (Some(pc), Some(rc)) => pc != rc,
+                    (Some(_), None) => true,
+                    _ => false,
+                };
+                if req_stale {
+                    stale_requests += 1;
+                }
+                request_status.push(serde_json::json!({
+                    "id": req.id,
+                    "name": req.name,
+                    "collection_id": req.collection_id,
+                    "source_commit_id": req.source_commit_id,
+                    "is_stale": req_stale,
+                }));
+            }
+        }
+
+        // Also check root requests (no collection)
+        let root_reqs = db::list_root_requests(&p.project_id)
+            .await
+            .map_err(mcp_err)?;
+        for req in &root_reqs {
+            let req_stale = match (project_commit, req.source_commit_id.as_deref()) {
+                (Some(pc), Some(rc)) => pc != rc,
+                (Some(_), None) => true,
+                _ => false,
+            };
+            if req_stale {
+                stale_requests += 1;
+            }
+            request_status.push(serde_json::json!({
+                "id": req.id,
+                "name": req.name,
+                "collection_id": req.collection_id,
+                "source_commit_id": req.source_commit_id,
+                "is_stale": req_stale,
+            }));
+        }
+
+        text_result(&serde_json::json!({
+            "project": {
+                "id": project.id,
+                "name": project.name,
+                "source_repo_url": project.source_repo_url,
+                "source_commit_id": project.source_commit_id,
+                "backend_type": project.backend_type,
+            },
+            "summary": {
+                "total_collections": collection_status.len(),
+                "stale_collections": stale_collections,
+                "total_requests": request_status.len(),
+                "stale_requests": stale_requests,
+                "has_sync_metadata": project.source_repo_url.is_some() && project.source_commit_id.is_some(),
+                "is_synced": project.source_repo_url.is_some() && project.source_commit_id.is_some() && stale_collections == 0 && stale_requests == 0,
+            },
+            "collections": collection_status,
+            "requests": request_status,
         }))
     }
 
@@ -1775,9 +1973,26 @@ impl ServerHandler for PiuMcp {
                 website_url: None,
             },
             instructions: Some(
-                "PIU API management server. Manage projects, collections, API requests, \
-                 environments, variables, data models (with typed fields and documentation), \
-                 and execute HTTP requests with full URL resolution and variable interpolation."
+                "PIU is a desktop API management application (like Postman). Core concepts:\n\
+                 \n\
+                 - **Project**: Top-level container. Has collections, environments, requests, and data models.\n\
+                 - **Collection**: Groups related API requests. Has a `path_prefix` (e.g. '/v1/users') prepended to all child request URLs.\n\
+                 - **Request**: An API endpoint definition with method, URL path, headers, params, body, and auth.\n\
+                 - **Environment**: Contains a `host` base URL and variables. One active per project.\n\
+                 - **Data Model**: Typed schema (like a DTO/interface) with fields, used to document request/response shapes.\n\
+                 \n\
+                 URL Resolution: `environment.host + collection.path_prefix + request.url`\n\
+                 Example: `https://api.example.com` + `/v1` + `/users/{{userId}}`\n\
+                 \n\
+                 Variable Interpolation: Use `{{variableName}}` in URLs, headers, params, body. Resolved from the active environment's variables.\n\
+                 \n\
+                 Typical workflows:\n\
+                 1. **Import from repo**: create_project (with source_repo_url) → create_environment → create_collection(s) → create_request(s)\n\
+                 2. **Set up environments**: create_environment → set_env_variables → set_active_environment\n\
+                 3. **Test endpoints**: execute_request (resolves URL, interpolates vars, sends HTTP)\n\
+                 4. **Track sync state**: get_sync_status (compare entity commit SHAs against project HEAD)\n\
+                 \n\
+                 Request config JSON structure: {\"method\":\"GET\",\"url\":\"/path\",\"headers\":[{\"key\":\"k\",\"value\":\"v\",\"enabled\":true}],\"params\":[...],\"body\":{\"type\":\"json\",\"content\":\"\"},\"auth\":{\"type\":\"none\"},\"description\":\"...\",\"requestModelId\":\"...\",\"responseModelId\":\"...\"}"
                     .into(),
             ),
         }

@@ -14,6 +14,7 @@ pub struct Collection {
     pub version: i64,
     pub created_at: i64,
     pub updated_at: i64,
+    pub source_commit_id: Option<String>,
 }
 
 pub fn get_table_sql() -> &'static str {
@@ -29,7 +30,8 @@ pub fn get_table_sql() -> &'static str {
         project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
         version INTEGER NOT NULL DEFAULT 1,
         created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL
+        updated_at INTEGER NOT NULL,
+        source_commit_id TEXT DEFAULT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_collections_parent ON collections(parent_id);
     CREATE INDEX IF NOT EXISTS idx_collections_project ON collections(project_id);
@@ -37,7 +39,7 @@ pub fn get_table_sql() -> &'static str {
 }
 
 const SELECT_COLUMNS: &str =
-    "id, name, parent_id, sort_order, path_prefix, description, shared_headers, project_id, version, created_at, updated_at";
+    "id, name, parent_id, sort_order, path_prefix, description, shared_headers, project_id, version, created_at, updated_at, source_commit_id";
 
 fn collection_from_row(
     row: &turso::Row,
@@ -56,6 +58,7 @@ fn collection_from_row(
         version: row.get(8)?,
         created_at: row.get(9)?,
         updated_at: row.get(10)?,
+        source_commit_id: row.get(11)?,
     })
 }
 
@@ -64,14 +67,15 @@ pub async fn create_collection(
     name: &str,
     parent_id: Option<&str>,
     project_id: Option<&str>,
+    source_commit_id: Option<&str>,
 ) -> DbResult<Collection> {
     let conn = get_connection()?.lock().await;
     let now = chrono::Utc::now().timestamp_millis();
 
     conn.execute(
-        "INSERT INTO collections (id, name, parent_id, sort_order, path_prefix, description, shared_headers, project_id, version, created_at, updated_at)
-         VALUES (?1, ?2, ?3, 0, NULL, NULL, '[]', ?4, 1, ?5, ?5)",
-        turso::params![id, name, parent_id, project_id, now],
+        "INSERT INTO collections (id, name, parent_id, sort_order, path_prefix, description, shared_headers, project_id, version, created_at, updated_at, source_commit_id)
+         VALUES (?1, ?2, ?3, 0, NULL, NULL, '[]', ?4, 1, ?5, ?5, ?6)",
+        turso::params![id, name, parent_id, project_id, now, source_commit_id],
     )
     .await?;
 
@@ -92,9 +96,11 @@ pub async fn create_collection(
         version: 1,
         created_at: now,
         updated_at: now,
+        source_commit_id: source_commit_id.map(|s| s.to_string()),
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn update_collection(
     id: &str,
     name: Option<&str>,
@@ -103,6 +109,7 @@ pub async fn update_collection(
     path_prefix: Option<Option<&str>>,
     description: Option<Option<&str>>,
     shared_headers: Option<&str>,
+    source_commit_id: Option<Option<&str>>,
 ) -> DbResult<Collection> {
     let conn = get_connection()?.lock().await;
 
@@ -128,12 +135,13 @@ pub async fn update_collection(
     let new_path_prefix = path_prefix.unwrap_or(old.path_prefix.as_deref());
     let new_description = description.unwrap_or(old.description.as_deref());
     let new_shared_headers = shared_headers.unwrap_or(&old.shared_headers);
+    let new_source_commit_id = source_commit_id.unwrap_or(old.source_commit_id.as_deref());
     let new_version = old.version + 1;
     let now = chrono::Utc::now().timestamp_millis();
 
     conn.execute(
-        "UPDATE collections SET name = ?1, parent_id = ?2, sort_order = ?3, path_prefix = ?4, description = ?5, shared_headers = ?6, version = ?7, updated_at = ?8 WHERE id = ?9",
-        turso::params![new_name, new_parent_id, new_sort_order, new_path_prefix, new_description, new_shared_headers, new_version, now, id],
+        "UPDATE collections SET name = ?1, parent_id = ?2, sort_order = ?3, path_prefix = ?4, description = ?5, shared_headers = ?6, version = ?7, updated_at = ?8, source_commit_id = ?9 WHERE id = ?10",
+        turso::params![new_name, new_parent_id, new_sort_order, new_path_prefix, new_description, new_shared_headers, new_version, now, new_source_commit_id, id],
     )
     .await?;
 
@@ -160,6 +168,9 @@ pub async fn update_collection(
     if shared_headers.is_some() && new_shared_headers != old.shared_headers {
         changes.push("Shared headers updated".to_string());
     }
+    if source_commit_id.is_some() && new_source_commit_id != old.source_commit_id.as_deref() {
+        changes.push("Source commit ID updated".to_string());
+    }
     let summary = if changes.is_empty() {
         "Updated collection".to_string()
     } else {
@@ -173,6 +184,7 @@ pub async fn update_collection(
         "path_prefix": { "old": old.path_prefix, "new": new_path_prefix },
         "description": { "old": old.description, "new": new_description },
         "shared_headers": { "old": old.shared_headers, "new": new_shared_headers },
+        "source_commit_id": { "old": old.source_commit_id, "new": new_source_commit_id },
     });
 
     drop(conn);
@@ -198,6 +210,7 @@ pub async fn update_collection(
         version: new_version,
         created_at: old.created_at,
         updated_at: now,
+        source_commit_id: new_source_commit_id.map(|s| s.to_string()),
     })
 }
 

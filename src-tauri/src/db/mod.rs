@@ -75,6 +75,11 @@ async fn run_migrations(conn: &Connection) -> DbResult<()> {
         "ALTER TABLE environments ADD COLUMN host TEXT DEFAULT NULL",
         "ALTER TABLE data_models ADD COLUMN parent_model_id TEXT DEFAULT NULL",
         "ALTER TABLE data_models ADD COLUMN mixin_model_ids TEXT NOT NULL DEFAULT '[]'",
+        "ALTER TABLE projects ADD COLUMN source_repo_url TEXT DEFAULT NULL",
+        "ALTER TABLE projects ADD COLUMN source_commit_id TEXT DEFAULT NULL",
+        "ALTER TABLE projects ADD COLUMN backend_type TEXT DEFAULT NULL",
+        "ALTER TABLE collections ADD COLUMN source_commit_id TEXT DEFAULT NULL",
+        "ALTER TABLE api_requests ADD COLUMN source_commit_id TEXT DEFAULT NULL",
     ];
     for sql in &alter_migrations {
         if let Err(e) = conn.execute(sql, ()).await {
@@ -236,17 +241,18 @@ async fn migrate_requests_schema(conn: &Connection) -> DbResult<()> {
                 config TEXT NOT NULL DEFAULT '{}',
                 version INTEGER NOT NULL DEFAULT 1,
                 created_at INTEGER NOT NULL,
-                updated_at INTEGER NOT NULL
+                updated_at INTEGER NOT NULL,
+                source_commit_id TEXT DEFAULT NULL
             )",
             (),
         )
         .await?;
 
         conn.execute(
-            "INSERT INTO api_requests_new (id, collection_id, project_id, name, sort_order, config, version, created_at, updated_at)
+            "INSERT INTO api_requests_new (id, collection_id, project_id, name, sort_order, config, version, created_at, updated_at, source_commit_id)
              SELECT r.id, c.id,
                     COALESCE(c.project_id, (SELECT id FROM projects ORDER BY created_at ASC, id ASC LIMIT 1)),
-                    r.name, r.sort_order, r.config, r.version, r.created_at, r.updated_at
+                    r.name, r.sort_order, r.config, r.version, r.created_at, r.updated_at, r.source_commit_id
              FROM api_requests r
              LEFT JOIN collections c ON r.collection_id = c.id",
             (),

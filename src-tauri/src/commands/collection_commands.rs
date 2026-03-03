@@ -19,6 +19,7 @@ pub struct CreateCollectionInput {
     pub name: String,
     pub parent_id: Option<String>,
     pub project_id: Option<String>,
+    pub source_commit_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -33,6 +34,8 @@ pub struct UpdateCollectionInput {
     #[serde(default, deserialize_with = "deserialize_optional_nullable")]
     pub description: Option<Option<String>>,
     pub shared_headers: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_nullable")]
+    pub source_commit_id: Option<Option<String>>,
 }
 
 #[tauri::command]
@@ -43,6 +46,7 @@ pub async fn create_collection(input: CreateCollectionInput) -> Result<db::Colle
         &input.name,
         input.parent_id.as_deref(),
         input.project_id.as_deref(),
+        input.source_commit_id.as_deref(),
     )
     .await
     .map_err(|e| e.to_string())
@@ -53,6 +57,7 @@ pub async fn update_collection(input: UpdateCollectionInput) -> Result<db::Colle
     let parent_id_ref = input.parent_id.as_ref().map(|opt| opt.as_deref());
     let path_prefix_ref = input.path_prefix.as_ref().map(|opt| opt.as_deref());
     let description_ref = input.description.as_ref().map(|opt| opt.as_deref());
+    let source_commit_id_ref = input.source_commit_id.as_ref().map(|opt| opt.as_deref());
     db::update_collection(
         &input.id,
         input.name.as_deref(),
@@ -61,6 +66,7 @@ pub async fn update_collection(input: UpdateCollectionInput) -> Result<db::Colle
         path_prefix_ref,
         description_ref,
         input.shared_headers.as_deref(),
+        source_commit_id_ref,
     )
     .await
     .map_err(|e| e.to_string())

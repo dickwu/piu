@@ -8,6 +8,9 @@ export interface Project {
   version: number;
   created_at: number;
   updated_at: number;
+  source_repo_url: string | null;
+  source_commit_id: string | null;
+  backend_type: string | null;
 }
 
 export interface Collection {
@@ -22,6 +25,7 @@ export interface Collection {
   version: number;
   created_at: number;
   updated_at: number;
+  source_commit_id: string | null;
 }
 
 export interface ApiRequest {
@@ -34,6 +38,7 @@ export interface ApiRequest {
   version: number;
   created_at: number;
   updated_at: number;
+  source_commit_id: string | null;
 }
 
 export interface RequestConfig {

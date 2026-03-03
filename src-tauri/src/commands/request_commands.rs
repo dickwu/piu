@@ -113,9 +113,7 @@ pub async fn list_root_requests(project_id: String) -> Result<Vec<db::ApiRequest
 }
 
 #[tauri::command]
-pub async fn count_requests_in_collection(
-    collection_id: String,
-) -> Result<i64, String> {
+pub async fn count_requests_in_collection(collection_id: String) -> Result<i64, String> {
     db::count_requests_in_collection(&collection_id)
         .await
         .map_err(|e| e.to_string())

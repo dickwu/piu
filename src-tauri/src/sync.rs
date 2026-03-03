@@ -281,7 +281,9 @@ pub async fn handle_pull(
         let reqs = db::list_requests(&col.id).await.map_err(err)?;
         server_requests.extend(reqs);
     }
-    let root_reqs = db::list_root_requests(&state.project_id).await.map_err(err)?;
+    let root_reqs = db::list_root_requests(&state.project_id)
+        .await
+        .map_err(err)?;
     server_requests.extend(root_reqs);
 
     let newer_requests: Vec<db::ApiRequest> = server_requests

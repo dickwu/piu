@@ -91,7 +91,15 @@ pub async fn update_request(
     move_to_root: bool,
 ) -> DbResult<ApiRequest> {
     // Phase 1: read the current request while holding the lock
-    let (old_collection_id, old_project_id, old_name, old_sort_order, old_config, old_version, created_at) = {
+    let (
+        old_collection_id,
+        old_project_id,
+        old_name,
+        old_sort_order,
+        old_config,
+        old_version,
+        created_at,
+    ) = {
         let conn = get_connection()?.lock().await;
 
         let mut rows = conn
@@ -145,8 +153,12 @@ pub async fn update_request(
     };
 
     // Phase 3: write the update while holding the lock again
-    let new_name: String = name.map(|s| s.to_string()).unwrap_or_else(|| old_name.clone());
-    let new_config: String = config.map(|s| s.to_string()).unwrap_or_else(|| old_config.clone());
+    let new_name: String = name
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| old_name.clone());
+    let new_config: String = config
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| old_config.clone());
     let new_sort_order = sort_order.unwrap_or(old_sort_order);
     let new_version = old_version + 1;
     let now = chrono::Utc::now().timestamp_millis();

@@ -16,6 +16,12 @@ Usage:
     # Batch import collections from JSON stdin
     cat collections.json | python3 piu_mcp.py batch-collections
 
+    # Batch update request bodies from JSON stdin
+    cat updates.json | python3 piu_mcp.py batch-update-bodies
+
+    # Create a data model
+    python3 piu_mcp.py create-model '{"project_id":"...","name":"LoginRequest","fields":[...]}'
+
     # List all projects
     python3 piu_mcp.py tool list_projects '{}'
 
@@ -163,6 +169,29 @@ def search_requests(project_id, query):
     return call_tool("search_requests", {"project_id": project_id, "query": query})
 
 
+def update_request_config(request_id, config):
+    """Update a request's config (body, headers, params, etc)."""
+    return call_tool("update_request", {"request_id": request_id, "config": json.dumps(config)})
+
+
+def create_model(project_id, name, description="", fields=None):
+    """Create a data model with typed fields."""
+    args = {"project_id": project_id, "name": name}
+    if description:
+        args["description"] = description
+    if fields:
+        args["fields"] = json.dumps(fields)
+    return call_tool("create_model", args)
+
+
+def list_models(project_id):
+    return call_tool("list_models", {"project_id": project_id})
+
+
+def generate_body(model_id):
+    return call_tool("generate_body_from_model", {"model_id": model_id})
+
+
 # ── CLI ───────────────────────────────────────────────────────────────
 
 
@@ -219,6 +248,33 @@ def main():
             print(f"  {'OK' if r else 'FAIL'}: {col.get('name', '?')} => {cid}", file=sys.stderr)
         print(json.dumps({"total": len(cols), "created": sum(1 for r in results if r["ok"]), "collections": results}))
 
+    elif cmd == "batch-update-bodies":
+        updates = json.load(sys.stdin)
+        init()
+        ok = 0
+        for upd in updates:
+            rid = upd["request_id"]
+            config = upd["config"]
+            r = update_request_config(rid, config)
+            if r is not None:
+                ok += 1
+            name = upd.get("name", rid[:12])
+            print(f"  {'OK' if r else 'FAIL'}: {name}", file=sys.stderr)
+        print(json.dumps({"total": len(updates), "updated": ok}))
+
+    elif cmd == "create-model":
+        _print_json(create_model(**json.loads(sys.argv[2])))
+
+    elif cmd == "list-models":
+        pid = sys.argv[2]
+        init()
+        _print_json(list_models(pid))
+
+    elif cmd == "generate-body":
+        mid = sys.argv[2]
+        init()
+        _print_json(generate_body(mid))
+
     elif cmd == "tool":
         name = sys.argv[2]
         args = json.loads(sys.argv[3]) if len(sys.argv) > 3 else {}
@@ -235,10 +291,13 @@ def main():
             print(f"Backend: {p.get('backend_type', '-')}")
             print(f"Commit:  {(p.get('source_commit_id') or '-')[:12]}")
             total = 0
-            for c in data.get("collections", []):
-                cnt = c.get("request_count", 0)
+            collections = data.get("collection_tree", data.get("collections", []))
+            for c in collections:
+                cnt = len(c.get("requests", []))
                 total += cnt
-                print(f"  {c.get('name', '?'):20s}  {c.get('path_prefix', ''):15s}  {cnt:3d} requests")
+                name = c.get("name", "?")
+                prefix = c.get("path_prefix", "")
+                print(f"  {name:20s}  {prefix:15s}  {cnt:3d} requests")
             print(f"\n  TOTAL: {total} requests")
         else:
             _print_json(data)

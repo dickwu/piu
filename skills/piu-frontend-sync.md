@@ -22,6 +22,12 @@ A PIU project must already exist with backend routes synced (via backend-sync or
 
 This skill analyzes a frontend repository to discover all HTTP API calls, then cross-references them against a PIU project's API surface to find mismatches, missing endpoints, and contract violations.
 
+## Helper Scripts
+
+The `skills/scripts/` directory contains reusable utilities:
+
+- **`skills/scripts/piu_mcp.py`** — MCP Streamable HTTP client for CLI and programmatic use. Supports individual tool calls, batch operations, and project overview.
+
 ## Workflow
 
 ### Step 1: Clone & Identify Frontend Framework
@@ -101,9 +107,11 @@ For each API call found, extract:
 
 ### Step 3: Cross-Reference Against PIU
 
-Use MCP tools to get the target project's API surface:
-```
-get_project_overview(project_id=<target_project_id>)
+Use `skills/scripts/piu_mcp.py` to query the target project's API surface:
+```bash
+python3 skills/scripts/piu_mcp.py overview <target_project_id>
+# or for raw JSON:
+python3 skills/scripts/piu_mcp.py tool get_project_overview '{"project_id":"<target_project_id>"}'
 ```
 
 For each frontend API call, match against PIU requests by:

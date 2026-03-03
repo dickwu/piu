@@ -26,3 +26,6 @@ Thumbs.db
 # Tauri
 src-tauri/gen/
 *.skill
+
+# Claude Code
+.claude/

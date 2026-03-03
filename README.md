@@ -21,9 +21,12 @@ Built with **Tauri 2.0** (Rust backend) + **React 19** + **Next.js** + **Ant Des
 - 🔄 **Auto-updater** — Built-in Tauri updater with signed artifacts
 - 🧩 **Data Models** — Per-project typed schemas with named fields, descriptions, required flags, and example values. Link a model to a request to generate sample JSON bodies or validate response shapes inline
 - 🧬 **Model Inheritance** — Single-parent inheritance + multi-mixin composition. Fields resolve via strict linearization (parent chain → mixins → own). Cycle detection prevents circular references. Side-by-side diff modal compares parent-child fields or version history
-- 🤖 **MCP Server** — 38 built-in tools let Claude (or any MCP client) create projects, send requests, manage collections, and query data model relationships — including a Mermaid class diagram generator
+- 🤖 **MCP Server** — 39 built-in tools let Claude (or any MCP client) create projects, send requests, manage collections, and query data model relationships — including a Mermaid class diagram generator and sync status tracking
 - 📦 **Move requests freely** — Right-click any request to move it between collections or to project root via a tree picker. Moving the last request out of a collection prompts to delete the empty collection
 - 🔄 **PIU-to-PIU Sync** — Sync projects between PIU instances over LAN. One hosts, another connects with IP + port + shared join key. Last-writer-wins conflict resolution via version fields
+- 🔗 **Git Commit Tracking** — Projects, collections, and requests track their source git repo URL, commit SHA, and backend framework type. The `get_sync_status` MCP tool detects stale entities by comparing per-entity commit IDs against the project-level commit
+- 🛠️ **Backend Sync Skill** — A Claude Code skill that clones a backend repo, detects the framework (Express, FastAPI, Django, Gin, Axum, etc.), extracts routes, and creates PIU projects/collections/requests via MCP — all tagged with the source commit SHA
+- 🔍 **Frontend Sync Skill** — A Claude Code skill that scans a frontend repo for HTTP API calls and cross-references them against a PIU project to find mismatches, missing endpoints, and type contract violations
 
 ## Tech Stack
 
@@ -70,6 +73,9 @@ bun tauri dev
 
 ```
 piu/
+├── skills/                     # Claude Code skills (shareable)
+│   ├── piu-backend-sync.md     # Import backend routes into PIU
+│   └── piu-frontend-sync.md    # Validate frontend API calls against PIU
 ├── src/                        # React/Next.js frontend
 │   └── app/
 │       ├── components/         # UI components (editors, viewers, modals, sidebar)
@@ -84,7 +90,7 @@ piu/
         │   ├── models.rs       # Data model CRUD + inheritance + cycle detection
         │   └── changelog.rs    # Version history
         ├── commands/           # Tauri IPC commands (~35 handlers)
-        ├── mcp.rs              # In-process MCP server (38 tools)
+        ├── mcp.rs              # In-process MCP server (39 tools, LLM-optimized descriptions)
         ├── mcp_relations.rs    # Model graph, hierarchy, and Mermaid diagram generation
         ├── sync.rs             # PIU-to-PIU sync protocol (Axum server + reqwest client)
         └── http/
@@ -128,6 +134,62 @@ full URL = environment.host + collection.path_prefix + request.url
 ### Environment variables
 
 Create environments (Dev, Staging, Prod) and define `key=value` pairs. Variables are resolved at request-time using `{{variable}}` syntax in any field.
+
+### Git commit tracking
+
+Projects, collections, and requests can each store a `source_commit_id` linking them to the git commit that created or last updated them. Projects also store `source_repo_url` (the origin repo) and `backend_type` (detected framework like `express`, `fastapi`, `axum`).
+
+The MCP `get_sync_status` tool compares each entity's commit against the project-level commit to flag stale entries:
+
+```
+Project "my-api" @ commit abc123
+├── Collection "users" @ abc123  ✓ synced
+├── Collection "auth"  @ def456  ⚠ stale (behind project commit)
+└── Request "GET /health" @ abc123  ✓ synced
+```
+
+### Claude Code skills
+
+Two [Claude Code skills](https://docs.anthropic.com/en/docs/claude-code/skills) automate API management. Source files live in `skills/` at the project root.
+
+#### Installation
+
+Copy the skills into your Claude Code project skills directory:
+
+```bash
+mkdir -p .claude/skills/piu-backend-sync .claude/skills/piu-frontend-sync
+cp skills/piu-backend-sync.md .claude/skills/piu-backend-sync/SKILL.md
+cp skills/piu-frontend-sync.md .claude/skills/piu-frontend-sync/SKILL.md
+```
+
+Once installed, Claude Code auto-activates them based on trigger keywords.
+
+#### Backend sync (`skills/piu-backend-sync.md`)
+
+Import a backend repo's routes into PIU. Trigger with:
+
+```
+sync backend https://github.com/org/my-api.git
+```
+
+What it does:
+1. Clones the repo and detects the framework (Express, FastAPI, Django, Gin, Rails, Axum, Spring, NestJS, Hono, Echo, Fiber, Actix — 14 frameworks)
+2. Extracts route definitions (methods, paths, route groups/prefixes)
+3. Creates a PIU project, environment, collections, and requests via MCP — all tagged with the source commit SHA
+4. Optionally reads handler files for request/response DTOs and creates Data Models
+
+#### Frontend sync (`skills/piu-frontend-sync.md`)
+
+Validate a frontend repo's API calls against an existing PIU project. Trigger with:
+
+```
+sync frontend https://github.com/org/my-app.git
+```
+
+What it does:
+1. Scans for HTTP API calls (fetch, axios, ky, ofetch, @tanstack/query, SWR)
+2. Cross-references each call against the PIU project's routes by method + path
+3. Reports: **matched** endpoints, **missing in PIU** (undocumented calls), **missing in frontend** (dead endpoints), and **type contract mismatches**
 
 ## Releasing
 

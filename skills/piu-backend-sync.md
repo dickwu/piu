@@ -27,6 +27,8 @@ The `skills/scripts/` directory contains reusable utilities:
   - `batch-requests`, `batch-collections` — bulk import from JSON stdin
   - `batch-update-bodies` — bulk update request configs from JSON stdin
   - `create-model`, `list-models`, `generate-body` — data model operations
+  - `link-model`, `unlink-model`, `request-models`, `resolve-fields` — model-request linking
+  - `batch-models`, `batch-links` — bulk model creation and linking from JSON stdin
   - `overview <project_id>` — formatted project summary
   - `tool <name> '<json>'` — generic MCP tool call
 
@@ -168,6 +170,77 @@ This pattern enables importing 500+ routes in under 30 seconds.
 }
 ```
 
+### Step 3.5: Model Extraction & Creation
+
+After creating requests, extract data models from controller schemas and link them to requests. This enables typed body generation and validation.
+
+#### Phase A — Identify Shared Base Schemas
+
+Scan all controller files for common patterns and create base models first:
+
+| Model Name | Fields | Purpose |
+|------------|--------|---------|
+| PaginationParams | page, per_page, sort_by, sort_order | Mixin for list endpoints |
+| SearchParams | keyword/search, start_date, end_date | Mixin for search endpoints |
+| DateRangeParams | start_date, end_date | Mixin for date-filtered endpoints |
+| ApiResponse | code, message, data | Base response wrapper |
+
+Create base models via `batch-models`:
+```bash
+cat <<'EOF' | python3 skills/scripts/piu_mcp.py batch-models
+{
+  "project_id": "PROJECT_ID",
+  "models": [
+    {
+      "name": "PaginationParams",
+      "description": "Common pagination fields for list endpoints",
+      "fields": "[{\"name\":\"page\",\"field_type\":\"integer\",\"description\":\"Page number\",\"required\":false,\"example\":\"1\"},{\"name\":\"per_page\",\"field_type\":\"integer\",\"description\":\"Items per page\",\"required\":false,\"example\":\"20\"},{\"name\":\"sort_by\",\"field_type\":\"string\",\"description\":\"Field to sort by\",\"required\":false,\"example\":\"created_at\"},{\"name\":\"sort_order\",\"field_type\":\"string\",\"description\":\"Sort direction: asc or desc\",\"required\":false,\"example\":\"desc\"}]"
+    },
+    {
+      "name": "ApiResponse",
+      "description": "Standard API response wrapper",
+      "fields": "[{\"name\":\"code\",\"field_type\":\"integer\",\"description\":\"Status code\",\"required\":true,\"example\":\"0\"},{\"name\":\"message\",\"field_type\":\"string\",\"description\":\"Status message\",\"required\":true,\"example\":\"success\"},{\"name\":\"data\",\"field_type\":\"object\",\"description\":\"Response payload\",\"required\":false}]"
+    }
+  ]
+}
+EOF
+```
+
+#### Phase B — Per-Endpoint Model Extraction (Parallel Subagents)
+
+For each collection group, launch a subagent that:
+1. Reads controller source files
+2. Extracts request body validation rules → creates `{EndpointName}Request` model
+3. Extracts response structure → creates `{EndpointName}Response` model
+4. Sets `parent_model_id` / `mixin_model_ids` where appropriate (e.g., list endpoints mixin PaginationParams)
+5. Writes model definitions to `/tmp/piu-models/{collection}.json`
+
+Framework-specific extraction:
+
+| Framework | Request Schema Source | Response Schema Source |
+|-----------|---------------------|----------------------|
+| **Hyperf/Laravel** | `$request->input()`, `rules()`, FormRequest | `return $this->response()`, Resource classes |
+| **Express/NestJS** | DTO classes, Zod schemas, `req.body` | `res.json()` return types |
+| **FastAPI** | Pydantic model type hints | Return type annotations |
+| **Go** | Struct tags `json:"field" binding:"required"` | Return struct types |
+
+#### Phase C — Batch Create and Link
+
+1. Collect all model definitions from subagent outputs
+2. Create models via `batch-models` with base models first, then endpoint-specific models
+3. Map models to requests by method+path
+4. Link models to requests via `batch-links`:
+
+```bash
+cat <<'EOF' | python3 skills/scripts/piu_mcp.py batch-links
+[
+  {"request_id": "REQ_ID_1", "model_type": "request", "model_id": "MODEL_ID_1"},
+  {"request_id": "REQ_ID_1", "model_type": "response", "model_id": "MODEL_ID_2"},
+  {"request_id": "REQ_ID_2", "model_type": "request", "model_id": "MODEL_ID_3"}
+]
+EOF
+```
+
 ### Step 4: API Documentation Enrichment (Subagent Pattern)
 
 After initial route import, enrich every request with body schemas, descriptions, and data models so LLMs can later consume the API surface programmatically. This step uses **parallel subagents** to read controller/handler source code and extract request parameters at scale.
@@ -250,6 +323,17 @@ python3 skills/scripts/piu_mcp.py create-model '{
 Field types: `string`, `integer`, `number`, `boolean`, `array`, `object`, `file`
 
 Models serve as reusable schemas that LLMs can reference when generating API requests. Link models to requests via `requestModelId` in the config.
+
+**Model-aware body generation:** After creating models and linking them to requests, use `generate-body` to produce the request body JSON from the model's field definitions instead of writing JSON manually:
+
+```bash
+# Generate body from linked model
+python3 skills/scripts/piu_mcp.py generate-body MODEL_ID
+
+# Reference linked model in description markdown:
+# ### Request Model
+# `LoginRequest` — See model for field definitions
+```
 
 #### 4e. Write Full Markdown API Documentation
 
@@ -349,6 +433,12 @@ python3 skills/scripts/piu_mcp.py generate-body MODEL_ID
 
 # 5. Full sync status — verify commit tracking
 python3 skills/scripts/piu_mcp.py tool get_sync_status '{"project_id":"PROJECT_ID"}'
+
+# 6. Check model-request links — verify models are linked to requests
+python3 skills/scripts/piu_mcp.py tool get_request_models '{"request_id":"SAMPLE_REQUEST_ID"}'
+
+# 7. Resolve model fields — verify inheritance works
+python3 skills/scripts/piu_mcp.py resolve-fields MODEL_ID
 ```
 
 **Verification checklist:**
@@ -360,6 +450,9 @@ python3 skills/scripts/piu_mcp.py tool get_sync_status '{"project_id":"PROJECT_I
 - [ ] No request has a short description (<100 chars)
 - [ ] Data models exist for shared request/response schemas
 - [ ] `source_commit_id` is set on all entities
+- [ ] Base/mixin models created for shared patterns (pagination, search, response wrapper)
+- [ ] POST/PUT/PATCH requests have requestModelId linked
+- [ ] Model fields match controller validation rules
 
 ### Step 5: Cleanup & Report
 
@@ -389,6 +482,12 @@ Print a summary:
 - PUT: <count>
 - DELETE: <count>
 - PATCH: <count>
+
+### Models:
+- Base/mixin models: <count>
+- Request models: <count>
+- Response models: <count>
+- Linked: <count>/<total_requests> requests have model links
 ```
 
 Verify with:

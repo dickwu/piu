@@ -22,6 +22,24 @@ Usage:
     # Create a data model
     python3 piu_mcp.py create-model '{"project_id":"...","name":"LoginRequest","fields":[...]}'
 
+    # Link a model to a request
+    python3 piu_mcp.py link-model '{"request_id":"...", "model_type":"request", "model_id":"..."}'
+
+    # Unlink a model from a request
+    python3 piu_mcp.py unlink-model '{"request_id":"...", "model_type":"request"}'
+
+    # Get linked models for a request
+    python3 piu_mcp.py request-models <request_id>
+
+    # Resolve inherited fields for a model
+    python3 piu_mcp.py resolve-fields <model_id>
+
+    # Batch create models from JSON stdin
+    cat models.json | python3 piu_mcp.py batch-models
+
+    # Batch link models to requests from JSON stdin
+    cat links.json | python3 piu_mcp.py batch-links
+
     # List all projects
     python3 piu_mcp.py tool list_projects '{}'
 
@@ -192,6 +210,46 @@ def generate_body(model_id):
     return call_tool("generate_body_from_model", {"model_id": model_id})
 
 
+def link_model(request_id, model_type, model_id):
+    """Link a data model to a request as request or response model."""
+    return call_tool("link_model_to_request", {
+        "request_id": request_id,
+        "model_type": model_type,
+        "model_id": model_id,
+    })
+
+
+def unlink_model(request_id, model_type):
+    """Remove a model link from a request."""
+    return call_tool("unlink_model_from_request", {
+        "request_id": request_id,
+        "model_type": model_type,
+    })
+
+
+def get_request_models(request_id):
+    """Get both linked models (request and response) with resolved fields."""
+    return call_tool("get_request_models", {"request_id": request_id})
+
+
+def resolve_model_fields(model_id):
+    """Resolve all fields for a model including inherited and mixin fields."""
+    return call_tool("resolve_model_fields", {"model_id": model_id})
+
+
+def batch_create_models(project_id, models):
+    """Bulk create models. Models is a list of dicts with name, description, fields, etc."""
+    return call_tool("batch_create_models", {
+        "project_id": project_id,
+        "models": json.dumps(models),
+    })
+
+
+def batch_link_models(links):
+    """Bulk link models to requests. Links is a list of {request_id, model_type, model_id}."""
+    return call_tool("batch_link_models", {"links": json.dumps(links)})
+
+
 # ── CLI ───────────────────────────────────────────────────────────────
 
 
@@ -274,6 +332,32 @@ def main():
         mid = sys.argv[2]
         init()
         _print_json(generate_body(mid))
+
+    elif cmd == "link-model":
+        _print_json(link_model(**json.loads(sys.argv[2])))
+
+    elif cmd == "unlink-model":
+        _print_json(unlink_model(**json.loads(sys.argv[2])))
+
+    elif cmd == "request-models":
+        mid = sys.argv[2]
+        init()
+        _print_json(get_request_models(mid))
+
+    elif cmd == "resolve-fields":
+        mid = sys.argv[2]
+        init()
+        _print_json(resolve_model_fields(mid))
+
+    elif cmd == "batch-models":
+        data = json.load(sys.stdin)
+        init()
+        _print_json(batch_create_models(data["project_id"], data["models"]))
+
+    elif cmd == "batch-links":
+        links = json.load(sys.stdin)
+        init()
+        _print_json(batch_link_models(links))
 
     elif cmd == "tool":
         name = sys.argv[2]

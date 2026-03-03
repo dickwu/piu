@@ -1,3 +1,4 @@
+use crate::commands;
 use crate::db;
 use crate::http;
 use crate::mcp_relations;
@@ -233,6 +234,14 @@ struct CreateModelParam {
         description = "Fields as JSON array: [{\"name\":\"id\",\"field_type\":\"string\",\"description\":\"User ID\",\"required\":true,\"example\":\"usr_123\",\"ref_model_id\":null}]"
     )]
     fields: Option<String>,
+    #[schemars(
+        description = "Parent model ID for single inheritance (model must exist in same project)"
+    )]
+    parent_model_id: Option<String>,
+    #[schemars(
+        description = "Mixin model IDs as JSON array of strings (e.g. '[\"model-id-1\",\"model-id-2\"]'). Models must exist in same project."
+    )]
+    mixin_model_ids: Option<String>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -261,6 +270,42 @@ struct ValidateResponseParam {
 struct GetModelDiagramParam {
     #[schemars(description = "The project's unique ID")]
     project_id: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct LinkModelParam {
+    #[schemars(description = "The API request's unique ID")]
+    request_id: String,
+    #[schemars(description = "Which model link to set: 'request' or 'response'")]
+    model_type: String,
+    #[schemars(description = "The data model's unique ID to link")]
+    model_id: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct UnlinkModelParam {
+    #[schemars(description = "The API request's unique ID")]
+    request_id: String,
+    #[schemars(description = "Which model link to remove: 'request' or 'response'")]
+    model_type: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct BatchCreateModelsParam {
+    #[schemars(description = "Project ID the models belong to")]
+    project_id: String,
+    #[schemars(
+        description = "JSON array of models to create: [{\"name\":\"User\",\"description\":\"...\",\"fields\":\"[...]\",\"parent_model_id\":\"...\",\"mixin_model_ids\":\"[...]\"}]. Models are created in order so later entries can reference earlier ones by name."
+    )]
+    models: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct BatchLinkModelsParam {
+    #[schemars(
+        description = "JSON array of links: [{\"request_id\":\"...\",\"model_type\":\"request\",\"model_id\":\"...\"}]"
+    )]
+    links: String,
 }
 
 // ============ Helper Functions ============
@@ -292,6 +337,8 @@ fn enrich_request(req: &db::ApiRequest) -> serde_json::Value {
         "body": config.get("body"),
         "auth": config.get("auth"),
         "description": config.get("description"),
+        "requestModelId": config.get("requestModelId"),
+        "responseModelId": config.get("responseModelId"),
         "source_commit_id": req.source_commit_id,
         "version": req.version,
         "created_at": req.created_at,
@@ -921,6 +968,9 @@ impl PiuMcp {
             }
         }
 
+        // Parse raw config for model ID fields not in the typed struct
+        let raw_config = parse_config(&req.config);
+
         text_result(&serde_json::json!({
             "id": req.id,
             "name": req.name,
@@ -934,6 +984,8 @@ impl PiuMcp {
                 "body": config.body,
                 "auth": config.auth,
                 "description": config.description,
+                "requestModelId": raw_config.get("requestModelId"),
+                "responseModelId": raw_config.get("responseModelId"),
             },
             "resolved": {
                 "full_url": resolved_url,
@@ -1252,6 +1304,39 @@ impl PiuMcp {
                 .await
                 .map_err(mcp_err)?;
         }
+
+        // Validate parent/mixin references exist in same project
+        if let Some(ref parent_id) = p.parent_model_id {
+            let parent_exists = db::models::get_model(parent_id)
+                .await
+                .map_err(mcp_err)?
+                .map(|m| m.project_id == p.project_id)
+                .unwrap_or(false);
+            if !parent_exists {
+                return Err(mcp_err(format!(
+                    "parent_model_id '{}' does not exist in project '{}'",
+                    parent_id, p.project_id
+                )));
+            }
+        }
+        if let Some(ref mixin_json) = p.mixin_model_ids {
+            let mixin_ids: Vec<String> = serde_json::from_str(mixin_json)
+                .map_err(|e| mcp_err(format!("Invalid mixin_model_ids JSON: {}", e)))?;
+            for mixin_id in &mixin_ids {
+                let mixin_exists = db::models::get_model(mixin_id)
+                    .await
+                    .map_err(mcp_err)?
+                    .map(|m| m.project_id == p.project_id)
+                    .unwrap_or(false);
+                if !mixin_exists {
+                    return Err(mcp_err(format!(
+                        "mixin_model_id '{}' does not exist in project '{}'",
+                        mixin_id, p.project_id
+                    )));
+                }
+            }
+        }
+
         let id = uuid::Uuid::new_v4().to_string();
         let model = db::models::create_model(
             &id,
@@ -1259,8 +1344,8 @@ impl PiuMcp {
             &p.name,
             p.description.as_deref(),
             p.fields.as_deref(),
-            None,
-            None,
+            p.parent_model_id.as_deref(),
+            p.mixin_model_ids.as_deref(),
         )
         .await
         .map_err(mcp_err)?;
@@ -1273,6 +1358,8 @@ impl PiuMcp {
             "project_id": model.project_id,
             "name": model.name,
             "description": model.description,
+            "parent_model_id": model.parent_model_id,
+            "mixin_model_ids": serde_json::from_str::<serde_json::Value>(&model.mixin_model_ids).unwrap_or_default(),
             "fields": fields,
             "field_count": fields.len(),
             "sort_order": model.sort_order,
@@ -1575,6 +1662,522 @@ impl PiuMcp {
             .await
             .map_err(mcp_err)?;
         Ok(CallToolResult::success(vec![Content::text(diagram)]))
+    }
+
+    // ---- Model-Request Linking ----
+
+    #[tool(
+        description = "Set requestModelId or responseModelId on a request's config. Links a data model to a request so the model's schema documents the request or response shape. The model must belong to the same project as the request."
+    )]
+    async fn link_model_to_request(
+        &self,
+        Parameters(p): Parameters<LinkModelParam>,
+    ) -> Result<CallToolResult, McpError> {
+        let config_key = match p.model_type.as_str() {
+            "request" => "requestModelId",
+            "response" => "responseModelId",
+            _ => return Err(mcp_err("model_type must be 'request' or 'response'")),
+        };
+
+        let req = db::get_request(&p.request_id)
+            .await
+            .map_err(mcp_err)?
+            .ok_or_else(|| mcp_err(format!("Request {} not found", p.request_id)))?;
+
+        // Validate model exists and belongs to the same project
+        let model = db::models::get_model(&p.model_id)
+            .await
+            .map_err(mcp_err)?
+            .ok_or_else(|| mcp_err(format!("Model {} not found", p.model_id)))?;
+
+        // Validate model belongs to same project as request
+        if let Some(ref req_project_id) = req.project_id {
+            if req_project_id != &model.project_id {
+                return Err(mcp_err(format!(
+                    "Model '{}' belongs to project '{}' but request belongs to project '{}'",
+                    p.model_id, model.project_id, req_project_id
+                )));
+            }
+        }
+
+        let mut config: serde_json::Value =
+            serde_json::from_str(&req.config).unwrap_or_else(|_| serde_json::json!({}));
+        config[config_key] = serde_json::Value::String(p.model_id.clone());
+
+        let config_str =
+            serde_json::to_string(&config).map_err(|e| mcp_err(format!("JSON error: {}", e)))?;
+
+        db::update_request(
+            &p.request_id,
+            None,
+            Some(&config_str),
+            None,
+            None,
+            false,
+            None,
+        )
+        .await
+        .map_err(mcp_err)?;
+
+        text_result(&serde_json::json!({
+            "request_id": p.request_id,
+            "model_type": p.model_type,
+            "model_id": p.model_id,
+            "model_name": model.name,
+        }))
+    }
+
+    #[tool(
+        description = "Remove a requestModelId or responseModelId link from a request's config."
+    )]
+    async fn unlink_model_from_request(
+        &self,
+        Parameters(p): Parameters<UnlinkModelParam>,
+    ) -> Result<CallToolResult, McpError> {
+        let config_key = match p.model_type.as_str() {
+            "request" => "requestModelId",
+            "response" => "responseModelId",
+            _ => return Err(mcp_err("model_type must be 'request' or 'response'")),
+        };
+
+        let req = db::get_request(&p.request_id)
+            .await
+            .map_err(mcp_err)?
+            .ok_or_else(|| mcp_err(format!("Request {} not found", p.request_id)))?;
+
+        let mut config: serde_json::Value =
+            serde_json::from_str(&req.config).unwrap_or_else(|_| serde_json::json!({}));
+        if let Some(obj) = config.as_object_mut() {
+            obj.remove(config_key);
+        }
+
+        let config_str =
+            serde_json::to_string(&config).map_err(|e| mcp_err(format!("JSON error: {}", e)))?;
+
+        db::update_request(
+            &p.request_id,
+            None,
+            Some(&config_str),
+            None,
+            None,
+            false,
+            None,
+        )
+        .await
+        .map_err(mcp_err)?;
+
+        text_result(&serde_json::json!({
+            "request_id": p.request_id,
+            "model_type": p.model_type,
+            "unlinked": true,
+        }))
+    }
+
+    #[tool(
+        description = "Get both linked models (request and response) for a request, with resolved fields including inherited and mixin fields. Returns null for unlinked slots."
+    )]
+    async fn get_request_models(
+        &self,
+        Parameters(p): Parameters<RequestIdParam>,
+    ) -> Result<CallToolResult, McpError> {
+        let req = db::get_request(&p.request_id)
+            .await
+            .map_err(mcp_err)?
+            .ok_or_else(|| mcp_err(format!("Request {} not found", p.request_id)))?;
+
+        let config: serde_json::Value =
+            serde_json::from_str(&req.config).unwrap_or_else(|_| serde_json::json!({}));
+
+        let request_model_id = config
+            .get("requestModelId")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty());
+        let response_model_id = config
+            .get("responseModelId")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty());
+
+        async fn resolve_model_with_fields(model_id: &str) -> Option<serde_json::Value> {
+            let model = db::models::get_model(model_id).await.ok()??;
+            let fields = commands::resolve_model_fields(model_id.to_string())
+                .await
+                .ok()?;
+            let field_values: Vec<serde_json::Value> = fields
+                .iter()
+                .map(|f| {
+                    serde_json::json!({
+                        "name": f.name,
+                        "field_type": f.field_type,
+                        "description": f.description,
+                        "required": f.required,
+                        "example": f.example,
+                        "ref_model_id": f.ref_model_id,
+                        "origin": f.origin,
+                        "origin_model_id": f.origin_model_id,
+                        "origin_model_name": f.origin_model_name,
+                        "overridden": f.overridden,
+                    })
+                })
+                .collect();
+            Some(serde_json::json!({
+                "id": model.id,
+                "name": model.name,
+                "description": model.description,
+                "parent_model_id": model.parent_model_id,
+                "resolved_fields": field_values,
+                "field_count": field_values.len(),
+            }))
+        }
+
+        let request_model = if let Some(mid) = request_model_id {
+            resolve_model_with_fields(mid).await
+        } else {
+            None
+        };
+        let response_model = if let Some(mid) = response_model_id {
+            resolve_model_with_fields(mid).await
+        } else {
+            None
+        };
+
+        text_result(&serde_json::json!({
+            "request_id": p.request_id,
+            "request_model": request_model,
+            "response_model": response_model,
+        }))
+    }
+
+    #[tool(
+        description = "Resolve all fields for a data model including inherited fields from parent and mixin models. Returns each field with its origin ('own', 'parent', 'mixin'), source model info, and override status."
+    )]
+    async fn resolve_model_fields(
+        &self,
+        Parameters(p): Parameters<ModelIdParam>,
+    ) -> Result<CallToolResult, McpError> {
+        let model = db::models::get_model(&p.model_id)
+            .await
+            .map_err(mcp_err)?
+            .ok_or_else(|| mcp_err(format!("Model {} not found", p.model_id)))?;
+
+        let fields = commands::resolve_model_fields(p.model_id)
+            .await
+            .map_err(mcp_err)?;
+
+        let field_values: Vec<serde_json::Value> = fields
+            .iter()
+            .map(|f| {
+                serde_json::json!({
+                    "name": f.name,
+                    "field_type": f.field_type,
+                    "description": f.description,
+                    "required": f.required,
+                    "example": f.example,
+                    "ref_model_id": f.ref_model_id,
+                    "origin": f.origin,
+                    "origin_model_id": f.origin_model_id,
+                    "origin_model_name": f.origin_model_name,
+                    "overridden": f.overridden,
+                })
+            })
+            .collect();
+
+        text_result(&serde_json::json!({
+            "model_id": model.id,
+            "model_name": model.name,
+            "parent_model_id": model.parent_model_id,
+            "mixin_model_ids": serde_json::from_str::<serde_json::Value>(&model.mixin_model_ids).unwrap_or_default(),
+            "resolved_fields": field_values,
+            "field_count": field_values.len(),
+        }))
+    }
+
+    #[tool(
+        description = "Bulk create multiple data models in a project. Models are created in order so later entries can reference earlier ones by name via parent_model_id or mixin_model_ids. Returns created models with their IDs."
+    )]
+    async fn batch_create_models(
+        &self,
+        Parameters(p): Parameters<BatchCreateModelsParam>,
+    ) -> Result<CallToolResult, McpError> {
+        #[derive(Deserialize)]
+        struct BatchModelInput {
+            name: String,
+            description: Option<String>,
+            fields: Option<String>,
+            parent_model_id: Option<String>,
+            mixin_model_ids: Option<String>,
+        }
+
+        let models: Vec<BatchModelInput> = serde_json::from_str(&p.models)
+            .map_err(|e| mcp_err(format!("Invalid models JSON array: {}", e)))?;
+
+        // Name → ID mapping so later models can reference earlier ones by name
+        let mut name_to_id: HashMap<String, String> = HashMap::new();
+        let mut created: Vec<serde_json::Value> = Vec::new();
+        let mut errors: Vec<serde_json::Value> = Vec::new();
+
+        let total = models.len();
+
+        for input in &models {
+            // Resolve parent by name or pass through as raw ID
+            let parent_id = input
+                .parent_model_id
+                .as_ref()
+                .map(|pid| name_to_id.get(pid).cloned().unwrap_or_else(|| pid.clone()));
+
+            // Validate parent belongs to same project (if not a batch name reference)
+            if let Some(ref pid) = parent_id {
+                match db::models::get_model(pid).await {
+                    Ok(Some(m)) if m.project_id != p.project_id => {
+                        errors.push(serde_json::json!({
+                            "name": input.name,
+                            "error": format!("parent_model_id '{}' does not belong to project '{}'", pid, p.project_id),
+                        }));
+                        continue;
+                    }
+                    Ok(None) => {
+                        errors.push(serde_json::json!({
+                            "name": input.name,
+                            "error": format!("parent_model_id '{}' not found", pid),
+                        }));
+                        continue;
+                    }
+                    Err(e) => {
+                        errors.push(serde_json::json!({
+                            "name": input.name,
+                            "error": e.to_string(),
+                        }));
+                        continue;
+                    }
+                    _ => {}
+                }
+            }
+
+            // Resolve mixin IDs by name
+            let mixin_ids_str = if let Some(ref mixin_json) = input.mixin_model_ids {
+                let raw_ids: Vec<String> = match serde_json::from_str(mixin_json) {
+                    Ok(ids) => ids,
+                    Err(e) => {
+                        errors.push(serde_json::json!({
+                            "name": input.name,
+                            "error": format!("Invalid mixin_model_ids JSON: {}", e),
+                        }));
+                        continue;
+                    }
+                };
+                let resolved: Vec<String> = raw_ids
+                    .into_iter()
+                    .map(|mid| name_to_id.get(&mid).cloned().unwrap_or(mid))
+                    .collect();
+                // Validate each mixin belongs to same project
+                let mut mixin_valid = true;
+                for mid in &resolved {
+                    match db::models::get_model(mid).await {
+                        Ok(Some(m)) if m.project_id != p.project_id => {
+                            errors.push(serde_json::json!({
+                                "name": input.name,
+                                "error": format!("mixin_model_id '{}' does not belong to project '{}'", mid, p.project_id),
+                            }));
+                            mixin_valid = false;
+                            break;
+                        }
+                        Ok(None) => {
+                            errors.push(serde_json::json!({
+                                "name": input.name,
+                                "error": format!("mixin_model_id '{}' not found", mid),
+                            }));
+                            mixin_valid = false;
+                            break;
+                        }
+                        Err(e) => {
+                            errors.push(serde_json::json!({
+                                "name": input.name,
+                                "error": e.to_string(),
+                            }));
+                            mixin_valid = false;
+                            break;
+                        }
+                        _ => {}
+                    }
+                }
+                if !mixin_valid {
+                    continue;
+                }
+                Some(serde_json::to_string(&resolved).unwrap_or_else(|_| "[]".to_string()))
+            } else {
+                None
+            };
+
+            if let Some(ref fields_json) = input.fields {
+                if let Err(e) = db::models::validate_model_refs(&p.project_id, fields_json).await {
+                    errors.push(serde_json::json!({
+                        "name": input.name,
+                        "error": e.to_string(),
+                    }));
+                    continue;
+                }
+            }
+
+            let id = uuid::Uuid::new_v4().to_string();
+            match db::models::create_model(
+                &id,
+                &p.project_id,
+                &input.name,
+                input.description.as_deref(),
+                input.fields.as_deref(),
+                parent_id.as_deref(),
+                mixin_ids_str.as_deref(),
+            )
+            .await
+            {
+                Ok(model) => {
+                    let fields: Vec<serde_json::Value> =
+                        serde_json::from_str(&model.fields).unwrap_or_default();
+                    name_to_id.insert(input.name.clone(), model.id.clone());
+                    created.push(serde_json::json!({
+                        "id": model.id,
+                        "name": model.name,
+                        "field_count": fields.len(),
+                    }));
+                }
+                Err(e) => {
+                    errors.push(serde_json::json!({
+                        "name": input.name,
+                        "error": e.to_string(),
+                    }));
+                }
+            }
+        }
+
+        text_result(&serde_json::json!({
+            "created": created,
+            "errors": errors,
+            "total": total,
+        }))
+    }
+
+    #[tool(
+        description = "Bulk link models to requests. Each link sets requestModelId or responseModelId on the request's config. Applies each link atomically."
+    )]
+    async fn batch_link_models(
+        &self,
+        Parameters(p): Parameters<BatchLinkModelsParam>,
+    ) -> Result<CallToolResult, McpError> {
+        #[derive(Deserialize)]
+        struct LinkInput {
+            request_id: String,
+            model_type: String,
+            model_id: String,
+        }
+
+        let links: Vec<LinkInput> = serde_json::from_str(&p.links)
+            .map_err(|e| mcp_err(format!("Invalid links JSON array: {}", e)))?;
+
+        let mut linked = 0usize;
+        let mut errors: Vec<serde_json::Value> = Vec::new();
+
+        for link in &links {
+            let config_key = match link.model_type.as_str() {
+                "request" => "requestModelId",
+                "response" => "responseModelId",
+                _ => {
+                    errors.push(serde_json::json!({
+                        "request_id": link.request_id,
+                        "error": "model_type must be 'request' or 'response'",
+                    }));
+                    continue;
+                }
+            };
+
+            let req = match db::get_request(&link.request_id).await {
+                Ok(Some(r)) => r,
+                Ok(None) => {
+                    errors.push(serde_json::json!({
+                        "request_id": link.request_id,
+                        "error": "Request not found",
+                    }));
+                    continue;
+                }
+                Err(e) => {
+                    errors.push(serde_json::json!({
+                        "request_id": link.request_id,
+                        "error": e.to_string(),
+                    }));
+                    continue;
+                }
+            };
+
+            // Validate model exists and belongs to same project
+            let model = match db::models::get_model(&link.model_id).await {
+                Ok(Some(m)) => m,
+                Ok(None) => {
+                    errors.push(serde_json::json!({
+                        "request_id": link.request_id,
+                        "error": format!("Model {} not found", link.model_id),
+                    }));
+                    continue;
+                }
+                Err(e) => {
+                    errors.push(serde_json::json!({
+                        "request_id": link.request_id,
+                        "error": e.to_string(),
+                    }));
+                    continue;
+                }
+            };
+            if let Some(ref req_project_id) = req.project_id {
+                if req_project_id != &model.project_id {
+                    errors.push(serde_json::json!({
+                        "request_id": link.request_id,
+                        "error": format!(
+                            "Model '{}' belongs to project '{}' but request belongs to project '{}'",
+                            link.model_id, model.project_id, req_project_id
+                        ),
+                    }));
+                    continue;
+                }
+            }
+
+            let mut config: serde_json::Value =
+                serde_json::from_str(&req.config).unwrap_or_else(|_| serde_json::json!({}));
+            config[config_key] = serde_json::Value::String(link.model_id.clone());
+
+            let config_str = match serde_json::to_string(&config) {
+                Ok(s) => s,
+                Err(e) => {
+                    errors.push(serde_json::json!({
+                        "request_id": link.request_id,
+                        "error": e.to_string(),
+                    }));
+                    continue;
+                }
+            };
+
+            match db::update_request(
+                &link.request_id,
+                None,
+                Some(&config_str),
+                None,
+                None,
+                false,
+                None,
+            )
+            .await
+            {
+                Ok(_) => linked += 1,
+                Err(e) => {
+                    errors.push(serde_json::json!({
+                        "request_id": link.request_id,
+                        "error": e.to_string(),
+                    }));
+                }
+            }
+        }
+
+        text_result(&serde_json::json!({
+            "linked": linked,
+            "errors": errors,
+            "total": links.len(),
+        }))
     }
 
     // ---- Execution ----

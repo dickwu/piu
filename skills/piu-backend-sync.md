@@ -22,7 +22,13 @@ This skill analyzes a backend repository to discover API routes, then creates PI
 The `skills/scripts/` directory contains reusable utilities:
 
 - **`skills/scripts/detect_framework.sh`** — Detects backend framework from a repo directory. Returns JSON: `{"framework":"express","port":3000,"router_files":["routes/api.js"]}`
-- **`skills/scripts/piu_mcp.py`** — MCP Streamable HTTP client for CLI and programmatic use. Supports individual tool calls, batch-requests, batch-collections, and project overview.
+- **`skills/scripts/piu_mcp.py`** — MCP Streamable HTTP client for CLI and programmatic use. Commands:
+  - `create-project`, `create-env`, `create-collection`, `create-request` — CRUD operations
+  - `batch-requests`, `batch-collections` — bulk import from JSON stdin
+  - `batch-update-bodies` — bulk update request configs from JSON stdin
+  - `create-model`, `list-models`, `generate-body` — data model operations
+  - `overview <project_id>` — formatted project summary
+  - `tool <name> '<json>'` — generic MCP tool call
 
 ## Workflow
 
@@ -245,9 +251,64 @@ Field types: `string`, `integer`, `number`, `boolean`, `array`, `object`, `file`
 
 Models serve as reusable schemas that LLMs can reference when generating API requests. Link models to requests via `requestModelId` in the config.
 
-#### 4e. Batch Update Request Bodies
+#### 4e. Write Full Markdown API Documentation
 
-Collect all subagent outputs and batch-update request configs with enriched bodies and descriptions:
+Each request's `description` field must be a **complete markdown document** — not a one-liner. This is critical for LLM consumers who will read the API surface from PIU.
+
+**Required markdown template for every request:**
+
+````markdown
+## {METHOD} {collection_prefix}{url}
+
+{One paragraph summary: what this endpoint does, business context, when to use it.}
+
+### Parameters
+
+| Field | Type | Required | Description | Example |
+|-------|------|----------|-------------|---------|
+| field_name | string | Yes | What this field is for | `example_value` |
+| other_field | integer | No | Optional field description | `123` |
+
+### Request Body
+
+```json
+{
+  "field_name": "example_value",
+  "other_field": 123
+}
+```
+
+### Response
+
+{What the response returns — fields, format, pagination, error cases.}
+
+### Notes
+
+- Requires authentication via JWT token
+- {Side effects: creates audit log, sends notification, etc.}
+- {Related endpoints: see also POST /users/delete}
+````
+
+**Rules:**
+- Every description MUST start with `## ` (h2 markdown header)
+- Every description MUST have a `### Parameters` section (use "No parameters required." for empty endpoints)
+- POST/PUT/PATCH requests MUST have a `### Request Body` section with a JSON code block
+- GET requests: omit Request Body section
+- Include ALL fields from controller validation rules in the Parameters table
+- Use realistic example values (not placeholders like "string")
+
+**Subagent prompt template for writing markdown docs:**
+
+```
+For each request in your batch:
+1. Read the controller method to extract ALL parameters with types and required/optional
+2. Write a full markdown description following the ## header + ### Parameters table + ### Request Body + ### Response + ### Notes template
+3. Update the request via MCP, keeping the existing body content but replacing the description
+```
+
+#### 4f. Batch Update Request Configs
+
+Collect all subagent outputs and batch-update request configs:
 
 ```bash
 cat <<'EOF' | python3 skills/scripts/piu_mcp.py batch-update-bodies
@@ -261,7 +322,7 @@ cat <<'EOF' | python3 skills/scripts/piu_mcp.py batch-update-bodies
       "params": [],
       "body": {"type": "json", "content": "{\"username\": \"admin\", \"password\": \"secret\"}"},
       "auth": {"type": "none"},
-      "description": "Authenticate user credentials and return a JWT access token. Requires username and password fields.",
+      "description": "## POST /auth/login\n\nAuthenticate user credentials...\n\n### Parameters\n\n| Field | Type | Required | ...",
       "requestModelId": "MODEL_ID"
     }
   }
@@ -269,14 +330,7 @@ cat <<'EOF' | python3 skills/scripts/piu_mcp.py batch-update-bodies
 EOF
 ```
 
-**Description field is critical for LLM consumers.** Write descriptions that explain:
-- What the endpoint does (business purpose)
-- Required vs optional parameters
-- Expected response format
-- Authentication requirements
-- Side effects (creates/deletes/modifies resources)
-
-#### 4f. MCP Verification
+#### 4g. MCP Verification
 
 After enrichment, verify the results via MCP:
 
@@ -298,10 +352,13 @@ python3 skills/scripts/piu_mcp.py tool get_sync_status '{"project_id":"PROJECT_I
 ```
 
 **Verification checklist:**
+- [ ] Every request description starts with `## ` markdown header
+- [ ] Every request has a `### Parameters` section with a markdown table
+- [ ] Every POST/PUT/PATCH request has a `### Request Body` code block
 - [ ] Every POST/PUT/PATCH request has a non-empty `body.content`
-- [ ] Every request has a meaningful `description` (not just "Handler: functionName")
+- [ ] Every request has a `### Response` section
+- [ ] No request has a short description (<100 chars)
 - [ ] Data models exist for shared request/response schemas
-- [ ] Models are linked to requests via `requestModelId`/`responseModelId`
 - [ ] `source_commit_id` is set on all entities
 
 ### Step 5: Cleanup & Report

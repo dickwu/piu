@@ -26,7 +26,13 @@ This skill analyzes a frontend repository to discover all HTTP API calls, then c
 
 The `skills/scripts/` directory contains reusable utilities:
 
-- **`skills/scripts/piu_mcp.py`** — MCP Streamable HTTP client for CLI and programmatic use. Supports individual tool calls, batch operations, and project overview.
+- **`skills/scripts/piu_mcp.py`** — MCP Streamable HTTP client for CLI and programmatic use. Commands:
+  - `overview <project_id>` — formatted project summary with collection/request counts
+  - `tool search_requests '{"project_id":"...","query":"..."}'` — search requests by path/name
+  - `tool get_project_overview '{"project_id":"..."}'` — raw JSON project data with full request configs
+  - `tool get_request '{"request_id":"..."}'` — single request detail with full config
+  - `list-models <project_id>` — list data models for contract validation
+  - `tool get_model '{"model_id":"..."}'` — get model fields for type comparison
 
 ## Workflow
 

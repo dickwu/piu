@@ -687,28 +687,12 @@ impl PiuMcp {
             &p.name,
             p.parent_id.as_deref(),
             Some(&p.project_id),
+            p.path_prefix.as_deref(),
+            p.description.as_deref(),
             p.source_commit_id.as_deref(),
         )
         .await
         .map_err(mcp_err)?;
-
-        // Apply optional fields that create_collection doesn't accept directly
-        let needs_update = p.path_prefix.is_some() || p.description.is_some();
-        if needs_update {
-            let col = db::update_collection(
-                &id,
-                None,
-                None,
-                None,
-                p.path_prefix.as_deref().map(Some),
-                p.description.as_deref().map(Some),
-                None,
-                None,
-            )
-            .await
-            .map_err(mcp_err)?;
-            return text_result(&col);
-        }
         text_result(&col)
     }
 

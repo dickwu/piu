@@ -62,11 +62,14 @@ fn collection_from_row(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn create_collection(
     id: &str,
     name: &str,
     parent_id: Option<&str>,
     project_id: Option<&str>,
+    path_prefix: Option<&str>,
+    description: Option<&str>,
     source_commit_id: Option<&str>,
 ) -> DbResult<Collection> {
     let conn = get_connection()?.lock().await;
@@ -74,8 +77,8 @@ pub async fn create_collection(
 
     conn.execute(
         "INSERT INTO collections (id, name, parent_id, sort_order, path_prefix, description, shared_headers, project_id, version, created_at, updated_at, source_commit_id)
-         VALUES (?1, ?2, ?3, 0, NULL, NULL, '[]', ?4, 1, ?5, ?5, ?6)",
-        turso::params![id, name, parent_id, project_id, now, source_commit_id],
+         VALUES (?1, ?2, ?3, 0, ?4, ?5, '[]', ?6, 1, ?7, ?7, ?8)",
+        turso::params![id, name, parent_id, path_prefix, description, project_id, now, source_commit_id],
     )
     .await?;
 
@@ -89,8 +92,8 @@ pub async fn create_collection(
         name: name.to_string(),
         parent_id: parent_id.map(|s| s.to_string()),
         sort_order: 0,
-        path_prefix: None,
-        description: None,
+        path_prefix: path_prefix.map(|s| s.to_string()),
+        description: description.map(|s| s.to_string()),
         shared_headers: "[]".to_string(),
         project_id: project_id.map(|s| s.to_string()),
         version: 1,

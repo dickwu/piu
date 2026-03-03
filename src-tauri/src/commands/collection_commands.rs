@@ -19,6 +19,8 @@ pub struct CreateCollectionInput {
     pub name: String,
     pub parent_id: Option<String>,
     pub project_id: Option<String>,
+    pub path_prefix: Option<String>,
+    pub description: Option<String>,
     pub source_commit_id: Option<String>,
 }
 
@@ -46,6 +48,8 @@ pub async fn create_collection(input: CreateCollectionInput) -> Result<db::Colle
         &input.name,
         input.parent_id.as_deref(),
         input.project_id.as_deref(),
+        input.path_prefix.as_deref(),
+        input.description.as_deref(),
         input.source_commit_id.as_deref(),
     )
     .await

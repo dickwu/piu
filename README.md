@@ -22,7 +22,7 @@ Built with **Tauri 2.0** (Rust backend) + **React 19** + **Next.js** + **Ant Des
 - 🧩 **Data Models** — Per-project typed schemas with named fields, descriptions, required flags, and example values. Link a model to a request to generate sample JSON bodies or validate response shapes inline
 - 🧬 **Model Inheritance** — Single-parent inheritance + multi-mixin composition. Fields resolve via strict linearization (parent chain → mixins → own). Cycle detection prevents circular references. Side-by-side diff modal compares parent-child fields or version history
 - 🤖 **MCP Server** — 38 built-in tools let Claude (or any MCP client) create projects, send requests, manage collections, and query data model relationships — including a Mermaid class diagram generator
-- 📦 **Move-to-Collection** — Right-click any request in the sidebar to move it to a different collection via a tree picker
+- 📦 **Move requests freely** — Right-click any request to move it between collections or to project root via a tree picker. Moving the last request out of a collection prompts to delete the empty collection
 - 🔄 **PIU-to-PIU Sync** — Sync projects between PIU instances over LAN. One hosts, another connects with IP + port + shared join key. Last-writer-wins conflict resolution via version fields
 
 ## Tech Stack

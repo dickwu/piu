@@ -9,6 +9,16 @@ use rmcp::{
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::OnceLock;
+use tauri::Emitter;
+
+static APP_HANDLE: OnceLock<tauri::AppHandle> = OnceLock::new();
+
+pub fn set_app_handle(handle: tauri::AppHandle) {
+    if APP_HANDLE.set(handle).is_err() {
+        log::debug!("AppHandle already set — ignoring re-registration (expected on server restart)");
+    }
+}
 
 // ============ Parameter Structs ============
 
@@ -346,6 +356,40 @@ fn enrich_request(req: &db::ApiRequest) -> serde_json::Value {
     })
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct DataChangedEvent {
+    pub entity_type: String,
+    pub action: String,
+    pub entity_id: Option<String>,
+    pub project_id: Option<String>,
+}
+
+fn emit_data_changed(
+    entity_type: &str,
+    action: &str,
+    entity_id: Option<&str>,
+    project_id: Option<&str>,
+) {
+    match APP_HANDLE.get() {
+        Some(handle) => {
+            if let Err(e) = handle.emit(
+                "data-changed",
+                DataChangedEvent {
+                    entity_type: entity_type.to_string(),
+                    action: action.to_string(),
+                    entity_id: entity_id.map(|s| s.to_string()),
+                    project_id: project_id.map(|s| s.to_string()),
+                },
+            ) {
+                log::warn!("Failed to emit data-changed event: {e}");
+            }
+        }
+        None => {
+            log::warn!("Cannot emit data-changed: AppHandle not initialized");
+        }
+    }
+}
+
 // ============ PiuMcp Service ============
 
 #[derive(Clone)]
@@ -598,6 +642,7 @@ impl PiuMcp {
         )
         .await
         .map_err(mcp_err)?;
+        emit_data_changed("project", "created", Some(&id), Some(&id));
         text_result(&project)
     }
 
@@ -623,6 +668,7 @@ impl PiuMcp {
         )
         .await
         .map_err(mcp_err)?;
+        emit_data_changed("project", "updated", Some(&p.project_id), Some(&p.project_id));
         text_result(&project)
     }
 
@@ -633,7 +679,21 @@ impl PiuMcp {
         &self,
         Parameters(p): Parameters<ProjectIdParam>,
     ) -> Result<CallToolResult, McpError> {
+        // Reconcile active_project_id if deleting the active project
+        if let Ok(Some(active_id)) = db::get_app_state("active_project_id").await {
+            if active_id == p.project_id {
+                let projects = db::list_projects().await.unwrap_or_default();
+                let fallback = projects.iter().find(|proj| proj.id != p.project_id);
+                if let Some(fb) = fallback {
+                    let _ = db::set_app_state("active_project_id", &fb.id).await;
+                } else {
+                    // Last project being deleted — clear active_project_id
+                    let _ = db::set_app_state("active_project_id", "").await;
+                }
+            }
+        }
         db::delete_project(&p.project_id).await.map_err(mcp_err)?;
+        emit_data_changed("project", "deleted", Some(&p.project_id), Some(&p.project_id));
         text_result(&serde_json::json!({ "deleted": p.project_id }))
     }
 
@@ -740,6 +800,7 @@ impl PiuMcp {
         )
         .await
         .map_err(mcp_err)?;
+        emit_data_changed("collection", "created", Some(&id), Some(&p.project_id));
         text_result(&col)
     }
 
@@ -767,6 +828,7 @@ impl PiuMcp {
         )
         .await
         .map_err(mcp_err)?;
+        emit_data_changed("collection", "updated", Some(&p.collection_id), col.project_id.as_deref());
         text_result(&col)
     }
 
@@ -777,9 +839,12 @@ impl PiuMcp {
         &self,
         Parameters(p): Parameters<CollectionIdParam>,
     ) -> Result<CallToolResult, McpError> {
+        let col_info = db::get_collection(&p.collection_id).await.ok().flatten();
+        let proj_id = col_info.as_ref().and_then(|c| c.project_id.as_deref());
         db::delete_collection(&p.collection_id)
             .await
             .map_err(mcp_err)?;
+        emit_data_changed("collection", "deleted", Some(&p.collection_id), proj_id);
         text_result(&serde_json::json!({ "deleted": p.collection_id }))
     }
 
@@ -1028,6 +1093,7 @@ impl PiuMcp {
         )
         .await
         .map_err(mcp_err)?;
+        emit_data_changed("request", "created", Some(&id), Some(project_id));
         text_result(&enrich_request(&req))
     }
 
@@ -1050,6 +1116,7 @@ impl PiuMcp {
         )
         .await
         .map_err(mcp_err)?;
+        emit_data_changed("request", "updated", Some(&p.request_id), req.project_id.as_deref());
         text_result(&enrich_request(&req))
     }
 
@@ -1058,7 +1125,10 @@ impl PiuMcp {
         &self,
         Parameters(p): Parameters<RequestIdParam>,
     ) -> Result<CallToolResult, McpError> {
+        let req_info = db::get_request(&p.request_id).await.ok().flatten();
+        let proj_id = req_info.as_ref().and_then(|r| r.project_id.as_deref());
         db::delete_request(&p.request_id).await.map_err(mcp_err)?;
+        emit_data_changed("request", "deleted", Some(&p.request_id), proj_id);
         text_result(&serde_json::json!({ "deleted": p.request_id }))
     }
 
@@ -1073,6 +1143,7 @@ impl PiuMcp {
         let req = db::duplicate_request(&p.request_id, &new_id)
             .await
             .map_err(mcp_err)?;
+        emit_data_changed("request", "created", Some(&new_id), req.project_id.as_deref());
         text_result(&enrich_request(&req))
     }
 
@@ -1146,6 +1217,7 @@ impl PiuMcp {
         let env = db::create_environment(&id, &p.name, Some(&p.project_id), p.host.as_deref())
             .await
             .map_err(mcp_err)?;
+        emit_data_changed("environment", "created", Some(&id), Some(&p.project_id));
         text_result(&env)
     }
 
@@ -1158,6 +1230,7 @@ impl PiuMcp {
         let env = db::update_environment(&p.environment_id, p.name.as_deref(), host)
             .await
             .map_err(mcp_err)?;
+        emit_data_changed("environment", "updated", Some(&p.environment_id), env.project_id.as_deref());
         text_result(&env)
     }
 
@@ -1166,9 +1239,16 @@ impl PiuMcp {
         &self,
         Parameters(p): Parameters<EnvironmentIdParam>,
     ) -> Result<CallToolResult, McpError> {
+        let envs = db::list_environments(None).await.unwrap_or_default();
+        let env_proj_id = envs
+            .iter()
+            .find(|e| e.id == p.environment_id)
+            .and_then(|e| e.project_id.as_deref())
+            .map(|s| s.to_string());
         db::delete_environment(&p.environment_id)
             .await
             .map_err(mcp_err)?;
+        emit_data_changed("environment", "deleted", Some(&p.environment_id), env_proj_id.as_deref());
         text_result(&serde_json::json!({ "deleted": p.environment_id }))
     }
 
@@ -1182,6 +1262,7 @@ impl PiuMcp {
         db::set_active_environment(&p.environment_id, &p.project_id)
             .await
             .map_err(mcp_err)?;
+        emit_data_changed("environment", "updated", Some(&p.environment_id), Some(&p.project_id));
         text_result(&serde_json::json!({
             "activated": p.environment_id,
             "project_id": p.project_id,
@@ -1210,6 +1291,12 @@ impl PiuMcp {
         &self,
         Parameters(p): Parameters<SetEnvVarsParam>,
     ) -> Result<CallToolResult, McpError> {
+        let envs = db::list_environments(None).await.unwrap_or_default();
+        let env_proj_id = envs
+            .iter()
+            .find(|e| e.id == p.environment_id)
+            .and_then(|e| e.project_id.as_deref())
+            .map(|s| s.to_string());
         let variables: Vec<(String, String, String, bool)> = p
             .variables
             .iter()
@@ -1226,6 +1313,7 @@ impl PiuMcp {
         db::set_env_variables(&p.environment_id, variables)
             .await
             .map_err(mcp_err)?;
+        emit_data_changed("environment", "updated", Some(&p.environment_id), env_proj_id.as_deref());
         text_result(&serde_json::json!({
             "environment_id": p.environment_id,
             "variables_set": count,
@@ -1350,6 +1438,8 @@ impl PiuMcp {
         .await
         .map_err(mcp_err)?;
 
+        emit_data_changed("model", "created", Some(&id), Some(&p.project_id));
+
         let fields: Vec<serde_json::Value> =
             serde_json::from_str(&model.fields).unwrap_or_default();
 
@@ -1398,6 +1488,8 @@ impl PiuMcp {
         .await
         .map_err(mcp_err)?;
 
+        emit_data_changed("model", "updated", Some(&p.model_id), Some(&model.project_id));
+
         let fields: Vec<serde_json::Value> =
             serde_json::from_str(&model.fields).unwrap_or_default();
 
@@ -1422,9 +1514,13 @@ impl PiuMcp {
         &self,
         Parameters(p): Parameters<ModelIdParam>,
     ) -> Result<CallToolResult, McpError> {
+        let model_info = db::models::get_model(&p.model_id).await.ok().flatten();
+        let proj_id = model_info.as_ref().map(|m| m.project_id.as_str());
         db::models::delete_model(&p.model_id)
             .await
             .map_err(mcp_err)?;
+        emit_data_changed("model", "deleted", Some(&p.model_id), proj_id);
+        emit_data_changed("request", "updated", None, proj_id);
         text_result(&serde_json::json!({ "deleted": p.model_id }))
     }
 
@@ -1707,7 +1803,7 @@ impl PiuMcp {
         let config_str =
             serde_json::to_string(&config).map_err(|e| mcp_err(format!("JSON error: {}", e)))?;
 
-        db::update_request(
+        let updated_req = db::update_request(
             &p.request_id,
             None,
             Some(&config_str),
@@ -1718,6 +1814,7 @@ impl PiuMcp {
         )
         .await
         .map_err(mcp_err)?;
+        emit_data_changed("request", "updated", Some(&p.request_id), updated_req.project_id.as_deref());
 
         text_result(&serde_json::json!({
             "request_id": p.request_id,
@@ -1754,7 +1851,7 @@ impl PiuMcp {
         let config_str =
             serde_json::to_string(&config).map_err(|e| mcp_err(format!("JSON error: {}", e)))?;
 
-        db::update_request(
+        let updated_req = db::update_request(
             &p.request_id,
             None,
             Some(&config_str),
@@ -1765,6 +1862,7 @@ impl PiuMcp {
         )
         .await
         .map_err(mcp_err)?;
+        emit_data_changed("request", "updated", Some(&p.request_id), updated_req.project_id.as_deref());
 
         text_result(&serde_json::json!({
             "request_id": p.request_id,
@@ -2048,6 +2146,10 @@ impl PiuMcp {
             }
         }
 
+        if !created.is_empty() {
+            emit_data_changed("model", "created", None, Some(&p.project_id));
+        }
+
         text_result(&serde_json::json!({
             "created": created,
             "errors": errors,
@@ -2171,6 +2273,10 @@ impl PiuMcp {
                     }));
                 }
             }
+        }
+
+        if linked > 0 {
+            emit_data_changed("request", "updated", None, None);
         }
 
         text_result(&serde_json::json!({

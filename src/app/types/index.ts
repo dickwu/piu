@@ -195,6 +195,13 @@ export interface ExecutionProgress {
   error?: string;
 }
 
+export interface DataChangedEvent {
+  entity_type: 'project' | 'collection' | 'request' | 'environment' | 'model';
+  action: 'created' | 'updated' | 'deleted';
+  entity_id: string | null;
+  project_id: string | null;
+}
+
 // Update status for status bar
 export type UpdateStatus =
   | { state: 'idle' }

@@ -42,7 +42,7 @@ export const EDGE_STYLES = {
 export type EdgeStyleKey = keyof typeof EDGE_STYLES;
 
 // ---------------------------------------------------------------------------
-// Internal geometry helpers
+// Internal geometry constants
 // ---------------------------------------------------------------------------
 
 const COL_NODE_W = 180;
@@ -52,39 +52,50 @@ const REQ_NODE_H = 52;
 const MODEL_NODE_W = 180;
 const MODEL_NODE_H = 80;
 
-const API_ZONE_GAP = 300;
-const DAGRE_NODESEP = 40;
-const DAGRE_RANKSEP = 60;
+const DAGRE_NODESEP = 50;
+const DAGRE_RANKSEP = 70;
 
-interface ZoneBounds {
-  maxX: number;
+// ---------------------------------------------------------------------------
+// Graph bounds helper
+// ---------------------------------------------------------------------------
+
+interface GraphBounds {
   minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
 }
 
 /**
- * Compute the bounding box X extent of a set of laid-out dagre nodes.
- * Returns { minX: 0, maxX: 0 } for empty graphs.
+ * Compute the bounding box (X and Y) of all laid-out dagre nodes.
+ * Returns zeroed bounds for empty graphs.
  */
-function computeZoneBounds(g: dagre.graphlib.Graph): ZoneBounds {
+function computeGraphBounds(g: dagre.graphlib.Graph): GraphBounds {
   const nodeIds = g.nodes();
   if (nodeIds.length === 0) {
-    return { minX: 0, maxX: 0 };
+    return { minX: 0, maxX: 0, minY: 0, maxY: 0 };
   }
 
   let minX = Infinity;
   let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
 
   for (const id of nodeIds) {
     const n = g.node(id) as { x: number; y: number; width: number; height: number } | undefined;
     if (!n) continue;
     const left = n.x - n.width / 2;
     const right = n.x + n.width / 2;
+    const top = n.y - n.height / 2;
+    const bottom = n.y + n.height / 2;
     if (left < minX) minX = left;
     if (right > maxX) maxX = right;
+    if (top < minY) minY = top;
+    if (bottom > maxY) maxY = bottom;
   }
 
-  if (!isFinite(minX)) return { minX: 0, maxX: 0 };
-  return { minX, maxX };
+  if (!isFinite(minX)) return { minX: 0, maxX: 0, minY: 0, maxY: 0 };
+  return { minX, maxX, minY, maxY };
 }
 
 // ---------------------------------------------------------------------------
@@ -96,113 +107,166 @@ function makeEdgeKey(source: string, target: string, type: EdgeStyleKey): string
 }
 
 // ---------------------------------------------------------------------------
-// API zone builder
+// Cycle detection helpers
 // ---------------------------------------------------------------------------
 
 /**
- * Build dagre graph for the API zone (collections + requests).
- *
- * Only includes requests that actually belong to one of the provided
- * collections (via requestsByCollection / rootRequests).
+ * Check if the ancestor chain starting from `startId` contains a cycle.
+ * Uses a pre-built lookup map for O(1) parent resolution.
  */
-function buildApiGraph(
+function hasCollectionAncestorCycle(
+  startId: string,
+  collectionById: Map<string, Collection>,
+): boolean {
+  const visited = new Set<string>();
+  let cursor: string | null = startId;
+
+  while (cursor !== null) {
+    if (visited.has(cursor)) return true;
+    visited.add(cursor);
+    const parent = collectionById.get(cursor);
+    cursor = parent?.parent_id ?? null;
+  }
+
+  return false;
+}
+
+/**
+ * Check if the model inheritance chain starting from `startId` contains a cycle.
+ * Uses a pre-built lookup map for O(1) parent resolution.
+ */
+function hasModelInheritanceCycle(
+  startId: string,
+  modelById: Map<string, DataModel>,
+): boolean {
+  const visited = new Set<string>();
+  let cursor: string | null = startId;
+
+  while (cursor !== null) {
+    if (visited.has(cursor)) return true;
+    visited.add(cursor);
+    const parent = modelById.get(cursor);
+    cursor = parent?.parent_model_id ?? null;
+  }
+
+  return false;
+}
+
+// ---------------------------------------------------------------------------
+// Request lookup helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a fast lookup map from request ID to ApiRequest,
+ * collecting from both collection-owned and root requests.
+ */
+function collectAllRequests(
   collections: Collection[],
   requestsByCollection: Map<string, ApiRequest[]>,
   rootRequests: ApiRequest[],
+): Map<string, ApiRequest> {
+  const allRequests = new Map<string, ApiRequest>();
+  for (const col of collections) {
+    const reqs = requestsByCollection.get(col.id) ?? [];
+    for (const req of reqs) {
+      allRequests.set(req.id, req);
+    }
+  }
+  for (const req of rootRequests) {
+    allRequests.set(req.id, req);
+  }
+  return allRequests;
+}
+
+// ---------------------------------------------------------------------------
+// Unified dagre graph builder
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a single dagre multigraph containing ALL node types (collections,
+ * requests, models) and the 5 acyclic backbone edge types:
+ *   col→subcol, col→request, req→reqModel, req→resModel, model→inherits
+ *
+ * Mixin and fieldRef edges are excluded because they can create cycles.
+ */
+function buildUnifiedGraph(
+  collections: Collection[],
+  requestsByCollection: Map<string, ApiRequest[]>,
+  rootRequests: ApiRequest[],
+  models: DataModel[],
+  parsedConfigs: Map<string, ReturnType<typeof parseConfig>>,
+  allRequests: Map<string, ApiRequest>,
+  collectionById: Map<string, Collection>,
+  modelById: Map<string, DataModel>,
 ): dagre.graphlib.Graph {
-  const g = new dagre.graphlib.Graph();
+  const g = new dagre.graphlib.Graph({ multigraph: true });
   g.setGraph({ rankdir: 'TB', nodesep: DAGRE_NODESEP, ranksep: DAGRE_RANKSEP });
   g.setDefaultEdgeLabel(() => ({}));
 
   const collectionIds = new Set(collections.map((c) => c.id));
+  const modelIds = new Set(models.map((m) => m.id));
 
-  // Add collection nodes
+  // -- Add collection nodes --
   for (const col of collections) {
-    const requests = requestsByCollection.get(col.id) ?? [];
     g.setNode(`col:${col.id}`, { width: COL_NODE_W, height: COL_NODE_H });
-    // Add request nodes under this collection
-    for (const req of requests) {
+  }
+
+  // -- Add request nodes --
+  for (const col of collections) {
+    const reqs = requestsByCollection.get(col.id) ?? [];
+    for (const req of reqs) {
       g.setNode(`req:${req.id}`, { width: REQ_NODE_W, height: REQ_NODE_H });
     }
   }
-
-  // Add root request nodes (requests not in any collection)
   for (const req of rootRequests) {
     g.setNode(`req:${req.id}`, { width: REQ_NODE_W, height: REQ_NODE_H });
   }
 
-  // Add col → sub-col edges (with cycle detection via visited set)
-  for (const col of collections) {
-    if (col.parent_id !== null && collectionIds.has(col.parent_id)) {
-      const visited = new Set<string>();
-      let cursor: string | null = col.parent_id;
-      let isCyclic = false;
-
-      while (cursor !== null) {
-        if (visited.has(cursor)) {
-          isCyclic = true;
-          break;
-        }
-        visited.add(cursor);
-        const parent = collections.find((c) => c.id === cursor);
-        cursor = parent?.parent_id ?? null;
-      }
-
-      if (!isCyclic) {
-        g.setEdge(`col:${col.parent_id}`, `col:${col.id}`);
-      }
-    }
-  }
-
-  // Add col → request edges
-  for (const col of collections) {
-    const requests = requestsByCollection.get(col.id) ?? [];
-    for (const req of requests) {
-      g.setEdge(`col:${col.id}`, `req:${req.id}`);
-    }
-  }
-
-  return g;
-}
-
-// ---------------------------------------------------------------------------
-// Model zone builder
-// ---------------------------------------------------------------------------
-
-/**
- * Build dagre graph for the model zone.
- */
-function buildModelGraph(models: DataModel[]): dagre.graphlib.Graph {
-  const g = new dagre.graphlib.Graph();
-  g.setGraph({ rankdir: 'TB', nodesep: DAGRE_NODESEP, ranksep: DAGRE_RANKSEP });
-  g.setDefaultEdgeLabel(() => ({}));
-
-  const modelIds = new Set(models.map((m) => m.id));
-
+  // -- Add model nodes --
   for (const model of models) {
     g.setNode(`model:${model.id}`, { width: MODEL_NODE_W, height: MODEL_NODE_H });
   }
 
-  // Inheritance edges (parent → child) with cycle detection
+  // -- Edge type 1: col → sub-col (with cycle detection) --
+  for (const col of collections) {
+    if (col.parent_id !== null && collectionIds.has(col.parent_id)) {
+      if (!hasCollectionAncestorCycle(col.parent_id, collectionById)) {
+        g.setEdge(`col:${col.parent_id}`, `col:${col.id}`, {}, 'col-subcol');
+      }
+    }
+  }
+
+  // -- Edge type 2: col → request --
+  for (const col of collections) {
+    const reqs = requestsByCollection.get(col.id) ?? [];
+    for (const req of reqs) {
+      g.setEdge(`col:${col.id}`, `req:${req.id}`, {}, 'col-request');
+    }
+  }
+
+  // -- Edge types 3 & 4: req → reqModel, req → resModel --
+  for (const [reqId, req] of allRequests) {
+    const cfg = parsedConfigs.get(reqId) ?? parseConfig(req.config);
+
+    if (cfg.requestModelId && modelIds.has(cfg.requestModelId)) {
+      g.setEdge(`req:${reqId}`, `model:${cfg.requestModelId}`, {}, 'req-reqModel');
+    }
+
+    if (cfg.responseModelId && modelIds.has(cfg.responseModelId)) {
+      g.setEdge(`req:${reqId}`, `model:${cfg.responseModelId}`, {}, 'req-resModel');
+    }
+  }
+
+  // -- Edge type 5: model → inherits (with cycle detection) --
   for (const model of models) {
     if (model.parent_model_id !== null && modelIds.has(model.parent_model_id)) {
-      // Walk up the parent chain to detect cycles
-      const visited = new Set<string>();
-      let cursor: string | null = model.parent_model_id;
-      let isCyclic = false;
-
-      while (cursor !== null) {
-        if (visited.has(cursor)) {
-          isCyclic = true;
-          break;
-        }
-        visited.add(cursor);
-        const parent = models.find((m) => m.id === cursor);
-        cursor = parent?.parent_model_id ?? null;
-      }
-
-      if (!isCyclic) {
-        g.setEdge(`model:${model.parent_model_id}`, `model:${model.id}`);
+      if (!hasModelInheritanceCycle(model.parent_model_id, modelById)) {
+        g.setEdge(
+          `model:${model.parent_model_id}`,
+          `model:${model.id}`,
+          {},
+          'model-inherits',
+        );
       }
     }
   }
@@ -285,12 +349,13 @@ function buildModelNode(
 
 /**
  * Dagre positions nodes at their center. React Flow positions nodes at their
- * top-left corner. This converts center → top-left and applies an X offset.
+ * top-left corner. This converts center -> top-left and applies an offset.
  */
 function dagreNodeToPosition(
   g: dagre.graphlib.Graph,
   nodeId: string,
   xOffset: number,
+  yOffset: number,
 ): { x: number; y: number } | null {
   const n = g.node(nodeId) as
     | { x: number; y: number; width: number; height: number }
@@ -298,7 +363,7 @@ function dagreNodeToPosition(
   if (!n) return null;
   return {
     x: n.x - n.width / 2 + xOffset,
-    y: n.y - n.height / 2,
+    y: n.y - n.height / 2 + yOffset,
   };
 }
 
@@ -308,7 +373,7 @@ function dagreNodeToPosition(
 
 /**
  * Pure layout engine: transforms store data into React Flow nodes and edges
- * using two independent dagre graphs (API zone left, Model zone right).
+ * using a single unified dagre graph for all node types.
  *
  * All inputs are treated as read-only. No side effects.
  */
@@ -333,44 +398,50 @@ export function buildApiModelMap(
   }
 
   // -------------------------------------------------------------------------
-  // 1. Build and run API zone dagre layout
+  // 1. Build lookup maps (shared by graph builder and edge assembly)
   // -------------------------------------------------------------------------
-  const apiGraph = buildApiGraph(collections, requestsByCollection, rootRequests);
-  const hasApiNodes = apiGraph.nodes().length > 0;
+  const allRequests = collectAllRequests(collections, requestsByCollection, rootRequests);
+  const collectionById = new Map(collections.map((c) => [c.id, c]));
+  const modelById = new Map(models.map((m) => [m.id, m]));
 
-  if (hasApiNodes) {
-    dagre.layout(apiGraph);
+  // -------------------------------------------------------------------------
+  // 2. Build and run unified dagre layout (single graph, single layout call)
+  // -------------------------------------------------------------------------
+  const graph = buildUnifiedGraph(
+    collections,
+    requestsByCollection,
+    rootRequests,
+    models,
+    parsedConfigs,
+    allRequests,
+    collectionById,
+    modelById,
+  );
+
+  const hasNodes = graph.nodes().length > 0;
+
+  if (hasNodes) {
+    dagre.layout(graph);
   }
 
-  const apiBounds = hasApiNodes ? computeZoneBounds(apiGraph) : { minX: 0, maxX: 0 };
-  const apiXOffset = hasApiNodes ? -apiBounds.minX : 0;
+  // -------------------------------------------------------------------------
+  // 3. Single offset calculation — normalize bounding box to origin
+  // -------------------------------------------------------------------------
+  const bounds = hasNodes
+    ? computeGraphBounds(graph)
+    : { minX: 0, maxX: 0, minY: 0, maxY: 0 };
+
+  const xOffset = hasNodes ? -bounds.minX : 0;
+  const yOffset = hasNodes ? -bounds.minY : 0;
 
   // -------------------------------------------------------------------------
-  // 2. Build and run Model zone dagre layout
-  // -------------------------------------------------------------------------
-  const modelGraph = buildModelGraph(models);
-  const hasModelNodes = modelGraph.nodes().length > 0;
-
-  if (hasModelNodes) {
-    dagre.layout(modelGraph);
-  }
-
-  const modelBounds = hasModelNodes ? computeZoneBounds(modelGraph) : { minX: 0, maxX: 0 };
-
-  // Model zone starts after API zone (or at 0 if API zone is empty)
-  const apiZoneWidth = hasApiNodes ? apiBounds.maxX - apiBounds.minX : 0;
-  const modelXOffset = hasModelNodes
-    ? apiZoneWidth + API_ZONE_GAP - modelBounds.minX
-    : apiZoneWidth + API_ZONE_GAP;
-
-  // -------------------------------------------------------------------------
-  // 3. Assemble React Flow nodes
+  // 4. Assemble React Flow nodes
   // -------------------------------------------------------------------------
   const nodes: Node[] = [];
 
   // Collection nodes
   for (const col of collections) {
-    const pos = dagreNodeToPosition(apiGraph, `col:${col.id}`, apiXOffset);
+    const pos = dagreNodeToPosition(graph, `col:${col.id}`, xOffset, yOffset);
     if (!pos) continue;
     nodes.push(buildCollectionNode(col, pos.x, pos.y, requestsByCollection));
   }
@@ -379,7 +450,7 @@ export function buildApiModelMap(
   for (const col of collections) {
     const requests = requestsByCollection.get(col.id) ?? [];
     for (const req of requests) {
-      const pos = dagreNodeToPosition(apiGraph, `req:${req.id}`, apiXOffset);
+      const pos = dagreNodeToPosition(graph, `req:${req.id}`, xOffset, yOffset);
       if (!pos) continue;
       nodes.push(buildRequestNode(req, pos.x, pos.y, parsedConfigs));
     }
@@ -387,37 +458,25 @@ export function buildApiModelMap(
 
   // Root request nodes
   for (const req of rootRequests) {
-    const pos = dagreNodeToPosition(apiGraph, `req:${req.id}`, apiXOffset);
+    const pos = dagreNodeToPosition(graph, `req:${req.id}`, xOffset, yOffset);
     if (!pos) continue;
     nodes.push(buildRequestNode(req, pos.x, pos.y, parsedConfigs));
   }
 
   // Model nodes
   for (const model of models) {
-    const pos = dagreNodeToPosition(modelGraph, `model:${model.id}`, modelXOffset);
+    const pos = dagreNodeToPosition(graph, `model:${model.id}`, xOffset, yOffset);
     if (!pos) continue;
     nodes.push(buildModelNode(model, pos.x, pos.y));
   }
 
   // -------------------------------------------------------------------------
-  // 4. Assemble React Flow edges (deduplicated)
+  // 5. Assemble React Flow edges (deduplicated)
   // -------------------------------------------------------------------------
   const edges: Edge[] = [];
   const seenEdges = new Set<string>();
   const collectionIds = new Set(collections.map((c) => c.id));
   const modelIds = new Set(models.map((m) => m.id));
-
-  // Build a fast lookup from req.id → ApiRequest for model link edges
-  const allRequests = new Map<string, ApiRequest>();
-  for (const col of collections) {
-    const reqs = requestsByCollection.get(col.id) ?? [];
-    for (const req of reqs) {
-      allRequests.set(req.id, req);
-    }
-  }
-  for (const req of rootRequests) {
-    allRequests.set(req.id, req);
-  }
 
   function addEdge(
     source: string,
@@ -444,22 +503,7 @@ export function buildApiModelMap(
   // col → sub-col edges
   for (const col of collections) {
     if (col.parent_id !== null && collectionIds.has(col.parent_id)) {
-      // Re-use the same cycle detection as the graph builder
-      const visited = new Set<string>();
-      let cursor: string | null = col.parent_id;
-      let isCyclic = false;
-
-      while (cursor !== null) {
-        if (visited.has(cursor)) {
-          isCyclic = true;
-          break;
-        }
-        visited.add(cursor);
-        const parent = collections.find((c) => c.id === cursor);
-        cursor = parent?.parent_id ?? null;
-      }
-
-      if (!isCyclic) {
+      if (!hasCollectionAncestorCycle(col.parent_id, collectionById)) {
         addEdge(`col:${col.parent_id}`, `col:${col.id}`, 'col-subcol');
       }
     }
@@ -489,21 +533,7 @@ export function buildApiModelMap(
   // model → model inheritance edges
   for (const model of models) {
     if (model.parent_model_id !== null && modelIds.has(model.parent_model_id)) {
-      const visited = new Set<string>();
-      let cursor: string | null = model.parent_model_id;
-      let isCyclic = false;
-
-      while (cursor !== null) {
-        if (visited.has(cursor)) {
-          isCyclic = true;
-          break;
-        }
-        visited.add(cursor);
-        const parent = models.find((m) => m.id === cursor);
-        cursor = parent?.parent_model_id ?? null;
-      }
-
-      if (!isCyclic) {
+      if (!hasModelInheritanceCycle(model.parent_model_id, modelById)) {
         addEdge(
           `model:${model.parent_model_id}`,
           `model:${model.id}`,
@@ -513,7 +543,7 @@ export function buildApiModelMap(
     }
   }
 
-  // model → mixin edges
+  // model → mixin edges (visual-only, NOT in dagre graph)
   for (const model of models) {
     const mixinIds = parseMixinModelIds(model.mixin_model_ids);
     for (const mixinId of mixinIds) {
@@ -523,7 +553,7 @@ export function buildApiModelMap(
     }
   }
 
-  // model → field reference edges
+  // model → field reference edges (visual-only, NOT in dagre graph)
   for (const model of models) {
     const fields = parseModelFields(model.fields);
     for (const field of fields) {

@@ -3,6 +3,7 @@ use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 
 mod commands;
 pub mod db;
+pub mod force_layout;
 pub mod http;
 pub mod mcp;
 pub mod mcp_relations;
@@ -140,6 +141,8 @@ pub fn run() {
             commands::list_models,
             commands::generate_json_from_model,
             commands::resolve_model_fields,
+            // Graph layout commands
+            commands::compute_graph_layout,
             // MCP server commands
             commands::start_mcp_server,
             commands::stop_mcp_server,

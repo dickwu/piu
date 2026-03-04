@@ -1,25 +1,42 @@
 'use client';
 
-import { useEffect, useRef, useCallback, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { type Node, type Edge, type NodeChange, applyNodeChanges } from '@xyflow/react';
-import * as d3Force from 'd3-force';
+import { invoke } from '@tauri-apps/api/core';
 import { NODE_RADIUS } from '../../utils/apiModelMapLayout';
 
-// ---------------------------------------------------------------------------
-// Internal simulation node type
-// ---------------------------------------------------------------------------
-
-interface SimNode extends d3Force.SimulationNodeDatum {
+// IPC types matching Rust structs
+interface LayoutNode {
   id: string;
   x: number;
   y: number;
-  fx?: number | null;
-  fy?: number | null;
 }
 
-// ---------------------------------------------------------------------------
-// Hook
-// ---------------------------------------------------------------------------
+interface LayoutEdge {
+  source: string;
+  target: string;
+}
+
+interface LayoutPosition {
+  id: string;
+  x: number;
+  y: number;
+}
+
+interface GraphLayoutInput {
+  nodes: LayoutNode[];
+  edges: LayoutEdge[];
+  config: {
+    link_distance: number;
+    link_strength: number;
+    charge_strength: number;
+    collision_radius: number;
+    alpha_decay: number;
+    alpha_min: number;
+    velocity_decay: number;
+    max_iterations: number;
+  };
+}
 
 export function useForceLayout(
   initialNodes: Node[],
@@ -27,166 +44,72 @@ export function useForceLayout(
 ): {
   nodes: Node[];
   onNodesChange: (changes: NodeChange[]) => void;
-  onNodeDragStart: (_event: React.MouseEvent, node: Node) => void;
-  onNodeDrag: (_event: React.MouseEvent, node: Node) => void;
-  onNodeDragStop: (_event: React.MouseEvent, node: Node) => void;
-  isSimulating: boolean;
 } {
   const [nodes, setNodes] = useState<Node[]>(initialNodes);
-  const [isSimulating, setIsSimulating] = useState(false);
-
-  const simulationRef = useRef<d3Force.Simulation<SimNode, d3Force.SimulationLinkDatum<SimNode>> | null>(null);
-  const simNodeMapRef = useRef<Map<string, SimNode>>(new Map());
-  const rafIdRef = useRef<number | null>(null);
-
-  // -----------------------------------------------------------------------
-  // Simulation setup — re-run when inputs change
-  // -----------------------------------------------------------------------
 
   useEffect(() => {
-    // Tear down any prior simulation
-    if (simulationRef.current) {
-      simulationRef.current.stop();
-    }
-    if (rafIdRef.current !== null) {
-      cancelAnimationFrame(rafIdRef.current);
-      rafIdRef.current = null;
-    }
-
-    // Edge case: nothing to simulate
     if (initialNodes.length === 0) {
       setNodes([]);
-      setIsSimulating(false);
       return;
     }
 
-    // Seed state from the new initial nodes
+    // Show initial nodes immediately (circular positions)
     setNodes(initialNodes);
 
-    // Build simulation nodes & links
-    const simNodes: SimNode[] = initialNodes.map((n) => ({
-      id: n.id,
-      x: n.position.x,
-      y: n.position.y,
-    }));
+    let cancelled = false;
 
-    const simNodeMap = new Map<string, SimNode>();
-    for (const sn of simNodes) {
-      simNodeMap.set(sn.id, sn);
-    }
-    simNodeMapRef.current = simNodeMap;
+    const input: GraphLayoutInput = {
+      nodes: initialNodes.map((n) => ({
+        id: n.id,
+        x: n.position.x,
+        y: n.position.y,
+      })),
+      edges: initialEdges.map((e) => ({
+        source: e.source,
+        target: e.target,
+      })),
+      config: {
+        link_distance: 180,
+        link_strength: 0.5,
+        charge_strength: -400,
+        collision_radius: NODE_RADIUS + 20,
+        alpha_decay: 0.02,
+        alpha_min: 0.001,
+        velocity_decay: 0.4,
+        max_iterations: 300,
+      },
+    };
 
-    const simLinks = initialEdges.map((e) => ({
-      source: e.source,
-      target: e.target,
-    }));
+    invoke<LayoutPosition[]>('compute_graph_layout', { input })
+      .then((positions) => {
+        if (cancelled) return;
 
-    // Create the force simulation
-    const simulation = d3Force
-      .forceSimulation(simNodes)
-      .force(
-        'link',
-        d3Force
-          .forceLink(simLinks)
-          .id((d: any) => d.id)
-          .distance(180)
-          .strength(0.5),
-      )
-      .force('charge', d3Force.forceManyBody().strength(-400))
-      .force('center', d3Force.forceCenter(0, 0))
-      .force('collision', d3Force.forceCollide().radius(NODE_RADIUS + 20))
-      .alphaDecay(0.02);
+        const posMap = new Map<string, { x: number; y: number }>();
+        for (const pos of positions) {
+          posMap.set(pos.id, { x: pos.x, y: pos.y });
+        }
 
-    simulationRef.current = simulation;
-    setIsSimulating(true);
-
-    // Tick handler — batched via requestAnimationFrame
-    simulation.on('tick', () => {
-      if (rafIdRef.current !== null) return;
-      rafIdRef.current = requestAnimationFrame(() => {
-        rafIdRef.current = null;
         setNodes((prev) =>
           prev.map((node) => {
-            const simNode = simNodeMap.get(node.id);
-            if (!simNode || (simNode.x === undefined && simNode.y === undefined)) {
-              return node;
-            }
-            return {
-              ...node,
-              position: { x: simNode.x ?? 0, y: simNode.y ?? 0 },
-            };
+            const pos = posMap.get(node.id);
+            if (!pos) return node;
+            return { ...node, position: { x: pos.x, y: pos.y } };
           }),
         );
+      })
+      .catch(() => {
+        // Silently fall back to circular layout — initial positions
+        // were already set via setNodes(initialNodes) above.
       });
-    });
 
-    // Track whether the simulation is still active
-    const alphaCheckInterval = setInterval(() => {
-      if (simulation.alpha() <= simulation.alphaMin()) {
-        setIsSimulating(false);
-        clearInterval(alphaCheckInterval);
-      }
-    }, 200);
-
-    // Cleanup
     return () => {
-      clearInterval(alphaCheckInterval);
-      simulation.stop();
-      if (rafIdRef.current !== null) {
-        cancelAnimationFrame(rafIdRef.current);
-        rafIdRef.current = null;
-      }
-      simulationRef.current = null;
+      cancelled = true;
     };
   }, [initialNodes, initialEdges]);
-
-  // -----------------------------------------------------------------------
-  // onNodesChange — apply ReactFlow state changes (selection, drag position)
-  // -----------------------------------------------------------------------
 
   const onNodesChange = useCallback((changes: NodeChange[]) => {
     setNodes((prev) => applyNodeChanges(changes, prev));
   }, []);
 
-  // -----------------------------------------------------------------------
-  // Drag handlers
-  // -----------------------------------------------------------------------
-
-  const onNodeDragStart = useCallback((_event: React.MouseEvent, node: Node) => {
-    const simNode = simNodeMapRef.current.get(node.id);
-    if (!simNode) return;
-
-    simNode.fx = simNode.x;
-    simNode.fy = simNode.y;
-
-    simulationRef.current?.alphaTarget(0.3).restart();
-    setIsSimulating(true);
-  }, []);
-
-  const onNodeDrag = useCallback((_event: React.MouseEvent, node: Node) => {
-    const simNode = simNodeMapRef.current.get(node.id);
-    if (!simNode) return;
-
-    simNode.fx = node.position.x;
-    simNode.fy = node.position.y;
-  }, []);
-
-  const onNodeDragStop = useCallback((_event: React.MouseEvent, node: Node) => {
-    const simNode = simNodeMapRef.current.get(node.id);
-    if (!simNode) return;
-
-    simNode.fx = null;
-    simNode.fy = null;
-
-    simulationRef.current?.alphaTarget(0);
-  }, []);
-
-  return {
-    nodes,
-    onNodesChange,
-    onNodeDragStart,
-    onNodeDrag,
-    onNodeDragStop,
-    isSimulating,
-  };
+  return { nodes, onNodesChange };
 }

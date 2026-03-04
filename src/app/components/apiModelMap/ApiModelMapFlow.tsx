@@ -100,13 +100,7 @@ function ApiModelMapFlowInner({
   );
 
   // Force-directed simulation manages node positions
-  const {
-    nodes,
-    onNodesChange,
-    onNodeDragStart,
-    onNodeDrag,
-    onNodeDragStop,
-  } = useForceLayout(layout.nodes, layout.edges);
+  const { nodes, onNodesChange } = useForceLayout(layout.nodes, layout.edges);
 
   // Edges are static — synced from layout
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(layout.edges);
@@ -163,9 +157,6 @@ function ApiModelMapFlowInner({
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onNodeClick={handleNodeClick}
-        onNodeDragStart={onNodeDragStart}
-        onNodeDrag={onNodeDrag}
-        onNodeDragStop={onNodeDragStop}
         onPaneClick={handlePaneClick}
         fitView
         fitViewOptions={{ padding: 0.15 }}

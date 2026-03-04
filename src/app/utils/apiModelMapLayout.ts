@@ -63,18 +63,6 @@ export const NODE_RADIUS = 35;
 export const NODE_DIAMETER = NODE_RADIUS * 2;
 
 // ---------------------------------------------------------------------------
-// Force simulation types
-// ---------------------------------------------------------------------------
-
-export interface ForceSimulationNode {
-  id: string;
-  x: number;
-  y: number;
-  fx?: number | null;
-  fy?: number | null;
-}
-
-// ---------------------------------------------------------------------------
 // Edge deduplication helper
 // ---------------------------------------------------------------------------
 
@@ -236,18 +224,6 @@ function buildModelNode(
       fieldPreview,
     },
   };
-}
-
-// ---------------------------------------------------------------------------
-// Force link extraction helper
-// ---------------------------------------------------------------------------
-
-/**
- * Extract a simple { source, target } array from React Flow edges,
- * suitable for use with d3-force link forces.
- */
-export function extractForceLinks(edges: Edge[]): Array<{ source: string; target: string }> {
-  return edges.map((e) => ({ source: e.source, target: e.target }));
 }
 
 // ---------------------------------------------------------------------------

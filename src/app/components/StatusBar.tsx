@@ -11,11 +11,13 @@ import {
   SettingOutlined,
   ApiOutlined,
   SyncOutlined,
+  ApartmentOutlined,
 } from '@ant-design/icons';
 import { invoke } from '@tauri-apps/api/core';
 import { useUpdateStore } from '../stores/updateStore';
 import { useEnvironmentStore } from '../stores/environmentStore';
 import { useProjectStore } from '../stores/projectStore';
+import { useLayoutComputeStore } from '../stores/layoutComputeStore';
 import { ProjectSettingsModal } from './ProjectSettingsModal';
 import { McpServerModal } from './McpServerModal';
 import { SyncServerModal } from './SyncServerModal';
@@ -35,6 +37,8 @@ export function StatusBar() {
   } = useEnvironmentStore();
 
   const { activeProjectId, setSettingsProjectId, settingsProjectId } = useProjectStore();
+
+  const layoutComputing = useLayoutComputeStore((s) => s.isComputing);
 
   const [showSettings, setShowSettings] = useState(false);
   const [showMcp, setShowMcp] = useState(false);
@@ -295,6 +299,17 @@ export function StatusBar() {
               }}
             />
           </Button>
+          {layoutComputing && (
+            <span
+              className="flex items-center gap-1"
+              style={{ color: '#fbbf24', fontSize: 11 }}
+              title="Computing graph layout..."
+            >
+              <ApartmentOutlined style={{ fontSize: 12 }} />
+              <span>Layout</span>
+              <LoadingOutlined style={{ fontSize: 10 }} />
+            </span>
+          )}
         </div>
 
         {/* Right: version + update status */}

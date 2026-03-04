@@ -10,6 +10,7 @@ import {
   Controls,
   MiniMap,
   useEdgesState,
+  useReactFlow,
   type Node,
   type Edge,
   type NodeTypes,
@@ -79,6 +80,7 @@ interface ApiModelMapFlowInnerProps {
   requestsByCollection: Map<string, ApiRequest[]>;
   rootRequests: ApiRequest[];
   models: DataModel[];
+  projectId: string | null;
   onEditModel: (modelId: string) => void;
   onDeleteModel: (modelId: string) => void;
 }
@@ -88,6 +90,7 @@ function ApiModelMapFlowInner({
   requestsByCollection,
   rootRequests,
   models,
+  projectId,
   onEditModel,
   onDeleteModel,
 }: ApiModelMapFlowInnerProps) {
@@ -100,7 +103,33 @@ function ApiModelMapFlowInner({
   );
 
   // Force-directed simulation manages node positions
-  const { nodes, onNodesChange } = useForceLayout(layout.nodes, layout.edges);
+  const { nodes, onNodesChange, isComputing } = useForceLayout(
+    layout.nodes,
+    layout.edges,
+    projectId,
+  );
+
+  // Programmatic fitView — re-center viewport when Rust computation finishes
+  const { fitView } = useReactFlow();
+  const prevComputing = useRef(true);
+
+  useEffect(() => {
+    let rafId: number | undefined;
+
+    if (prevComputing.current && !isComputing && nodes.length > 0) {
+      // Small delay to let React Flow internalize the new node positions
+      rafId = requestAnimationFrame(() => {
+        fitView({ padding: 0.15 });
+      });
+    }
+    prevComputing.current = isComputing;
+
+    return () => {
+      if (rafId !== undefined) {
+        cancelAnimationFrame(rafId);
+      }
+    };
+  }, [isComputing, nodes.length, fitView]);
 
   // Edges are static — synced from layout
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(layout.edges);
@@ -158,8 +187,6 @@ function ApiModelMapFlowInner({
         onEdgesChange={onEdgesChange}
         onNodeClick={handleNodeClick}
         onPaneClick={handlePaneClick}
-        fitView
-        fitViewOptions={{ padding: 0.15 }}
         minZoom={0.1}
         maxZoom={3}
         defaultEdgeOptions={{ type: 'labeledEdge' }}
@@ -368,6 +395,7 @@ export function ApiModelMapModal({ open, onClose }: ApiModelMapModalProps) {
         requestsByCollection={requestsByCollection}
         rootRequests={rootRequests}
         models={models}
+        projectId={activeProjectId}
         onEditModel={openEdit}
         onDeleteModel={handleDeleteModel}
       />

@@ -13,6 +13,7 @@ pub mod app_state;
 pub mod changelog;
 pub mod collections;
 pub mod environments;
+pub mod layout_cache;
 pub mod models;
 pub mod projects;
 pub mod requests;
@@ -42,7 +43,7 @@ pub async fn init_db(db_path: &Path) -> DbResult<()> {
     conn.execute("PRAGMA foreign_keys = ON;", ()).await?;
 
     conn.execute_batch(&format!(
-        "{}{}{}{}{}{}{}",
+        "{}{}{}{}{}{}{}{}",
         projects::get_table_sql(),
         collections::get_table_sql(),
         requests::get_table_sql(),
@@ -50,6 +51,7 @@ pub async fn init_db(db_path: &Path) -> DbResult<()> {
         changelog::get_table_sql(),
         app_state::get_table_sql(),
         models::get_table_sql(),
+        layout_cache::get_table_sql(),
     ))
     .await?;
 
@@ -326,6 +328,9 @@ pub use models::{
     create_model, delete_model, get_model, list_models, update_model, validate_model_graph,
     validate_model_refs,
 };
+
+// Re-export layout_cache functions
+pub use layout_cache::{clear_layout_cache, get_cached_layout, save_layout_cache};
 
 // Re-export app_state functions
 pub use app_state::{get_app_state, set_app_state};

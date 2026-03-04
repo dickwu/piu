@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { type Node, type Edge, type NodeChange, applyNodeChanges } from '@xyflow/react';
 import { invoke } from '@tauri-apps/api/core';
 import { NODE_RADIUS } from '../../utils/apiModelMapLayout';
+import { useLayoutComputeStore } from '../../stores/layoutComputeStore';
 
 // IPC types matching Rust structs
 interface LayoutNode {
@@ -26,6 +27,7 @@ interface LayoutPosition {
 interface GraphLayoutInput {
   nodes: LayoutNode[];
   edges: LayoutEdge[];
+  project_id: string | null;
   config: {
     link_distance: number;
     link_strength: number;
@@ -41,20 +43,27 @@ interface GraphLayoutInput {
 export function useForceLayout(
   initialNodes: Node[],
   initialEdges: Edge[],
+  projectId: string | null,
 ): {
   nodes: Node[];
   onNodesChange: (changes: NodeChange[]) => void;
+  isComputing: boolean;
 } {
   const [nodes, setNodes] = useState<Node[]>(initialNodes);
+  const [isComputing, setIsComputing] = useState(false);
 
   useEffect(() => {
     if (initialNodes.length === 0) {
       setNodes([]);
+      setIsComputing(false);
+      useLayoutComputeStore.getState().setComputing(false);
       return;
     }
 
     // Show initial nodes immediately (circular positions)
     setNodes(initialNodes);
+    setIsComputing(true);
+    useLayoutComputeStore.getState().setComputing(true);
 
     let cancelled = false;
 
@@ -68,6 +77,7 @@ export function useForceLayout(
         source: e.source,
         target: e.target,
       })),
+      project_id: projectId,
       config: {
         link_distance: 180,
         link_strength: 0.5,
@@ -98,18 +108,26 @@ export function useForceLayout(
         );
       })
       .catch(() => {
-        // Silently fall back to circular layout — initial positions
+        // Fall back to circular layout — initial positions
         // were already set via setNodes(initialNodes) above.
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsComputing(false);
+          useLayoutComputeStore.getState().setComputing(false);
+        }
       });
 
     return () => {
       cancelled = true;
+      // Reset global state on cleanup to avoid stale indicator
+      useLayoutComputeStore.getState().setComputing(false);
     };
-  }, [initialNodes, initialEdges]);
+  }, [initialNodes, initialEdges, projectId]);
 
   const onNodesChange = useCallback((changes: NodeChange[]) => {
     setNodes((prev) => applyNodeChanges(changes, prev));
   }, []);
 
-  return { nodes, onNodesChange };
+  return { nodes, onNodesChange, isComputing };
 }

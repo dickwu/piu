@@ -25,7 +25,7 @@ import { CollectionFormModal } from './CollectionFormModal';
 import { RequestFormModal } from './RequestFormModal';
 import { ProjectHistoryModal } from './CollectionHistoryModal';
 import { MoveRequestModal } from './MoveRequestModal';
-import { ModelManager } from './ModelManager';
+import { ApiModelMapModal } from './apiModelMap/ApiModelMapFlow';
 
 const METHOD_COLORS: Record<string, string> = {
   GET: '#34d399',
@@ -662,7 +662,7 @@ export function Sidebar() {
         onEmptyCollection={handleEmptyCollection}
       />
 
-      <ModelManager
+      <ApiModelMapModal
         open={modelManagerOpen}
         onClose={() => setModelManagerOpen(false)}
       />

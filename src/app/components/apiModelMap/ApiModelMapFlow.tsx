@@ -11,6 +11,7 @@ import {
   MiniMap,
   useEdgesState,
   useReactFlow,
+  useNodesInitialized,
   type Node,
   type Edge,
   type NodeTypes,
@@ -18,7 +19,12 @@ import {
   type NodeMouseHandler,
 } from '@xyflow/react';
 import { Modal, Button, Flex, Spin, Empty, App } from 'antd';
-import { ApartmentOutlined, PlusOutlined } from '@ant-design/icons';
+import {
+  ApartmentOutlined,
+  PlusOutlined,
+  LoadingOutlined,
+  WarningOutlined,
+} from '@ant-design/icons';
 
 import { useProjectStore } from '../../stores/projectStore';
 import { useCollectionStore, ROOT_REQUESTS_KEY } from '../../stores/collectionStore';
@@ -72,6 +78,48 @@ interface SelectedNodeInfo {
 }
 
 // ---------------------------------------------------------------------------
+// fitView timing constants (ms)
+// ---------------------------------------------------------------------------
+
+/** Delay after nodes are measured before initial fitView */
+const FIT_VIEW_INITIAL_DELAY = 50;
+
+/** Delay after Rust computation finishes before re-centering viewport */
+const FIT_VIEW_POST_COMPUTE_DELAY = 150;
+
+const FIT_VIEW_OPTIONS = { padding: 0.15 } as const;
+
+// ---------------------------------------------------------------------------
+// In-canvas overlay styles (extracted to avoid re-creation per render)
+// ---------------------------------------------------------------------------
+
+const OVERLAY_BASE: React.CSSProperties = {
+  position: 'absolute',
+  top: 12,
+  left: '50%',
+  transform: 'translateX(-50%)',
+  zIndex: 10,
+  borderRadius: 8,
+  padding: '8px 16px',
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  backdropFilter: 'blur(8px)',
+};
+
+const COMPUTING_OVERLAY_STYLE: React.CSSProperties = {
+  ...OVERLAY_BASE,
+  background: 'rgba(10, 10, 15, 0.85)',
+  border: '1px solid var(--border)',
+};
+
+const ERROR_OVERLAY_STYLE: React.CSSProperties = {
+  ...OVERLAY_BASE,
+  background: 'rgba(30, 10, 10, 0.85)',
+  border: '1px solid rgba(255, 77, 79, 0.4)',
+};
+
+// ---------------------------------------------------------------------------
 // Inner canvas — wrapped in ReactFlowProvider by the modal
 // ---------------------------------------------------------------------------
 
@@ -103,31 +151,40 @@ function ApiModelMapFlowInner({
   );
 
   // Force-directed simulation manages node positions
-  const { nodes, onNodesChange, isComputing } = useForceLayout(
+  const { nodes, onNodesChange, isComputing, error: layoutError } = useForceLayout(
     layout.nodes,
     layout.edges,
     projectId,
   );
 
-  // Programmatic fitView — re-center viewport when Rust computation finishes
+  // ---- Robust fitView: waits for node measurement + computation ----
   const { fitView } = useReactFlow();
-  const prevComputing = useRef(true);
+  const nodesInitialized = useNodesInitialized();
+  const prevComputing = useRef(false);
 
+  // Phase A: fitView once nodes are measured (initial circular positions).
+  // Only fires while computing — if Rust already finished, Phase B handles it.
+  // Includes isComputing in deps so the timer is canceled if computation
+  // finishes before the delay elapses, preventing a race with Phase B.
   useEffect(() => {
-    let rafId: number | undefined;
+    if (!nodesInitialized || nodes.length === 0 || !isComputing) return;
+
+    const timer = setTimeout(() => fitView(FIT_VIEW_OPTIONS), FIT_VIEW_INITIAL_DELAY);
+    return () => clearTimeout(timer);
+  }, [nodesInitialized, isComputing, nodes.length, fitView]);
+
+  // Phase B: re-fitView when Rust computation finishes.
+  // Single control path: always update prevComputing, always clean up.
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
 
     if (prevComputing.current && !isComputing && nodes.length > 0) {
-      // Small delay to let React Flow internalize the new node positions
-      rafId = requestAnimationFrame(() => {
-        fitView({ padding: 0.15 });
-      });
+      timer = setTimeout(() => fitView(FIT_VIEW_OPTIONS), FIT_VIEW_POST_COMPUTE_DELAY);
     }
     prevComputing.current = isComputing;
 
     return () => {
-      if (rafId !== undefined) {
-        cancelAnimationFrame(rafId);
-      }
+      if (timer !== undefined) clearTimeout(timer);
     };
   }, [isComputing, nodes.length, fitView]);
 
@@ -187,6 +244,8 @@ function ApiModelMapFlowInner({
         onEdgesChange={onEdgesChange}
         onNodeClick={handleNodeClick}
         onPaneClick={handlePaneClick}
+        fitView
+        fitViewOptions={{ padding: 0.15 }}
         minZoom={0.1}
         maxZoom={3}
         defaultEdgeOptions={{ type: 'labeledEdge' }}
@@ -204,6 +263,26 @@ function ApiModelMapFlowInner({
           }}
         />
       </ReactFlow>
+
+      {/* In-canvas computing overlay — visible inside the modal */}
+      {isComputing && (
+        <div style={COMPUTING_OVERLAY_STYLE}>
+          <LoadingOutlined style={{ color: '#fbbf24', fontSize: 14 }} />
+          <span style={{ color: '#fbbf24', fontSize: 12, fontWeight: 500 }}>
+            Computing layout...
+          </span>
+        </div>
+      )}
+
+      {/* Error overlay — shows when Rust invoke fails */}
+      {layoutError && !isComputing && (
+        <div style={ERROR_OVERLAY_STYLE}>
+          <WarningOutlined style={{ color: '#ff4d4f', fontSize: 14 }} />
+          <span style={{ color: '#ff4d4f', fontSize: 12, fontWeight: 500 }}>
+            Layout failed — {layoutError}
+          </span>
+        </div>
+      )}
 
       {/* Detail panel — absolute overlay on node selection */}
       {selectedNode && (

@@ -48,14 +48,17 @@ export function useForceLayout(
   nodes: Node[];
   onNodesChange: (changes: NodeChange[]) => void;
   isComputing: boolean;
+  error: string | null;
 } {
   const [nodes, setNodes] = useState<Node[]>(initialNodes);
   const [isComputing, setIsComputing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (initialNodes.length === 0) {
       setNodes([]);
       setIsComputing(false);
+      setError(null);
       useLayoutComputeStore.getState().setComputing(false);
       return;
     }
@@ -63,6 +66,7 @@ export function useForceLayout(
     // Show initial nodes immediately (circular positions)
     setNodes(initialNodes);
     setIsComputing(true);
+    setError(null);
     useLayoutComputeStore.getState().setComputing(true);
 
     let cancelled = false;
@@ -107,9 +111,13 @@ export function useForceLayout(
           }),
         );
       })
-      .catch(() => {
+      .catch((err: unknown) => {
         // Fall back to circular layout — initial positions
         // were already set via setNodes(initialNodes) above.
+        if (!cancelled) {
+          const msg = err instanceof Error ? err.message : String(err);
+          setError(msg);
+        }
       })
       .finally(() => {
         if (!cancelled) {
@@ -129,5 +137,5 @@ export function useForceLayout(
     setNodes((prev) => applyNodeChanges(changes, prev));
   }, []);
 
-  return { nodes, onNodesChange, isComputing };
+  return { nodes, onNodesChange, isComputing, error };
 }

@@ -9,11 +9,11 @@ import {
   Background,
   Controls,
   MiniMap,
-  useNodesState,
   useEdgesState,
   type Node,
   type Edge,
   type NodeTypes,
+  type EdgeTypes,
   type NodeMouseHandler,
 } from '@xyflow/react';
 import { Modal, Button, Flex, Spin, Empty, App } from 'antd';
@@ -32,6 +32,8 @@ import type {
 import CollectionNode from './CollectionNode';
 import RequestNode from './RequestNode';
 import ModelNode from './ModelNode';
+import LabeledEdge from './LabeledEdge';
+import { useForceLayout } from './useForceLayout';
 import { MapDetailPanel } from './MapDetailPanel';
 import { MapLegend } from './MapLegend';
 import { ModelFieldEditor } from '../ModelFieldEditor';
@@ -45,6 +47,10 @@ const NODE_TYPES: NodeTypes = {
   collectionNode: CollectionNode,
   requestNode: RequestNode,
   modelNode: ModelNode,
+};
+
+const EDGE_TYPES: EdgeTypes = {
+  labeledEdge: LabeledEdge,
 };
 
 // ---------------------------------------------------------------------------
@@ -85,8 +91,6 @@ function ApiModelMapFlowInner({
   onEditModel,
   onDeleteModel,
 }: ApiModelMapFlowInnerProps) {
-  const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [selectedNode, setSelectedNode] = useState<SelectedNodeInfo | null>(null);
 
   // Compute layout whenever source data changes (pure, no side effects)
@@ -95,12 +99,21 @@ function ApiModelMapFlowInner({
     [collections, requestsByCollection, rootRequests, models],
   );
 
-  // Sync layout into React Flow state via effect — avoids stale initial state
-  // from useNodesState's initializer and prevents stale closures.
+  // Force-directed simulation manages node positions
+  const {
+    nodes,
+    onNodesChange,
+    onNodeDragStart,
+    onNodeDrag,
+    onNodeDragStop,
+  } = useForceLayout(layout.nodes, layout.edges);
+
+  // Edges are static — synced from layout
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(layout.edges);
+
   useEffect(() => {
-    setNodes(layout.nodes);
     setEdges(layout.edges);
-  }, [layout, setNodes, setEdges]);
+  }, [layout, setEdges]);
 
   // Clear selection when data reloads (e.g. after delete)
   useEffect(() => {
@@ -132,9 +145,11 @@ function ApiModelMapFlowInner({
     setSelectedNode(null);
   }, []);
 
+  // MiniMap node colors matching circular node themes
   const miniMapNodeColor = useCallback((n: { type?: string }) => {
-    if (n.type === 'modelNode') return '#1d3461';
-    if (n.type === 'collectionNode') return '#2a2a3e';
+    if (n.type === 'collectionNode') return '#fbbf24'; // amber
+    if (n.type === 'requestNode') return '#34d399';    // green
+    if (n.type === 'modelNode') return '#4a9eff';      // blue
     return '#1e1e2a';
   }, []);
 
@@ -144,15 +159,19 @@ function ApiModelMapFlowInner({
         nodes={nodes}
         edges={edges}
         nodeTypes={NODE_TYPES}
+        edgeTypes={EDGE_TYPES}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onNodeClick={handleNodeClick}
+        onNodeDragStart={onNodeDragStart}
+        onNodeDrag={onNodeDrag}
+        onNodeDragStop={onNodeDragStop}
         onPaneClick={handlePaneClick}
         fitView
         fitViewOptions={{ padding: 0.15 }}
         minZoom={0.1}
         maxZoom={3}
-        defaultEdgeOptions={{ type: 'smoothstep' }}
+        defaultEdgeOptions={{ type: 'labeledEdge' }}
         style={{ background: 'var(--bg-primary)' }}
       >
         <Background color="rgba(255,255,255,0.03)" gap={20} size={1} />

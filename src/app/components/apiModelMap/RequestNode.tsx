@@ -2,6 +2,7 @@
 
 import { memo } from 'react';
 import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
+import { NODE_DIAMETER } from '../../utils/apiModelMapLayout';
 import type { RequestNodeData } from '../../utils/apiModelMapLayout';
 
 type RequestNodeType = Node<RequestNodeData, 'request'>;
@@ -23,84 +24,66 @@ function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
+const handleStyle = { opacity: 0, width: 6, height: 6 } as const;
+
 function RequestNode({ data, selected }: NodeProps<RequestNodeType>) {
-  const { name, method, url } = data;
+  const { name, method } = data;
 
   const normalizedMethod = method.toUpperCase();
   const methodColor = METHOD_COLORS[normalizedMethod] ?? DEFAULT_METHOD_COLOR;
-  const methodBg = hexToRgba(methodColor, 0.15);
 
   return (
     <div
       style={{
-        width: 200,
-        background: 'var(--bg-surface)',
-        border: `1px solid ${selected ? '#4a9eff' : 'var(--border)'}`,
-        borderRadius: 6,
-        overflow: 'hidden',
+        width: NODE_DIAMETER,
+        height: NODE_DIAMETER,
+        borderRadius: '50%',
+        background: hexToRgba(methodColor, 0.15),
+        border: `1.5px solid ${selected ? methodColor : hexToRgba(methodColor, 0.5)}`,
+        boxShadow: selected ? `0 0 12px ${methodColor}4d` : 'none',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
         fontFamily: 'var(--font-ui)',
-        boxShadow: selected ? '0 0 0 2px rgba(74,158,255,0.2)' : 'none',
-        transition: 'border-color 0.15s ease, box-shadow 0.15s ease',
+        cursor: 'grab',
+        transition: 'border-color 150ms ease, box-shadow 150ms ease',
+        overflow: 'hidden',
       }}
     >
-      <Handle type="target" position={Position.Top} />
+      <Handle type="target" position={Position.Top} style={handleStyle} />
+      <Handle type="source" position={Position.Bottom} style={handleStyle} />
+      <Handle type="target" position={Position.Left} id="left-target" style={handleStyle} />
+      <Handle type="source" position={Position.Right} id="right-source" style={handleStyle} />
 
-      <div style={{ padding: '7px 9px', display: 'flex', flexDirection: 'column', gap: 4 }}>
-        {/* Method badge + name row */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span
-            style={{
-              background: methodBg,
-              color: methodColor,
-              fontSize: 9,
-              fontWeight: 700,
-              fontFamily: 'var(--font-ui)',
-              padding: '1px 5px',
-              borderRadius: 3,
-              letterSpacing: '0.04em',
-              textTransform: 'uppercase',
-              flexShrink: 0,
-            }}
-          >
-            {normalizedMethod}
-          </span>
-          <span
-            style={{
-              color: 'var(--text-primary)',
-              fontSize: 11,
-              fontFamily: 'var(--font-ui)',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-              flex: 1,
-            }}
-            title={name}
-          >
-            {name}
-          </span>
-        </div>
-
-        {/* URL path */}
-        {url && (
-          <span
-            style={{
-              color: 'var(--text-tertiary)',
-              fontSize: 9,
-              fontFamily: 'var(--font-code)',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-              display: 'block',
-            }}
-            title={url}
-          >
-            {url}
-          </span>
-        )}
-      </div>
-
-      <Handle type="source" position={Position.Bottom} />
-      <Handle type="source" position={Position.Right} id="right-source" />
+      <span
+        style={{
+          color: methodColor,
+          fontSize: 8,
+          fontWeight: 700,
+          textTransform: 'uppercase',
+          letterSpacing: '0.04em',
+          marginBottom: 2,
+          lineHeight: 1.2,
+        }}
+      >
+        {normalizedMethod}
+      </span>
+      <span
+        style={{
+          color: 'var(--text-primary)',
+          fontSize: 9,
+          maxWidth: NODE_DIAMETER - 12,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          textAlign: 'center',
+          lineHeight: 1.2,
+        }}
+        title={name}
+      >
+        {name}
+      </span>
     </div>
   );
 }

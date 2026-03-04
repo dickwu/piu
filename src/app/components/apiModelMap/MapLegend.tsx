@@ -2,6 +2,25 @@
 
 import { memo } from 'react';
 
+// ---------------------------------------------------------------------------
+// Node legend data
+// ---------------------------------------------------------------------------
+
+interface NodeLegendRow {
+  color: string;
+  label: string;
+}
+
+const NODE_ROWS: NodeLegendRow[] = [
+  { color: '#fbbf24', label: 'collection' },
+  { color: '#34d399', label: 'request' },
+  { color: '#4a9eff', label: 'model' },
+];
+
+// ---------------------------------------------------------------------------
+// Edge legend data
+// ---------------------------------------------------------------------------
+
 interface EdgeLegendRow {
   color: string;
   dashed: boolean;
@@ -18,6 +37,30 @@ const EDGE_ROWS: EdgeLegendRow[] = [
   { color: '#9b59b6', dashed: true,  thin: false, label: 'mixin' },
   { color: '#2ecc71', dashed: false, thin: true,  label: 'field ref' },
 ];
+
+// ---------------------------------------------------------------------------
+// Shared label style
+// ---------------------------------------------------------------------------
+
+const labelStyle = {
+  fontSize: 11,
+  color: 'rgba(255,255,255,0.5)',
+  fontFamily: 'var(--font-ui)',
+  whiteSpace: 'nowrap' as const,
+};
+
+const sectionTitleStyle = {
+  fontSize: 9,
+  fontWeight: 600 as const,
+  color: 'rgba(255,255,255,0.3)',
+  textTransform: 'uppercase' as const,
+  letterSpacing: '0.06em',
+  marginBottom: 2,
+};
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
 
 function MapLegendInner() {
   return (
@@ -37,16 +80,42 @@ function MapLegendInner() {
         gap: 5,
       }}
     >
+      {/* Node types */}
+      <div style={sectionTitleStyle}>Nodes</div>
+      {NODE_ROWS.map((row) => (
+        <div
+          key={row.label}
+          style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+        >
+          <div
+            style={{
+              width: 10,
+              height: 10,
+              borderRadius: '50%',
+              background: row.color,
+              flexShrink: 0,
+              marginLeft: 7,
+            }}
+          />
+          <span style={labelStyle}>{row.label}</span>
+        </div>
+      ))}
+
+      {/* Separator */}
+      <div
+        style={{
+          borderTop: '1px solid rgba(255,255,255,0.06)',
+          margin: '2px 0',
+        }}
+      />
+
+      {/* Edge types */}
+      <div style={sectionTitleStyle}>Edges</div>
       {EDGE_ROWS.map((row) => (
         <div
           key={row.label}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-          }}
+          style={{ display: 'flex', alignItems: 'center', gap: 8 }}
         >
-          {/* Line swatch */}
           <div style={{ width: 24, display: 'flex', alignItems: 'center', flexShrink: 0 }}>
             <div
               style={{
@@ -57,18 +126,7 @@ function MapLegendInner() {
               }}
             />
           </div>
-
-          {/* Label */}
-          <span
-            style={{
-              fontSize: 11,
-              color: 'rgba(255,255,255,0.5)',
-              fontFamily: 'var(--font-ui)',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {row.label}
-          </span>
+          <span style={labelStyle}>{row.label}</span>
         </div>
       ))}
     </div>

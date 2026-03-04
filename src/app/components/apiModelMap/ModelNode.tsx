@@ -2,127 +2,79 @@
 
 import { memo } from 'react';
 import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
+import { DatabaseOutlined } from '@ant-design/icons';
+import { NODE_DIAMETER } from '../../utils/apiModelMapLayout';
 import type { ModelNodeData } from '../../utils/apiModelMapLayout';
 
 type ModelNodeType = Node<ModelNodeData, 'model'>;
 
-const MAX_VISIBLE_FIELDS = 5;
+const BLUE = '#4a9eff';
+const BG = 'rgba(74, 158, 255, 0.15)';
+const BORDER_NORMAL = 'rgba(74, 158, 255, 0.5)';
+const SHADOW_SELECTED = '0 0 12px rgba(74, 158, 255, 0.3)';
+
+const handleStyle = { opacity: 0, width: 6, height: 6 } as const;
 
 function ModelNode({ data, selected }: NodeProps<ModelNodeType>) {
-  const { name, fieldCount, fieldPreview } = data;
-
-  const visibleFields = fieldPreview.slice(0, MAX_VISIBLE_FIELDS);
-  const overflowCount = fieldCount - visibleFields.length;
+  const { name, fieldCount } = data;
 
   return (
     <div
       style={{
-        minWidth: 180,
-        background: 'var(--bg-elevated)',
-        border: `1px solid ${selected ? '#4a9eff' : 'rgba(74,158,255,0.25)'}`,
-        borderRadius: 8,
-        overflow: 'hidden',
+        width: NODE_DIAMETER,
+        height: NODE_DIAMETER,
+        borderRadius: '50%',
+        background: BG,
+        border: `1.5px solid ${selected ? BLUE : BORDER_NORMAL}`,
+        boxShadow: selected ? SHADOW_SELECTED : 'none',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
         fontFamily: 'var(--font-ui)',
-        boxShadow: selected ? '0 0 0 2px rgba(74,158,255,0.2)' : 'none',
-        transition: 'border-color 0.15s ease, box-shadow 0.15s ease',
+        cursor: 'grab',
+        transition: 'border-color 150ms ease, box-shadow 150ms ease',
+        overflow: 'hidden',
       }}
     >
-      <Handle type="target" position={Position.Top} />
-      <Handle type="target" position={Position.Left} id="left-target" />
+      <Handle type="target" position={Position.Top} style={handleStyle} />
+      <Handle type="source" position={Position.Bottom} style={handleStyle} />
+      <Handle type="target" position={Position.Left} id="left-target" style={handleStyle} />
+      <Handle type="source" position={Position.Right} id="right-source" style={handleStyle} />
 
-      {/* Header */}
-      <div
+      <DatabaseOutlined
         style={{
-          background: 'rgba(74,158,255,0.08)',
-          borderBottom: '1px solid rgba(74,158,255,0.15)',
-          padding: '7px 10px',
+          color: BLUE,
+          fontSize: 13,
+          marginBottom: 3,
+        }}
+      />
+      <span
+        style={{
+          color: 'var(--text-primary)',
+          fontSize: 10,
+          fontWeight: 700,
+          maxWidth: NODE_DIAMETER - 12,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          textAlign: 'center',
+          lineHeight: 1.2,
+        }}
+        title={name}
+      >
+        {name}
+      </span>
+      <span
+        style={{
+          color: 'var(--text-tertiary)',
+          fontSize: 8,
+          marginTop: 1,
+          lineHeight: 1.2,
         }}
       >
-        <div
-          style={{
-            color: 'var(--text-primary)',
-            fontSize: 12,
-            fontWeight: 700,
-            fontFamily: 'var(--font-ui)',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}
-          title={name}
-        >
-          {name}
-        </div>
-        <div
-          style={{
-            color: 'var(--text-tertiary)',
-            fontSize: 10,
-            marginTop: 2,
-          }}
-        >
-          {fieldCount} {fieldCount === 1 ? 'field' : 'fields'}
-        </div>
-      </div>
-
-      {/* Field preview */}
-      {visibleFields.length > 0 && (
-        <div style={{ padding: '6px 0' }}>
-          {visibleFields.map((field) => (
-            <div
-              key={field.name}
-              style={{
-                display: 'flex',
-                alignItems: 'baseline',
-                justifyContent: 'space-between',
-                padding: '2px 10px',
-                gap: 8,
-              }}
-            >
-              <span
-                style={{
-                  color: field.required ? 'var(--text-primary)' : 'var(--text-secondary)',
-                  fontSize: 10,
-                  fontFamily: 'var(--font-code)',
-                  fontWeight: field.required ? 700 : 400,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                  flexShrink: 1,
-                  minWidth: 0,
-                }}
-                title={field.name}
-              >
-                {field.required ? `${field.name}*` : field.name}
-              </span>
-              <span
-                style={{
-                  color: 'var(--text-tertiary)',
-                  fontSize: 9,
-                  fontFamily: 'var(--font-code)',
-                  flexShrink: 0,
-                }}
-              >
-                {field.type}
-              </span>
-            </div>
-          ))}
-
-          {overflowCount > 0 && (
-            <div
-              style={{
-                padding: '3px 10px 1px',
-                color: 'var(--text-tertiary)',
-                fontSize: 9,
-                fontFamily: 'var(--font-ui)',
-                fontStyle: 'italic',
-              }}
-            >
-              +{overflowCount} more
-            </div>
-          )}
-        </div>
-      )}
-
-      <Handle type="source" position={Position.Bottom} />
+        {fieldCount} fields
+      </span>
     </div>
   );
 }

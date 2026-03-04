@@ -1,4 +1,4 @@
-import dagre from '@dagrejs/dagre';
+import { MarkerType } from '@xyflow/react';
 import type { Node, Edge } from '@xyflow/react';
 import type { Collection, ApiRequest, DataModel } from '../types';
 import { parseConfig, parseModelFields, parseMixinModelIds } from '../types';
@@ -42,60 +42,36 @@ export const EDGE_STYLES = {
 export type EdgeStyleKey = keyof typeof EDGE_STYLES;
 
 // ---------------------------------------------------------------------------
-// Internal geometry constants
+// Edge label mapping
 // ---------------------------------------------------------------------------
 
-const COL_NODE_W = 180;
-const COL_NODE_H = 60;
-const REQ_NODE_W = 200;
-const REQ_NODE_H = 52;
-const MODEL_NODE_W = 180;
-const MODEL_NODE_H = 80;
-
-const DAGRE_NODESEP = 50;
-const DAGRE_RANKSEP = 70;
+const EDGE_LABELS: Record<EdgeStyleKey, string> = {
+  'col-subcol': 'SUBCOL',
+  'col-request': 'REQUEST',
+  'req-reqModel': 'REQ_BODY',
+  'req-resModel': 'RESPONSE',
+  'model-inherits': 'INHERITS',
+  'model-mixin': 'MIXIN',
+  'model-fieldRef': '',
+};
 
 // ---------------------------------------------------------------------------
-// Graph bounds helper
+// Geometry constants
 // ---------------------------------------------------------------------------
 
-interface GraphBounds {
-  minX: number;
-  maxX: number;
-  minY: number;
-  maxY: number;
-}
+export const NODE_RADIUS = 35;
+export const NODE_DIAMETER = NODE_RADIUS * 2;
 
-/**
- * Compute the bounding box (X and Y) of all laid-out dagre nodes.
- * Returns zeroed bounds for empty graphs.
- */
-function computeGraphBounds(g: dagre.graphlib.Graph): GraphBounds {
-  const nodeIds = g.nodes();
-  if (nodeIds.length === 0) {
-    return { minX: 0, maxX: 0, minY: 0, maxY: 0 };
-  }
+// ---------------------------------------------------------------------------
+// Force simulation types
+// ---------------------------------------------------------------------------
 
-  let minX = Infinity;
-  let maxX = -Infinity;
-  let minY = Infinity;
-  let maxY = -Infinity;
-
-  for (const id of nodeIds) {
-    const n = g.node(id) as { x: number; y: number; width: number; height: number } | undefined;
-    if (!n) continue;
-    const left = n.x - n.width / 2;
-    const right = n.x + n.width / 2;
-    const top = n.y - n.height / 2;
-    const bottom = n.y + n.height / 2;
-    if (left < minX) minX = left;
-    if (right > maxX) maxX = right;
-    if (top < minY) minY = top;
-    if (bottom > maxY) maxY = bottom;
-  }
-
-  if (!isFinite(minX)) return { minX: 0, maxX: 0, minY: 0, maxY: 0 };
-  return { minX, maxX, minY, maxY };
+export interface ForceSimulationNode {
+  id: string;
+  x: number;
+  y: number;
+  fx?: number | null;
+  fy?: number | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -179,103 +155,25 @@ function collectAllRequests(
 }
 
 // ---------------------------------------------------------------------------
-// Unified dagre graph builder
+// Circular initial position helper
 // ---------------------------------------------------------------------------
 
 /**
- * Build a single dagre multigraph containing ALL node types (collections,
- * requests, models) and the 5 acyclic backbone edge types:
- *   col→subcol, col→request, req→reqModel, req→resModel, model→inherits
- *
- * Mixin and fieldRef edges are excluded because they can create cycles.
+ * Compute an initial position on a circle for a given node index.
+ * Radius scales with node count so nodes have reasonable spacing.
  */
-function buildUnifiedGraph(
-  collections: Collection[],
-  requestsByCollection: Map<string, ApiRequest[]>,
-  rootRequests: ApiRequest[],
-  models: DataModel[],
-  parsedConfigs: Map<string, ReturnType<typeof parseConfig>>,
-  allRequests: Map<string, ApiRequest>,
-  collectionById: Map<string, Collection>,
-  modelById: Map<string, DataModel>,
-): dagre.graphlib.Graph {
-  const g = new dagre.graphlib.Graph({ multigraph: true });
-  g.setGraph({ rankdir: 'TB', nodesep: DAGRE_NODESEP, ranksep: DAGRE_RANKSEP });
-  g.setDefaultEdgeLabel(() => ({}));
-
-  const collectionIds = new Set(collections.map((c) => c.id));
-  const modelIds = new Set(models.map((m) => m.id));
-
-  // -- Add collection nodes --
-  for (const col of collections) {
-    g.setNode(`col:${col.id}`, { width: COL_NODE_W, height: COL_NODE_H });
-  }
-
-  // -- Add request nodes --
-  for (const col of collections) {
-    const reqs = requestsByCollection.get(col.id) ?? [];
-    for (const req of reqs) {
-      g.setNode(`req:${req.id}`, { width: REQ_NODE_W, height: REQ_NODE_H });
-    }
-  }
-  for (const req of rootRequests) {
-    g.setNode(`req:${req.id}`, { width: REQ_NODE_W, height: REQ_NODE_H });
-  }
-
-  // -- Add model nodes --
-  for (const model of models) {
-    g.setNode(`model:${model.id}`, { width: MODEL_NODE_W, height: MODEL_NODE_H });
-  }
-
-  // -- Edge type 1: col → sub-col (with cycle detection) --
-  for (const col of collections) {
-    if (col.parent_id !== null && collectionIds.has(col.parent_id)) {
-      if (!hasCollectionAncestorCycle(col.parent_id, collectionById)) {
-        g.setEdge(`col:${col.parent_id}`, `col:${col.id}`, {}, 'col-subcol');
-      }
-    }
-  }
-
-  // -- Edge type 2: col → request --
-  for (const col of collections) {
-    const reqs = requestsByCollection.get(col.id) ?? [];
-    for (const req of reqs) {
-      g.setEdge(`col:${col.id}`, `req:${req.id}`, {}, 'col-request');
-    }
-  }
-
-  // -- Edge types 3 & 4: req → reqModel, req → resModel --
-  for (const [reqId, req] of allRequests) {
-    const cfg = parsedConfigs.get(reqId) ?? parseConfig(req.config);
-
-    if (cfg.requestModelId && modelIds.has(cfg.requestModelId)) {
-      g.setEdge(`req:${reqId}`, `model:${cfg.requestModelId}`, {}, 'req-reqModel');
-    }
-
-    if (cfg.responseModelId && modelIds.has(cfg.responseModelId)) {
-      g.setEdge(`req:${reqId}`, `model:${cfg.responseModelId}`, {}, 'req-resModel');
-    }
-  }
-
-  // -- Edge type 5: model → inherits (with cycle detection) --
-  for (const model of models) {
-    if (model.parent_model_id !== null && modelIds.has(model.parent_model_id)) {
-      if (!hasModelInheritanceCycle(model.parent_model_id, modelById)) {
-        g.setEdge(
-          `model:${model.parent_model_id}`,
-          `model:${model.id}`,
-          {},
-          'model-inherits',
-        );
-      }
-    }
-  }
-
-  return g;
+function circularPosition(index: number, total: number): { x: number; y: number } {
+  if (total === 0) return { x: 0, y: 0 };
+  const R = Math.max(200, total * 15);
+  const angle = (2 * Math.PI * index) / total;
+  return {
+    x: Math.cos(angle) * R,
+    y: Math.sin(angle) * R,
+  };
 }
 
 // ---------------------------------------------------------------------------
-// React Flow node / edge builders
+// React Flow node builders
 // ---------------------------------------------------------------------------
 
 function buildCollectionNode(
@@ -294,7 +192,6 @@ function buildCollectionNode(
       pathPrefix: col.path_prefix,
       requestCount: requests.length,
     },
-    style: { width: COL_NODE_W, height: COL_NODE_H },
   };
 }
 
@@ -314,7 +211,6 @@ function buildRequestNode(
       method: cfg.method,
       url: cfg.url,
     },
-    style: { width: REQ_NODE_W, height: REQ_NODE_H },
   };
 }
 
@@ -339,32 +235,19 @@ function buildModelNode(
       fieldCount: fields.length,
       fieldPreview,
     },
-    style: { width: MODEL_NODE_W, height: MODEL_NODE_H },
   };
 }
 
 // ---------------------------------------------------------------------------
-// React Flow coordinate extractor from dagre graph
+// Force link extraction helper
 // ---------------------------------------------------------------------------
 
 /**
- * Dagre positions nodes at their center. React Flow positions nodes at their
- * top-left corner. This converts center -> top-left and applies an offset.
+ * Extract a simple { source, target } array from React Flow edges,
+ * suitable for use with d3-force link forces.
  */
-function dagreNodeToPosition(
-  g: dagre.graphlib.Graph,
-  nodeId: string,
-  xOffset: number,
-  yOffset: number,
-): { x: number; y: number } | null {
-  const n = g.node(nodeId) as
-    | { x: number; y: number; width: number; height: number }
-    | undefined;
-  if (!n) return null;
-  return {
-    x: n.x - n.width / 2 + xOffset,
-    y: n.y - n.height / 2 + yOffset,
-  };
+export function extractForceLinks(edges: Edge[]): Array<{ source: string; target: string }> {
+  return edges.map((e) => ({ source: e.source, target: e.target }));
 }
 
 // ---------------------------------------------------------------------------
@@ -373,7 +256,7 @@ function dagreNodeToPosition(
 
 /**
  * Pure layout engine: transforms store data into React Flow nodes and edges
- * using a single unified dagre graph for all node types.
+ * with circular initial positions for force-directed simulation.
  *
  * All inputs are treated as read-only. No side effects.
  */
@@ -398,80 +281,61 @@ export function buildApiModelMap(
   }
 
   // -------------------------------------------------------------------------
-  // 1. Build lookup maps (shared by graph builder and edge assembly)
+  // 1. Build lookup maps (shared by node builder and edge assembly)
   // -------------------------------------------------------------------------
   const allRequests = collectAllRequests(collections, requestsByCollection, rootRequests);
   const collectionById = new Map(collections.map((c) => [c.id, c]));
   const modelById = new Map(models.map((m) => [m.id, m]));
 
   // -------------------------------------------------------------------------
-  // 2. Build and run unified dagre layout (single graph, single layout call)
+  // 2. Count total nodes for circular layout radius calculation
   // -------------------------------------------------------------------------
-  const graph = buildUnifiedGraph(
-    collections,
-    requestsByCollection,
-    rootRequests,
-    models,
-    parsedConfigs,
-    allRequests,
-    collectionById,
-    modelById,
-  );
-
-  const hasNodes = graph.nodes().length > 0;
-
-  if (hasNodes) {
-    dagre.layout(graph);
+  let totalRequestCount = 0;
+  for (const col of collections) {
+    totalRequestCount += (requestsByCollection.get(col.id) ?? []).length;
   }
+  const totalNodeCount =
+    collections.length + totalRequestCount + rootRequests.length + models.length;
 
   // -------------------------------------------------------------------------
-  // 3. Single offset calculation — normalize bounding box to origin
-  // -------------------------------------------------------------------------
-  const bounds = hasNodes
-    ? computeGraphBounds(graph)
-    : { minX: 0, maxX: 0, minY: 0, maxY: 0 };
-
-  const xOffset = hasNodes ? -bounds.minX : 0;
-  const yOffset = hasNodes ? -bounds.minY : 0;
-
-  // -------------------------------------------------------------------------
-  // 4. Assemble React Flow nodes
+  // 3. Assemble React Flow nodes with circular initial positions
   // -------------------------------------------------------------------------
   const nodes: Node[] = [];
+  let nodeIndex = 0;
 
   // Collection nodes
   for (const col of collections) {
-    const pos = dagreNodeToPosition(graph, `col:${col.id}`, xOffset, yOffset);
-    if (!pos) continue;
+    const pos = circularPosition(nodeIndex, totalNodeCount);
     nodes.push(buildCollectionNode(col, pos.x, pos.y, requestsByCollection));
+    nodeIndex += 1;
   }
 
   // Request nodes from collections
   for (const col of collections) {
     const requests = requestsByCollection.get(col.id) ?? [];
     for (const req of requests) {
-      const pos = dagreNodeToPosition(graph, `req:${req.id}`, xOffset, yOffset);
-      if (!pos) continue;
+      const pos = circularPosition(nodeIndex, totalNodeCount);
       nodes.push(buildRequestNode(req, pos.x, pos.y, parsedConfigs));
+      nodeIndex += 1;
     }
   }
 
   // Root request nodes
   for (const req of rootRequests) {
-    const pos = dagreNodeToPosition(graph, `req:${req.id}`, xOffset, yOffset);
-    if (!pos) continue;
+    const pos = circularPosition(nodeIndex, totalNodeCount);
     nodes.push(buildRequestNode(req, pos.x, pos.y, parsedConfigs));
+    nodeIndex += 1;
   }
 
   // Model nodes
   for (const model of models) {
-    const pos = dagreNodeToPosition(graph, `model:${model.id}`, xOffset, yOffset);
-    if (!pos) continue;
+    const pos = circularPosition(nodeIndex, totalNodeCount);
     nodes.push(buildModelNode(model, pos.x, pos.y));
+    nodeIndex += 1;
   }
 
   // -------------------------------------------------------------------------
-  // 5. Assemble React Flow edges (deduplicated)
+  // 4. Assemble React Flow edges (deduplicated, with labels and arrowheads)
   // -------------------------------------------------------------------------
   const edges: Edge[] = [];
   const seenEdges = new Set<string>();
@@ -493,9 +357,15 @@ export function buildApiModelMap(
       id: key,
       source,
       target,
-      type: 'smoothstep',
-      label,
+      type: 'labeledEdge',
+      label: label || EDGE_LABELS[edgeType] || undefined,
       style,
+      markerEnd: {
+        type: MarkerType.ArrowClosed,
+        color: style.stroke,
+        width: 15,
+        height: 15,
+      },
       data: { edgeType },
     });
   }
@@ -543,7 +413,7 @@ export function buildApiModelMap(
     }
   }
 
-  // model → mixin edges (visual-only, NOT in dagre graph)
+  // model → mixin edges
   for (const model of models) {
     const mixinIds = parseMixinModelIds(model.mixin_model_ids);
     for (const mixinId of mixinIds) {
@@ -553,7 +423,7 @@ export function buildApiModelMap(
     }
   }
 
-  // model → field reference edges (visual-only, NOT in dagre graph)
+  // model → field reference edges
   for (const model of models) {
     const fields = parseModelFields(model.fields);
     for (const field of fields) {

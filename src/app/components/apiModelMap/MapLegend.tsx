@@ -30,11 +30,11 @@ interface EdgeLegendRow {
 
 const EDGE_ROWS: EdgeLegendRow[] = [
   { color: '#8b8b99', dashed: false, thin: false, label: 'collection nesting' },
-  { color: '#7a7a8e', dashed: true,  thin: false, label: 'contains request' },
+  { color: '#7a7a8e', dashed: false, thin: true,  label: 'contains request' },
   { color: '#fbbf24', dashed: false, thin: false, label: 'request body model' },
   { color: '#34d399', dashed: false, thin: false, label: 'response model' },
   { color: '#4a9eff', dashed: false, thin: false, label: 'inherits' },
-  { color: '#9b59b6', dashed: true,  thin: false, label: 'mixin' },
+  { color: '#9b59b6', dashed: false, thin: false, label: 'mixin' },
   { color: '#2ecc71', dashed: false, thin: true,  label: 'field ref' },
 ];
 

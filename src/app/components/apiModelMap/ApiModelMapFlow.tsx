@@ -1,64 +1,21 @@
 'use client';
 
-import '@xyflow/react/dist/style.css';
-
 import { useEffect, useRef, useMemo, useCallback, useState } from 'react';
-import {
-  ReactFlow,
-  ReactFlowProvider,
-  Background,
-  Controls,
-  MiniMap,
-  useEdgesState,
-  useReactFlow,
-  useNodesInitialized,
-  type Node,
-  type Edge,
-  type NodeTypes,
-  type EdgeTypes,
-  type NodeMouseHandler,
-} from '@xyflow/react';
+import dynamic from 'next/dynamic';
 import { Modal, Button, Flex, Spin, Empty, App } from 'antd';
-import {
-  ApartmentOutlined,
-  PlusOutlined,
-  LoadingOutlined,
-  WarningOutlined,
-} from '@ant-design/icons';
+import { ApartmentOutlined, PlusOutlined } from '@ant-design/icons';
 
 import { useProjectStore } from '../../stores/projectStore';
 import { useCollectionStore, ROOT_REQUESTS_KEY } from '../../stores/collectionStore';
 import { useModelStore } from '../../stores/modelStore';
-import { buildApiModelMap } from '../../utils/apiModelMapLayout';
-import type {
-  CollectionNodeData,
-  RequestNodeData,
-  ModelNodeData,
-} from '../../utils/apiModelMapLayout';
-
-import CollectionNode from './CollectionNode';
-import RequestNode from './RequestNode';
-import ModelNode from './ModelNode';
-import LabeledEdge from './LabeledEdge';
-import { useForceLayout } from './useForceLayout';
-import { MapDetailPanel } from './MapDetailPanel';
-import { MapLegend } from './MapLegend';
 import { ModelFieldEditor } from '../ModelFieldEditor';
-import type { Collection, DataModel, ApiRequest } from '../../types';
+import type { DataModel, ApiRequest } from '../../types';
 
 // ---------------------------------------------------------------------------
-// Node types — defined outside component to prevent re-registration on render
+// Dynamic import — Sigma.js requires WebGL (browser only, no SSR)
 // ---------------------------------------------------------------------------
 
-const NODE_TYPES: NodeTypes = {
-  collectionNode: CollectionNode,
-  requestNode: RequestNode,
-  modelNode: ModelNode,
-};
-
-const EDGE_TYPES: EdgeTypes = {
-  labeledEdge: LabeledEdge,
-};
+const SigmaCanvas = dynamic(() => import('./SigmaCanvas'), { ssr: false });
 
 // ---------------------------------------------------------------------------
 // Types
@@ -69,239 +26,6 @@ export interface ApiModelMapModalProps {
   onClose: () => void;
 }
 
-type SelectedNodeType = 'collection' | 'request' | 'model';
-
-interface SelectedNodeInfo {
-  nodeId: string;
-  nodeType: SelectedNodeType;
-  nodeData: CollectionNodeData | RequestNodeData | ModelNodeData;
-}
-
-// ---------------------------------------------------------------------------
-// fitView timing constants (ms)
-// ---------------------------------------------------------------------------
-
-/** Delay after nodes are measured before initial fitView */
-const FIT_VIEW_INITIAL_DELAY = 50;
-
-/** Delay after Rust computation finishes before re-centering viewport */
-const FIT_VIEW_POST_COMPUTE_DELAY = 150;
-
-const FIT_VIEW_OPTIONS = { padding: 0.15 } as const;
-
-// ---------------------------------------------------------------------------
-// In-canvas overlay styles (extracted to avoid re-creation per render)
-// ---------------------------------------------------------------------------
-
-const OVERLAY_BASE: React.CSSProperties = {
-  position: 'absolute',
-  top: 12,
-  left: '50%',
-  transform: 'translateX(-50%)',
-  zIndex: 10,
-  borderRadius: 8,
-  padding: '8px 16px',
-  display: 'flex',
-  alignItems: 'center',
-  gap: 8,
-  backdropFilter: 'blur(8px)',
-};
-
-const COMPUTING_OVERLAY_STYLE: React.CSSProperties = {
-  ...OVERLAY_BASE,
-  background: 'rgba(10, 10, 15, 0.85)',
-  border: '1px solid var(--border)',
-};
-
-const ERROR_OVERLAY_STYLE: React.CSSProperties = {
-  ...OVERLAY_BASE,
-  background: 'rgba(30, 10, 10, 0.85)',
-  border: '1px solid rgba(255, 77, 79, 0.4)',
-};
-
-// ---------------------------------------------------------------------------
-// Inner canvas — wrapped in ReactFlowProvider by the modal
-// ---------------------------------------------------------------------------
-
-interface ApiModelMapFlowInnerProps {
-  collections: Collection[];
-  requestsByCollection: Map<string, ApiRequest[]>;
-  rootRequests: ApiRequest[];
-  models: DataModel[];
-  projectId: string | null;
-  onEditModel: (modelId: string) => void;
-  onDeleteModel: (modelId: string) => void;
-}
-
-function ApiModelMapFlowInner({
-  collections,
-  requestsByCollection,
-  rootRequests,
-  models,
-  projectId,
-  onEditModel,
-  onDeleteModel,
-}: ApiModelMapFlowInnerProps) {
-  const [selectedNode, setSelectedNode] = useState<SelectedNodeInfo | null>(null);
-
-  // Compute layout whenever source data changes (pure, no side effects)
-  const layout = useMemo(
-    () => buildApiModelMap(collections, requestsByCollection, rootRequests, models),
-    [collections, requestsByCollection, rootRequests, models],
-  );
-
-  // Force-directed simulation manages node positions
-  const { nodes, onNodesChange, isComputing, error: layoutError } = useForceLayout(
-    layout.nodes,
-    layout.edges,
-    projectId,
-  );
-
-  // ---- Robust fitView: waits for node measurement + computation ----
-  const { fitView } = useReactFlow();
-  const nodesInitialized = useNodesInitialized();
-  const prevComputing = useRef(false);
-
-  // Phase A: fitView once nodes are measured (initial circular positions).
-  // Only fires while computing — if Rust already finished, Phase B handles it.
-  // Includes isComputing in deps so the timer is canceled if computation
-  // finishes before the delay elapses, preventing a race with Phase B.
-  useEffect(() => {
-    if (!nodesInitialized || nodes.length === 0 || !isComputing) return;
-
-    const timer = setTimeout(() => fitView(FIT_VIEW_OPTIONS), FIT_VIEW_INITIAL_DELAY);
-    return () => clearTimeout(timer);
-  }, [nodesInitialized, isComputing, nodes.length, fitView]);
-
-  // Phase B: re-fitView when Rust computation finishes.
-  // Single control path: always update prevComputing, always clean up.
-  useEffect(() => {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-
-    if (prevComputing.current && !isComputing && nodes.length > 0) {
-      timer = setTimeout(() => fitView(FIT_VIEW_OPTIONS), FIT_VIEW_POST_COMPUTE_DELAY);
-    }
-    prevComputing.current = isComputing;
-
-    return () => {
-      if (timer !== undefined) clearTimeout(timer);
-    };
-  }, [isComputing, nodes.length, fitView]);
-
-  // Edges are static — synced from layout
-  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(layout.edges);
-
-  useEffect(() => {
-    setEdges(layout.edges);
-  }, [layout, setEdges]);
-
-  // Clear selection when data reloads (e.g. after delete)
-  useEffect(() => {
-    setSelectedNode(null);
-  }, [models]);
-
-  const handleNodeClick: NodeMouseHandler = useCallback((_event, node) => {
-    const rawType = node.type ?? '';
-    let nodeType: SelectedNodeType | null = null;
-
-    if (rawType === 'collectionNode') nodeType = 'collection';
-    else if (rawType === 'requestNode') nodeType = 'request';
-    else if (rawType === 'modelNode') nodeType = 'model';
-
-    if (!nodeType) return;
-
-    setSelectedNode({
-      nodeId: node.id,
-      nodeType,
-      nodeData: node.data as CollectionNodeData | RequestNodeData | ModelNodeData,
-    });
-  }, []);
-
-  const handlePaneClick = useCallback(() => {
-    setSelectedNode(null);
-  }, []);
-
-  const handleClosePanel = useCallback(() => {
-    setSelectedNode(null);
-  }, []);
-
-  // MiniMap node colors matching circular node themes
-  const miniMapNodeColor = useCallback((n: { type?: string }) => {
-    if (n.type === 'collectionNode') return '#fbbf24'; // amber
-    if (n.type === 'requestNode') return '#34d399';    // green
-    if (n.type === 'modelNode') return '#4a9eff';      // blue
-    return '#1e1e2a';
-  }, []);
-
-  return (
-    <div style={{ width: '100%', height: '100%', position: 'relative' }}>
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        nodeTypes={NODE_TYPES}
-        edgeTypes={EDGE_TYPES}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        onNodeClick={handleNodeClick}
-        onPaneClick={handlePaneClick}
-        fitView
-        fitViewOptions={{ padding: 0.15 }}
-        minZoom={0.1}
-        maxZoom={3}
-        defaultEdgeOptions={{ type: 'labeledEdge' }}
-        style={{ background: 'var(--bg-primary)' }}
-      >
-        <Background color="rgba(255,255,255,0.03)" gap={20} size={1} />
-        <Controls position="top-right" />
-        <MiniMap
-          position="bottom-right"
-          nodeColor={miniMapNodeColor}
-          maskColor="rgba(10,10,15,0.75)"
-          style={{
-            border: '1px solid var(--border)',
-            borderRadius: 6,
-          }}
-        />
-      </ReactFlow>
-
-      {/* In-canvas computing overlay — visible inside the modal */}
-      {isComputing && (
-        <div style={COMPUTING_OVERLAY_STYLE}>
-          <LoadingOutlined style={{ color: '#fbbf24', fontSize: 14 }} />
-          <span style={{ color: '#fbbf24', fontSize: 12, fontWeight: 500 }}>
-            Computing layout...
-          </span>
-        </div>
-      )}
-
-      {/* Error overlay — shows when Rust invoke fails */}
-      {layoutError && !isComputing && (
-        <div style={ERROR_OVERLAY_STYLE}>
-          <WarningOutlined style={{ color: '#ff4d4f', fontSize: 14 }} />
-          <span style={{ color: '#ff4d4f', fontSize: 12, fontWeight: 500 }}>
-            Layout failed — {layoutError}
-          </span>
-        </div>
-      )}
-
-      {/* Detail panel — absolute overlay on node selection */}
-      {selectedNode && (
-        <MapDetailPanel
-          nodeType={selectedNode.nodeType}
-          nodeData={selectedNode.nodeData}
-          nodeId={selectedNode.nodeId}
-          onClose={handleClosePanel}
-          onEditModel={onEditModel}
-          onDeleteModel={onDeleteModel}
-        />
-      )}
-
-      {/* Legend — bottom-left absolute overlay */}
-      <MapLegend />
-    </div>
-  );
-}
-
 // ---------------------------------------------------------------------------
 // Main exported modal component
 // ---------------------------------------------------------------------------
@@ -309,7 +33,6 @@ function ApiModelMapFlowInner({
 export function ApiModelMapModal({ open, onClose }: ApiModelMapModalProps) {
   const { message, modal } = App.useApp();
 
-  // Narrow selectors — avoid subscribing to the entire store object
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const collections = useCollectionStore((s) => s.collections);
   const requestsMap = useCollectionStore((s) => s.requests);
@@ -330,10 +53,7 @@ export function ApiModelMapModal({ open, onClose }: ApiModelMapModalProps) {
   // runId guard — stale load protection
   const loadIdCounter = useRef(0);
 
-  // ---------------------------------------------------------------------------
-  // Data loading effect — fires when modal opens or active project changes
-  // ---------------------------------------------------------------------------
-
+  // Data loading effect
   useEffect(() => {
     if (!open || !activeProjectId) return;
 
@@ -343,15 +63,14 @@ export function ApiModelMapModal({ open, onClose }: ApiModelMapModalProps) {
     async function load() {
       setDataLoading(true);
       try {
-        // Step 1: load collections (populates store)
         await loadCollections(activeProjectId!);
-
         if (cancelled || loadIdCounter.current !== loadId) return;
 
-        // Step 2: read collections from store state after load
-        const currentCollections = useCollectionStore.getState().collections;
+        // Read latest collections and filter by active project to guard
+        // against a TOCTOU race if activeProjectId changed during await.
+        const currentCollections = useCollectionStore.getState().collections
+          .filter((c) => c.project_id === activeProjectId);
 
-        // Step 3: fan-out — load requests for every collection + root requests
         await Promise.all([
           ...currentCollections.map((c) => loadRequests(c.id)),
           loadRootRequests(activeProjectId!),
@@ -378,10 +97,7 @@ export function ApiModelMapModal({ open, onClose }: ApiModelMapModalProps) {
     };
   }, [open, activeProjectId, loadCollections, loadRequests, loadRootRequests, loadModels, message]);
 
-  // ---------------------------------------------------------------------------
-  // Derived data — build request maps for the canvas
-  // ---------------------------------------------------------------------------
-
+  // Derived data
   const requestsByCollection = useMemo<Map<string, ApiRequest[]>>(() => {
     const result = new Map<string, ApiRequest[]>();
     for (const [key, reqs] of requestsMap.entries()) {
@@ -397,10 +113,7 @@ export function ApiModelMapModal({ open, onClose }: ApiModelMapModalProps) {
     [requestsMap],
   );
 
-  // ---------------------------------------------------------------------------
   // Model editor callbacks
-  // ---------------------------------------------------------------------------
-
   const openCreate = useCallback(() => {
     setEditingModel(null);
     setEditorOpen(true);
@@ -443,13 +156,9 @@ export function ApiModelMapModal({ open, onClose }: ApiModelMapModalProps) {
     [activeProjectId, deleteModel, modal, message],
   );
 
-  // ---------------------------------------------------------------------------
   // Render body
-  // ---------------------------------------------------------------------------
-
   const isLoading = dataLoading || modelsLoading;
-  const hasData =
-    collections.length > 0 || models.length > 0;
+  const hasData = collections.length > 0 || models.length > 0 || rootRequests.length > 0;
 
   const bodyContent = !activeProjectId ? (
     <Flex justify="center" align="center" style={{ height: '100%' }}>
@@ -468,22 +177,16 @@ export function ApiModelMapModal({ open, onClose }: ApiModelMapModalProps) {
       </Empty>
     </Flex>
   ) : (
-    <ReactFlowProvider>
-      <ApiModelMapFlowInner
-        collections={collections}
-        requestsByCollection={requestsByCollection}
-        rootRequests={rootRequests}
-        models={models}
-        projectId={activeProjectId}
-        onEditModel={openEdit}
-        onDeleteModel={handleDeleteModel}
-      />
-    </ReactFlowProvider>
+    <SigmaCanvas
+      collections={collections}
+      requestsByCollection={requestsByCollection}
+      rootRequests={rootRequests}
+      models={models}
+      projectId={activeProjectId}
+      onEditModel={openEdit}
+      onDeleteModel={handleDeleteModel}
+    />
   );
-
-  // ---------------------------------------------------------------------------
-  // Modal
-  // ---------------------------------------------------------------------------
 
   return (
     <>

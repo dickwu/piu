@@ -6,7 +6,7 @@ import type {
   CollectionNodeData,
   RequestNodeData,
   ModelNodeData,
-} from '../../utils/apiModelMapLayout';
+} from '../../utils/apiModelMapGraph';
 
 const METHOD_COLORS: Record<string, string> = {
   GET: '#34d399',
@@ -26,7 +26,7 @@ function hexToRgba(hex: string, alpha: number): string {
 }
 
 /**
- * Extract the raw entity ID from a React Flow node ID.
+ * Extract the raw entity ID from a graph node ID.
  * e.g. "model:abc123" → "abc123", "col:xyz" → "xyz"
  */
 function extractEntityId(nodeId: string): string {

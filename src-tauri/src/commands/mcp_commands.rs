@@ -21,7 +21,11 @@ fn get_mutex() -> &'static Mutex<Option<McpServerHandle>> {
 }
 
 #[tauri::command]
-pub async fn start_mcp_server(app: tauri::AppHandle, port: u16, api_key: Option<String>) -> Result<String, String> {
+pub async fn start_mcp_server(
+    app: tauri::AppHandle,
+    port: u16,
+    api_key: Option<String>,
+) -> Result<String, String> {
     let mutex = get_mutex();
     let mut guard = mutex.lock().await;
     crate::mcp::set_app_handle(app);

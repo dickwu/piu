@@ -1,7 +1,7 @@
 mod changelog_commands;
 pub(crate) mod collection_commands;
 mod environment_commands;
-pub(crate) mod graph_layout_commands;
+pub(crate) mod graph_commands;
 mod mcp_commands;
 mod model_commands;
 mod project_commands;
@@ -11,7 +11,7 @@ mod sync_commands;
 pub use changelog_commands::*;
 pub use collection_commands::*;
 pub use environment_commands::*;
-pub use graph_layout_commands::*;
+pub use graph_commands::*;
 pub use mcp_commands::*;
 pub use model_commands::*;
 pub use project_commands::*;

@@ -6,7 +6,7 @@ import type {
   CollectionNodeData,
   RequestNodeData,
   ModelNodeData,
-} from '../../utils/apiModelMapGraph';
+} from '../../utils/apiModelMapLayout';
 
 const METHOD_COLORS: Record<string, string> = {
   GET: '#34d399',

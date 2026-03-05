@@ -13,7 +13,7 @@ pub mod app_state;
 pub mod changelog;
 pub mod collections;
 pub mod environments;
-pub mod layout_cache;
+pub mod graph;
 pub mod models;
 pub mod projects;
 pub mod requests;
@@ -51,7 +51,7 @@ pub async fn init_db(db_path: &Path) -> DbResult<()> {
         changelog::get_table_sql(),
         app_state::get_table_sql(),
         models::get_table_sql(),
-        layout_cache::get_table_sql(),
+        graph::get_table_sql(),
     ))
     .await?;
 
@@ -329,8 +329,11 @@ pub use models::{
     validate_model_refs,
 };
 
-// Re-export layout_cache functions
-pub use layout_cache::{clear_layout_cache, get_cached_layout, save_layout_cache};
-
 // Re-export app_state functions
 pub use app_state::{get_app_state, set_app_state};
+
+// Re-export graph functions
+pub use graph::{
+    clear_project_graph, list_graph_edges, list_graph_nodes, replace_project_graph,
+    update_node_positions,
+};

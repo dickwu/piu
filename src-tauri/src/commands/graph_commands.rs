@@ -24,14 +24,38 @@ struct EdgeStyle {
 
 fn edge_style(edge_type: &str) -> EdgeStyle {
     match edge_type {
-        "col-subcol" => EdgeStyle { stroke: "#8b8b99", stroke_width: 1.2 },
-        "col-request" => EdgeStyle { stroke: "#7a7a8e", stroke_width: 0.8 },
-        "req-reqModel" => EdgeStyle { stroke: "#fbbf24", stroke_width: 1.5 },
-        "req-resModel" => EdgeStyle { stroke: "#34d399", stroke_width: 1.5 },
-        "model-inherits" => EdgeStyle { stroke: "#4a9eff", stroke_width: 1.5 },
-        "model-mixin" => EdgeStyle { stroke: "#9b59b6", stroke_width: 1.0 },
-        "model-fieldRef" => EdgeStyle { stroke: "#2ecc71", stroke_width: 0.8 },
-        _ => EdgeStyle { stroke: "#555", stroke_width: 1.0 },
+        "col-subcol" => EdgeStyle {
+            stroke: "#8b8b99",
+            stroke_width: 1.2,
+        },
+        "col-request" => EdgeStyle {
+            stroke: "#7a7a8e",
+            stroke_width: 0.8,
+        },
+        "req-reqModel" => EdgeStyle {
+            stroke: "#fbbf24",
+            stroke_width: 1.5,
+        },
+        "req-resModel" => EdgeStyle {
+            stroke: "#34d399",
+            stroke_width: 1.5,
+        },
+        "model-inherits" => EdgeStyle {
+            stroke: "#4a9eff",
+            stroke_width: 1.5,
+        },
+        "model-mixin" => EdgeStyle {
+            stroke: "#9b59b6",
+            stroke_width: 1.0,
+        },
+        "model-fieldRef" => EdgeStyle {
+            stroke: "#2ecc71",
+            stroke_width: 0.8,
+        },
+        _ => EdgeStyle {
+            stroke: "#555",
+            stroke_width: 1.0,
+        },
     }
 }
 
@@ -310,35 +334,36 @@ fn build_graph(
     // -----------------------------------------------------------------------
     let node_ids: HashSet<String> = nodes.iter().map(|n| n.id.clone()).collect();
 
-    let mut add_edge = |source: &str, target: &str, edge_type: &str, label_override: Option<&str>| {
-        let key = format!("{}|{}|{}", source, target, edge_type);
-        if seen_edges.contains(&key) {
-            return;
-        }
-        if !node_ids.contains(source) || !node_ids.contains(target) {
-            return;
-        }
-        seen_edges.insert(key.clone());
+    let mut add_edge =
+        |source: &str, target: &str, edge_type: &str, label_override: Option<&str>| {
+            let key = format!("{}|{}|{}", source, target, edge_type);
+            if seen_edges.contains(&key) {
+                return;
+            }
+            if !node_ids.contains(source) || !node_ids.contains(target) {
+                return;
+            }
+            seen_edges.insert(key.clone());
 
-        let style = edge_style(edge_type);
-        let lbl = label_override.unwrap_or_else(|| edge_label(edge_type));
+            let style = edge_style(edge_type);
+            let lbl = label_override.unwrap_or_else(|| edge_label(edge_type));
 
-        let properties = serde_json::json!({
-            "stroke": style.stroke,
-            "strokeWidth": style.stroke_width,
-        });
+            let properties = serde_json::json!({
+                "stroke": style.stroke,
+                "strokeWidth": style.stroke_width,
+            });
 
-        edges.push(GraphEdge {
-            id: key,
-            project_id: project_id.to_string(),
-            source_id: source.to_string(),
-            target_id: target.to_string(),
-            edge_type: edge_type.to_string(),
-            label: lbl.to_string(),
-            properties: properties.to_string(),
-            created_at: now,
-        });
-    };
+            edges.push(GraphEdge {
+                id: key,
+                project_id: project_id.to_string(),
+                source_id: source.to_string(),
+                target_id: target.to_string(),
+                edge_type: edge_type.to_string(),
+                label: lbl.to_string(),
+                properties: properties.to_string(),
+                created_at: now,
+            });
+        };
 
     // -----------------------------------------------------------------------
     // Edges: collection → sub-collection
@@ -444,10 +469,7 @@ fn build_graph(
         for field in parse_model_fields(&model.fields) {
             if let Some(ref_id) = field.get("ref_model_id").and_then(|v| v.as_str()) {
                 if model_ids.contains(ref_id) {
-                    let field_name = field
-                        .get("name")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
+                    let field_name = field.get("name").and_then(|v| v.as_str()).unwrap_or("");
                     add_edge(
                         &format!("model:{}", model.id),
                         &format!("model:{}", ref_id),
@@ -520,9 +542,7 @@ pub async fn build_project_graph(project_id: String) -> Result<ProjectGraphData,
 }
 
 #[tauri::command]
-pub async fn save_graph_positions(
-    positions: Vec<NodePositionUpdate>,
-) -> Result<(), String> {
+pub async fn save_graph_positions(positions: Vec<NodePositionUpdate>) -> Result<(), String> {
     crate::db::update_node_positions(&positions)
         .await
         .map_err(|e| e.to_string())

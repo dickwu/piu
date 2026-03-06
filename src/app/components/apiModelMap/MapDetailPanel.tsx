@@ -1,7 +1,7 @@
 'use client';
 
 import { Button, Flex, Tag } from 'antd';
-import { CloseOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
+import { CloseOutlined, EditOutlined, DeleteOutlined, SendOutlined } from '@ant-design/icons';
 import type {
   CollectionNodeData,
   RequestNodeData,
@@ -42,6 +42,7 @@ export interface MapDetailPanelProps {
   onClose: () => void;
   onEditModel?: (modelId: string) => void;
   onDeleteModel?: (modelId: string) => void;
+  onOpenRequest?: (requestId: string) => void;
 }
 
 const panelStyle: React.CSSProperties = {
@@ -122,7 +123,7 @@ function CollectionDetail({ data }: { data: CollectionNodeData }) {
   );
 }
 
-function RequestDetail({ data }: { data: RequestNodeData }) {
+function RequestDetail({ data, onOpen }: { data: RequestNodeData; onOpen?: () => void }) {
   const normalizedMethod = data.method.toUpperCase();
   const methodColor = METHOD_COLORS[normalizedMethod] ?? DEFAULT_METHOD_COLOR;
   const methodBg = hexToRgba(methodColor, 0.15);
@@ -201,6 +202,18 @@ function RequestDetail({ data }: { data: RequestNodeData }) {
             {description}
           </div>
         </div>
+      )}
+
+      {onOpen && (
+        <Button
+          size="small"
+          type="primary"
+          icon={<SendOutlined />}
+          onClick={onOpen}
+          block
+        >
+          Open in Editor
+        </Button>
       )}
     </>
   );
@@ -355,8 +368,9 @@ export function MapDetailPanel({
   onClose,
   onEditModel,
   onDeleteModel,
+  onOpenRequest,
 }: MapDetailPanelProps) {
-  const modelId = nodeId ? extractEntityId(nodeId) : null;
+  const entityId = nodeId ? extractEntityId(nodeId) : null;
 
   return (
     <div style={panelStyle}>
@@ -386,13 +400,16 @@ export function MapDetailPanel({
       )}
 
       {nodeType === 'request' && (
-        <RequestDetail data={nodeData as RequestNodeData} />
+        <RequestDetail
+          data={nodeData as RequestNodeData}
+          onOpen={onOpenRequest && entityId ? () => onOpenRequest(entityId) : undefined}
+        />
       )}
 
       {nodeType === 'model' && (
         <ModelDetail
           data={nodeData as ModelNodeData}
-          modelId={modelId}
+          modelId={entityId}
           onEdit={onEditModel}
           onDelete={onDeleteModel}
         />

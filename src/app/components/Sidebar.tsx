@@ -11,7 +11,6 @@ import {
   SettingOutlined,
   HistoryOutlined,
   SwapOutlined,
-  DatabaseOutlined,
   HomeOutlined,
 } from '@ant-design/icons';
 import { useState, useCallback, useMemo, useEffect } from 'react';
@@ -25,7 +24,6 @@ import { CollectionFormModal } from './CollectionFormModal';
 import { RequestFormModal } from './RequestFormModal';
 import { ProjectHistoryModal } from './CollectionHistoryModal';
 import { MoveRequestModal } from './MoveRequestModal';
-import { ApiModelMapModal } from './apiModelMap/ApiModelMapFlow';
 
 const METHOD_COLORS: Record<string, string> = {
   GET: '#34d399',
@@ -83,9 +81,6 @@ export function Sidebar() {
   // Move request modal state
   const [moveModalOpen, setMoveModalOpen] = useState(false);
   const [moveRequest, setMoveRequest] = useState<ApiRequest | null>(null);
-
-  // Model manager drawer state
-  const [modelManagerOpen, setModelManagerOpen] = useState(false);
 
   // Load requests for all collections
   useEffect(() => {
@@ -306,6 +301,8 @@ export function Sidebar() {
     ],
   );
 
+  const openRequestModal = useRequestEditorStore((s) => s.openRequestModal);
+
   const handleSelectRequest = useCallback(
     (request: ApiRequest) => {
       setSelectedRequest(request.id);
@@ -314,8 +311,9 @@ export function Sidebar() {
       }
       const config = parseConfig(request.config);
       setActiveRequest(request.id, config);
+      openRequestModal();
     },
-    [setSelectedRequest, setSelectedCollection, setActiveRequest],
+    [setSelectedRequest, setSelectedCollection, setActiveRequest, openRequestModal],
   );
 
   // --- Computed values for modal initial props ---
@@ -554,14 +552,6 @@ export function Sidebar() {
             Collections
           </span>
           <div className="flex items-center gap-1">
-            <Tooltip title="Model Manager" placement="top" mouseEnterDelay={0.5}>
-              <Button
-                size="small"
-                type="text"
-                icon={<DatabaseOutlined />}
-                onClick={() => setModelManagerOpen(true)}
-              />
-            </Tooltip>
             <Tooltip title="History" placement="top" mouseEnterDelay={0.5}>
               <Button
                 size="small"
@@ -662,10 +652,6 @@ export function Sidebar() {
         onEmptyCollection={handleEmptyCollection}
       />
 
-      <ApiModelMapModal
-        open={modelManagerOpen}
-        onClose={() => setModelManagerOpen(false)}
-      />
     </>
   );
 }

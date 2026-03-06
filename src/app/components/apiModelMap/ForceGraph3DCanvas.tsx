@@ -72,6 +72,7 @@ export interface ForceGraph3DCanvasProps {
   refreshKey: number;
   onEditModel: (modelId: string) => void;
   onDeleteModel: (modelId: string) => void;
+  onOpenRequest?: (requestId: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -83,6 +84,7 @@ export default function ForceGraph3DCanvas({
   refreshKey,
   onEditModel,
   onDeleteModel,
+  onOpenRequest,
 }: ForceGraph3DCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const positionsSavedRef = useRef(false);
@@ -353,6 +355,7 @@ export default function ForceGraph3DCanvas({
           onClose={handleClosePanel}
           onEditModel={onEditModel}
           onDeleteModel={onDeleteModel}
+          onOpenRequest={onOpenRequest}
         />
       )}
 

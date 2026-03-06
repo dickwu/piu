@@ -140,8 +140,8 @@ export function RequestEditor() {
 
   return (
     <div
-      className="flex flex-col border-b"
-      style={{ borderColor: 'var(--border)', minHeight: '50%' }}
+      className="flex flex-col"
+      style={{ borderColor: 'var(--border)' }}
     >
       {/* URL Bar */}
       <div

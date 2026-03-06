@@ -3,8 +3,8 @@
 import { useEffect } from 'react';
 import { ProjectList } from './components/ProjectList';
 import { Sidebar } from './components/Sidebar';
-import { RequestEditor } from './components/RequestEditor';
-import { ResponseViewer } from './components/ResponseViewer';
+import { GraphCenterPanel } from './components/GraphCenterPanel';
+import { RequestDetailModal } from './components/RequestDetailModal';
 import { StatusBar } from './components/StatusBar';
 import { useCollectionStore } from './stores/collectionStore';
 import { useEnvironmentStore } from './stores/environmentStore';
@@ -181,14 +181,15 @@ export default function Home() {
         </aside>
 
         <main className="panel-content">
-          <RequestEditor />
-          <ResponseViewer />
+          <GraphCenterPanel />
         </main>
 
         <aside className="panel-sidebar panel-sidebar-right">
           <Sidebar />
         </aside>
       </div>
+
+      <RequestDetailModal />
 
       <footer className="app-footer">
         <StatusBar />

@@ -56,7 +56,7 @@ const copyBtnStyle: React.CSSProperties = {
   position: 'absolute',
   top: 4,
   right: 4,
-  color: '#7a7a8e',
+  color: '#8a8a9e',
 };
 
 const sectionLabel: React.CSSProperties = {
@@ -224,7 +224,7 @@ export function McpServerModal({ open, onClose }: McpServerModalProps) {
                 width: 8,
                 height: 8,
                 borderRadius: '50%',
-                background: status.running ? GREEN : '#7a7a8e',
+                background: status.running ? GREEN : '#8a8a9e',
                 display: 'inline-block',
               }}
             />
@@ -234,7 +234,7 @@ export function McpServerModal({ open, onClose }: McpServerModalProps) {
           </span>
           <CloseCircleOutlined
             style={{
-              color: '#7a7a8e',
+              color: '#8a8a9e',
               cursor: status.running ? 'pointer' : 'default',
               opacity: status.running ? 1 : 0.4,
               fontSize: 14,
@@ -378,7 +378,7 @@ export function McpServerModal({ open, onClose }: McpServerModalProps) {
                 </div>
                 <CloseOutlined
                   style={{
-                    color: '#7a7a8e',
+                    color: '#8a8a9e',
                     cursor: 'pointer',
                     fontSize: 10,
                     marginTop: 2,

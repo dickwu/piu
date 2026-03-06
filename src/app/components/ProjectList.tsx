@@ -139,7 +139,7 @@ export function ProjectList() {
                       <div
                         className="truncate"
                         style={{
-                          fontSize: 10,
+                          fontSize: 11,
                           color: 'var(--text-tertiary)',
                           fontFamily: 'var(--font-ui)',
                           marginTop: 1,
@@ -205,6 +205,7 @@ export function ProjectList() {
         open={showCreateModal}
         onOk={handleCreate}
         onCancel={() => setShowCreateModal(false)}
+        destroyOnHidden
         width={400}
       >
         <div className="flex flex-col gap-2">

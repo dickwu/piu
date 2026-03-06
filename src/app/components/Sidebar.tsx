@@ -384,7 +384,7 @@ export function Sidebar() {
             >
               <span
                 className={`method-pill method-pill-${method.toLowerCase()}`}
-                style={{ fontSize: 9, minWidth: 36 }}
+                style={{ fontSize: 10, minWidth: 36 }}
               >
                 {method}
               </span>
@@ -399,7 +399,7 @@ export function Sidebar() {
                 style={{
                   color: 'var(--text-tertiary)',
                   fontFamily: 'var(--font-code)',
-                  fontSize: 9,
+                  fontSize: 10,
                 }}
               >
                 v{req.version}
@@ -446,7 +446,7 @@ export function Sidebar() {
                     className="truncate"
                     style={{
                       color: 'var(--text-tertiary)',
-                      fontSize: 9,
+                      fontSize: 10,
                       maxWidth: 80,
                       fontFamily: 'var(--font-code)',
                     }}
@@ -456,7 +456,7 @@ export function Sidebar() {
                   </span>
                 )}
                 <div
-                  className="collection-item-actions ml-auto flex items-center gap-0.5"
+                  className="collection-item-actions ml-auto flex items-center gap-1"
                   onClick={(e) => e.stopPropagation()}
                 >
                   <Tooltip title="New Request" placement="top" mouseEnterDelay={0.5}>
@@ -464,7 +464,7 @@ export function Sidebar() {
                       size="small"
                       type="text"
                       icon={<PlusOutlined style={{ fontSize: 10 }} />}
-                      style={{ width: 18, height: 18, minWidth: 18, padding: 0 }}
+                      style={{ width: 22, height: 22, minWidth: 22, padding: 0 }}
                       onClick={(e) => {
                         e.stopPropagation();
                         openRequestCreate(col.id);
@@ -476,7 +476,7 @@ export function Sidebar() {
                       size="small"
                       type="text"
                       icon={<FolderOutlined style={{ fontSize: 10 }} />}
-                      style={{ width: 18, height: 18, minWidth: 18, padding: 0 }}
+                      style={{ width: 22, height: 22, minWidth: 22, padding: 0 }}
                       onClick={(e) => {
                         e.stopPropagation();
                         openCollectionCreate(col.id);
@@ -488,7 +488,7 @@ export function Sidebar() {
                       size="small"
                       type="text"
                       icon={<SettingOutlined style={{ fontSize: 10 }} />}
-                      style={{ width: 18, height: 18, minWidth: 18, padding: 0 }}
+                      style={{ width: 22, height: 22, minWidth: 22, padding: 0 }}
                       onClick={(e) => {
                         e.stopPropagation();
                         openCollectionEdit(col.id);
@@ -501,7 +501,7 @@ export function Sidebar() {
                       type="text"
                       danger
                       icon={<DeleteOutlined style={{ fontSize: 10 }} />}
-                      style={{ width: 18, height: 18, minWidth: 18, padding: 0 }}
+                      style={{ width: 22, height: 22, minWidth: 22, padding: 0 }}
                       onClick={(e) => {
                         e.stopPropagation();
                         deleteCollection(col.id);
@@ -515,7 +515,7 @@ export function Sidebar() {
                     style={{
                       color: 'var(--text-tertiary)',
                       fontFamily: 'var(--font-code)',
-                      fontSize: 9,
+                      fontSize: 10,
                     }}
                   >
                     v{col.version}

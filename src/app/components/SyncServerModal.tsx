@@ -135,7 +135,7 @@ function HostPanel() {
               width: 8,
               height: 8,
               borderRadius: '50%',
-              background: serverStatus.running ? BLUE : '#7a7a8e',
+              background: serverStatus.running ? BLUE : '#8a8a9e',
               display: 'inline-block',
             }}
           />
@@ -145,7 +145,7 @@ function HostPanel() {
         </span>
         <CloseCircleOutlined
           style={{
-            color: '#7a7a8e',
+            color: '#8a8a9e',
             cursor: serverStatus.running ? 'pointer' : 'default',
             opacity: serverStatus.running ? 1 : 0.4,
             fontSize: 14,
@@ -236,7 +236,7 @@ function HostPanel() {
               <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                 <span style={{ color: '#e2e2e8', fontFamily: 'var(--font-code)' }}>{joinKey}</span>
                 <CopyOutlined
-                  style={{ color: '#7a7a8e', cursor: 'pointer', fontSize: 11 }}
+                  style={{ color: '#8a8a9e', cursor: 'pointer', fontSize: 11 }}
                   onClick={() => copyText(joinKey, 'Join key')}
                 />
               </span>

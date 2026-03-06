@@ -30,7 +30,7 @@ interface EdgeLegendRow {
 
 const EDGE_ROWS: EdgeLegendRow[] = [
   { color: '#8b8b99', dashed: false, thin: false, label: 'collection nesting' },
-  { color: '#7a7a8e', dashed: false, thin: true,  label: 'contains request' },
+  { color: '#8a8a9e', dashed: false, thin: true,  label: 'contains request' },
   { color: '#fbbf24', dashed: false, thin: false, label: 'request body model' },
   { color: '#34d399', dashed: false, thin: false, label: 'response model' },
   { color: '#4a9eff', dashed: false, thin: false, label: 'inherits' },
@@ -50,7 +50,7 @@ const labelStyle = {
 };
 
 const sectionTitleStyle = {
-  fontSize: 9,
+  fontSize: 10,
   fontWeight: 600 as const,
   color: 'rgba(255,255,255,0.3)',
   textTransform: 'uppercase' as const,

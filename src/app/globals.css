@@ -17,7 +17,7 @@
   /* === Text: warm gray spectrum === */
   --text-primary: #e2e2e8;
   --text-secondary: #8b8b99;
-  --text-tertiary: #7a7a8e;
+  --text-tertiary: #8a8a9e;
 
   /* === Accent: warm coral === */
   --accent: #f97316;
@@ -94,7 +94,7 @@ body::before {
   inset: 0;
   z-index: 100;
   pointer-events: none;
-  opacity: 0.025;
+  opacity: 0.012;
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
   background-repeat: repeat;
   background-size: 256px 256px;
@@ -181,7 +181,7 @@ body::before {
   overflow: hidden;
   /* Subtle inset padding creates Apple-style floating panel feel */
   padding: 6px 6px 0;
-  gap: 1px;
+  gap: 2px;
 }
 
 .panel-sidebar {
@@ -445,7 +445,7 @@ input, textarea, [contenteditable="true"] {
 /* Environment count badge */
 .env-count-badge {
   font-family: var(--font-code);
-  font-size: 9px;
+  font-size: 10px;
   color: var(--text-tertiary);
   background: var(--bg-tertiary);
   padding: 1px 6px;

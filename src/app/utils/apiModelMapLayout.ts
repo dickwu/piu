@@ -29,7 +29,7 @@ export interface ModelNodeData extends Record<string, unknown> {
 
 export const EDGE_STYLES = {
   'col-subcol': { stroke: '#8b8b99', strokeWidth: 1.2 },
-  'col-request': { stroke: '#7a7a8e', strokeWidth: 0.8, strokeDasharray: '4 3' },
+  'col-request': { stroke: '#8a8a9e', strokeWidth: 0.8, strokeDasharray: '4 3' },
   'req-reqModel': { stroke: '#fbbf24', strokeWidth: 1.5 },
   'req-resModel': { stroke: '#34d399', strokeWidth: 1.5 },
   'model-inherits': { stroke: '#4a9eff', strokeWidth: 1.5 },

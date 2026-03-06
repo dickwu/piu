@@ -17,7 +17,7 @@ export function Providers({ children }: { children: ReactNode }) {
           colorBorderSecondary: '#2a2a38',
           colorText: '#e2e2e8',
           colorTextSecondary: '#8b8b99',
-          colorTextTertiary: '#7a7a8e',
+          colorTextTertiary: '#8a8a9e',
           colorSuccess: '#10b981',
           colorWarning: '#f59e0b',
           colorError: '#ef4444',

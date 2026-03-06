@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useCallback, useState } from 'react';
-import { Button, Progress, Select } from 'antd';
+import { App, Button, Progress, Select } from 'antd';
 import {
   CheckCircleOutlined,
   LoadingOutlined,
@@ -25,9 +25,11 @@ import { SyncServerModal } from './SyncServerModal';
 const UPDATE_CHECK_DELAY_MS = 3000;
 
 export function StatusBar() {
+  const { message } = App.useApp();
   const { status, currentVersion, setCurrentVersion, checkForUpdate, downloadAndInstall } =
     useUpdateStore();
   const checkedRef = useRef(false);
+  const prevStatusRef = useRef(status.state);
 
   const {
     environments,
@@ -75,6 +77,18 @@ export function StatusBar() {
     }
   }, [activeEnvironment, loadVariables]);
 
+  // Show message when manual update check completes
+  useEffect(() => {
+    const prev = prevStatusRef.current;
+    prevStatusRef.current = status.state;
+
+    if (prev === 'checking' && status.state === 'up_to_date') {
+      message.success(`v${currentVersion} is the latest version`);
+    } else if (prev === 'checking' && status.state === 'error') {
+      message.error('Failed to check for updates');
+    }
+  }, [status.state, currentVersion, message]);
+
   // Load current version on mount
   useEffect(() => {
     (async () => {
@@ -114,14 +128,38 @@ export function StatusBar() {
   }, [setSettingsProjectId]);
 
   const renderStatus = () => {
+    const linkStyle = {
+      padding: 0,
+      height: 'auto',
+      fontSize: 11,
+      lineHeight: '24px',
+    };
+
     switch (status.state) {
       case 'idle':
+        return (
+          <Button
+            type="link"
+            size="small"
+            icon={<ReloadOutlined />}
+            onClick={checkForUpdate}
+            style={{ ...linkStyle, color: 'var(--text-tertiary)' }}
+          >
+            Check for updates
+          </Button>
+        );
       case 'up_to_date':
         return (
-          <span className="flex items-center gap-1">
-            <CheckCircleOutlined style={{ color: 'var(--success)', fontSize: 11 }} />
-            <span>Up to date</span>
-          </span>
+          <Button
+            type="link"
+            size="small"
+            icon={<CheckCircleOutlined style={{ color: 'var(--success)' }} />}
+            onClick={checkForUpdate}
+            style={{ ...linkStyle, color: 'var(--text-tertiary)' }}
+            title="Click to check again"
+          >
+            Up to date
+          </Button>
         );
       case 'checking':
         return (
@@ -137,7 +175,7 @@ export function StatusBar() {
             size="small"
             icon={<DownloadOutlined />}
             onClick={downloadAndInstall}
-            style={{ padding: 0, height: 'auto', fontSize: 11, lineHeight: '24px', color: 'var(--accent)' }}
+            style={{ ...linkStyle, color: 'var(--accent)' }}
           >
             v{status.version} available
           </Button>
@@ -161,7 +199,7 @@ export function StatusBar() {
             size="small"
             icon={<ReloadOutlined />}
             onClick={handleRestart}
-            style={{ padding: 0, height: 'auto', fontSize: 11, lineHeight: '24px', color: 'var(--success)' }}
+            style={{ ...linkStyle, color: 'var(--success)' }}
           >
             Restart to apply v{status.version}
           </Button>
@@ -173,7 +211,7 @@ export function StatusBar() {
             size="small"
             icon={<WarningOutlined />}
             onClick={checkForUpdate}
-            style={{ padding: 0, height: 'auto', fontSize: 11, lineHeight: '24px', color: 'var(--warning)' }}
+            style={{ ...linkStyle, color: 'var(--warning)' }}
           >
             Retry update
           </Button>
@@ -195,7 +233,7 @@ export function StatusBar() {
         }}
       >
         {/* Left: env switch + settings */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           <Select
             size="small"
             style={{ width: 160, fontSize: 11 }}
@@ -265,7 +303,7 @@ export function StatusBar() {
                 width: 6,
                 height: 6,
                 borderRadius: '50%',
-                background: mcpRunning ? '#10b981' : '#7a7a8e',
+                background: mcpRunning ? '#10b981' : '#8a8a9e',
                 display: 'inline-block',
                 flexShrink: 0,
               }}
@@ -293,7 +331,7 @@ export function StatusBar() {
                 width: 6,
                 height: 6,
                 borderRadius: '50%',
-                background: syncRunning ? '#3b82f6' : '#7a7a8e',
+                background: syncRunning ? '#3b82f6' : '#8a8a9e',
                 display: 'inline-block',
                 flexShrink: 0,
               }}

@@ -31,8 +31,76 @@ The `skills/scripts/` directory contains reusable utilities:
   - `batch-models`, `batch-links` — bulk model creation and linking from JSON stdin
   - `overview <project_id>` — formatted project summary
   - `tool <name> '<json>'` — generic MCP tool call
+- **`skills/scripts/piu_tools.py`** — Extended MCP client with full tool coverage. Adds:
+  - `tree`, `get-collection-tree` — Full nested tree view (most comprehensive)
+  - `execute`, `verify` — Execute requests and batch-verify GET endpoints
+  - `sync-status`, `diff-sync` — Version tracking and repo diff comparison
+  - `changelog` — Audit trail queries
+  - `model-graph`, `model-hierarchy`, `model-mermaid` — Model visualization
+  - `validate` — Response validation against data models
+  - `activate-env`, `set-vars` — Full environment management
+  - `update-project`, `update-collection`, `delete-*` — Full CRUD for all entities
+  - `search` — Search requests by name/URL/method
 
 ## Workflow
+
+### Step 0: Re-Sync Detection (Version Update Check)
+
+For projects previously imported into PIU, check if the repo has changed before doing a full re-import.
+
+**0a. Check if project exists in PIU:**
+```bash
+python3 skills/scripts/piu_tools.py list-projects
+# Find project by name or source_repo_url
+```
+
+**0b. Compare commits (diff-sync):**
+```bash
+python3 skills/scripts/piu_tools.py diff-sync PROJECT_ID /path/to/repo
+```
+
+This returns:
+- `status`: `up_to_date` or `changes_detected`
+- `old_commit` / `new_commit`: commit SHAs
+- `route_changes`: which router files were added/modified/deleted
+- `stale_entities`: PIU entities whose commit differs from project
+
+**0c. Decision matrix:**
+
+| Scenario | Action |
+|----------|--------|
+| `up_to_date` | Skip re-sync, report "already synced" |
+| `changes_detected` + no route file changes | Update project commit only |
+| `changes_detected` + route files modified | Incremental sync (Step 0d) |
+| `changes_detected` + route files added/deleted | Full re-sync with diff (Step 0d) |
+| No previous import exists | Full import (proceed to Step 1) |
+
+**0d. Incremental sync pattern:**
+
+For modified route files only, re-extract routes and compare against existing PIU requests:
+
+```bash
+# 1. Get current PIU state
+python3 skills/scripts/piu_tools.py tree PROJECT_ID
+
+# 2. For each modified router file, extract new routes (framework-specific, see Step 2)
+
+# 3. Compare extracted routes vs PIU requests:
+#    - New routes not in PIU -> create via batch-requests
+#    - Routes in PIU but removed from code -> flag for deletion (confirm with user)
+#    - Routes with changed signatures -> update via batch-update-bodies
+
+# 4. Update project commit after sync
+python3 skills/scripts/piu_tools.py update-project '{"project_id":"PROJECT_ID","source_commit_id":"NEW_COMMIT"}'
+```
+
+**0e. Stale entity resolution:**
+
+For each stale entity from diff-sync:
+```bash
+# Check what changed for this entity
+python3 skills/scripts/piu_tools.py changelog '{"entity_type":"request","entity_id":"ENTITY_ID","limit":5}'
+```
 
 ### Step 1: Clone & Detect Framework
 
@@ -146,8 +214,8 @@ EOF
 For large imports (100+ routes), use this pattern:
 1. Write one JSON file per collection to a temp directory:
    ```
-   /tmp/piu-routes/users.json    → [{"collection_id":"...","name":"List Users","method":"GET","url":"/list"}, ...]
-   /tmp/piu-routes/auth.json     → [{"collection_id":"...","name":"Login","method":"POST","url":"/login"}, ...]
+   /tmp/piu-routes/users.json    -> [{"collection_id":"...","name":"List Users","method":"GET","url":"/list"}, ...]
+   /tmp/piu-routes/auth.json     -> [{"collection_id":"...","name":"Login","method":"POST","url":"/login"}, ...]
    ```
 2. Launch parallel haiku subagents, each processing one or more JSON files:
    ```bash
@@ -210,8 +278,8 @@ EOF
 
 For each collection group, launch a subagent that:
 1. Reads controller source files
-2. Extracts request body validation rules → creates `{EndpointName}Request` model
-3. Extracts response structure → creates `{EndpointName}Response` model
+2. Extracts request body validation rules -> creates `{EndpointName}Request` model
+3. Extracts response structure -> creates `{EndpointName}Response` model
 4. Sets `parent_model_id` / `mixin_model_ids` where appropriate (e.g., list endpoints mixin PaginationParams)
 5. Writes model definitions to `/tmp/piu-models/{collection}.json`
 
@@ -240,6 +308,28 @@ cat <<'EOF' | python3 skills/scripts/piu_mcp.py batch-links
 ]
 EOF
 ```
+
+### Step 3.7: Environment Setup
+
+After creating the project and environment, configure it properly for execution:
+
+**Set environment variables:**
+```bash
+python3 skills/scripts/piu_tools.py set-vars '{
+  "environment_id": "ENV_ID",
+  "variables": [
+    {"key": "token", "value": "your-auth-token", "enabled": true},
+    {"key": "userId", "value": "1", "enabled": true}
+  ]
+}'
+```
+
+**Activate the environment:**
+```bash
+python3 skills/scripts/piu_tools.py activate-env '{"environment_id":"ENV_ID","project_id":"PROJECT_ID"}'
+```
+
+This is required before `execute` or `verify` commands will work — they need an active environment with a host URL.
 
 ### Step 4: API Documentation Enrichment (Subagent Pattern)
 
@@ -439,6 +529,18 @@ python3 skills/scripts/piu_mcp.py tool get_request_models '{"request_id":"SAMPLE
 
 # 7. Resolve model fields — verify inheritance works
 python3 skills/scripts/piu_mcp.py resolve-fields MODEL_ID
+
+# 8. Full collection tree — most comprehensive view
+python3 skills/scripts/piu_tools.py tree PROJECT_ID
+
+# 9. Model mermaid diagram — visual documentation
+python3 skills/scripts/piu_tools.py model-mermaid PROJECT_ID
+
+# 10. Verify routes are executable (if backend is running)
+python3 skills/scripts/piu_tools.py verify PROJECT_ID
+
+# 11. Changelog — audit what was created during import
+python3 skills/scripts/piu_tools.py changelog '{"entity_type":"project","entity_id":"PROJECT_ID","limit":20}'
 ```
 
 **Verification checklist:**
@@ -453,6 +555,78 @@ python3 skills/scripts/piu_mcp.py resolve-fields MODEL_ID
 - [ ] Base/mixin models created for shared patterns (pagination, search, response wrapper)
 - [ ] POST/PUT/PATCH requests have requestModelId linked
 - [ ] Model fields match controller validation rules
+- [ ] Environment has correct host URL and is activated
+- [ ] Environment variables set for path params (userId, etc.)
+- [ ] GET endpoints return 2xx when backend is running
+- [ ] Model mermaid diagram generated for documentation
+- [ ] Changelog shows all expected create operations
+
+### Step 4.5: Route Verification (Execute & Validate)
+
+After enrichment, verify imported routes are reachable by executing them against the running backend.
+
+**Prerequisites:** The backend must be running locally and the environment must be activated with the correct host URL.
+
+**Batch verify all GET endpoints:**
+```bash
+python3 skills/scripts/piu_tools.py verify PROJECT_ID
+```
+
+This executes every GET request and reports pass/fail by status code.
+
+**Verify individual requests:**
+```bash
+python3 skills/scripts/piu_tools.py execute REQUEST_ID
+```
+
+**Validate responses against data models:**
+```bash
+# 1. Execute the request
+python3 skills/scripts/piu_tools.py execute REQUEST_ID > /tmp/response.json
+
+# 2. Validate response against linked model
+python3 skills/scripts/piu_tools.py validate '{"model_id":"RESPONSE_MODEL_ID","json_body":"{...}"}'
+```
+
+**For large projects (100+ routes), verify in batches using parallel subagents:**
+
+| Project Size | Verification Strategy |
+|-------------|----------------------|
+| < 30 GET routes | Single `verify` command |
+| 30-100 GET routes | Split into 3-4 collection groups, parallel verify |
+| 100+ GET routes | Skip batch verify, spot-check 5-10 critical endpoints |
+
+**Verification report template:**
+```
+### Route Verification
+
+- Total GET endpoints: <N>
+- Passed (2xx/3xx): <count>
+- Failed (4xx/5xx): <count>
+- Errors (connection/timeout): <count>
+
+Failed endpoints:
+- GET /path — 404 (may need auth or path params)
+- GET /other — 500 (server error, investigate)
+```
+
+### Step 4.8: Model Visualization
+
+Generate visual documentation of the data model relationships:
+
+**Mermaid class diagram:**
+```bash
+python3 skills/scripts/piu_tools.py model-mermaid PROJECT_ID
+```
+
+This returns a Mermaid `classDiagram` string showing inheritance (`<|--`), mixin (`<|..`), and field reference (`-->`) relationships. Include this in the final report.
+
+**Model relationship graph (JSON):**
+```bash
+python3 skills/scripts/piu_tools.py model-graph PROJECT_ID
+```
+
+Returns nodes (models) and edges (relationships) for programmatic analysis.
 
 ### Step 5: Cleanup & Report
 
@@ -488,11 +662,30 @@ Print a summary:
 - Request models: <count>
 - Response models: <count>
 - Linked: <count>/<total_requests> requests have model links
+
+### Sync Tracking:
+- Previous commit: <old_sha or "first import">
+- Current commit: <new_sha>
+- Stale entities: <count>
+
+### Model Visualization:
+```mermaid
+<mermaid_diagram_output>
+```
+
+### Verification (if backend was running):
+- GET endpoints tested: <count>
+- Passed: <count>
+- Failed: <count>
 ```
 
 Verify with:
 ```bash
 python3 skills/scripts/piu_mcp.py overview PROJECT_ID
+
+# Final comprehensive view
+python3 skills/scripts/piu_tools.py tree PROJECT_ID
+python3 skills/scripts/piu_tools.py sync-status PROJECT_ID
 ```
 
 ## Important Notes
@@ -503,3 +696,10 @@ python3 skills/scripts/piu_mcp.py overview PROJECT_ID
 - If the repo has a monorepo structure, ask the user which service to import
 - For TypeScript projects, prefer reading the actual route definitions over any OpenAPI/Swagger specs (those can be outdated)
 - For PHP Hyperf projects, `php bin/hyperf.php describe:routes` provides a complete route list as a quick cross-reference
+- For re-syncs, always run `diff-sync` first to avoid unnecessary full re-imports
+- Use `piu_tools.py tree` instead of `piu_mcp.py overview` for the most comprehensive project view
+- After sync, run `verify` to confirm endpoints are reachable (requires running backend)
+- Use `changelog` to audit what was created/modified during import
+- For large projects (500+ routes), verify only GET endpoints and spot-check POST/PUT
+- When re-syncing, update `source_commit_id` on all modified entities, not just the project
+- Use `model-mermaid` to include visual model documentation in sync reports

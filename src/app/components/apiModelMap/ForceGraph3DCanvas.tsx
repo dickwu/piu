@@ -96,7 +96,7 @@ export default function ForceGraph3DCanvas({
   const [error, setError] = useState<string | null>(null);
   const [hasCached, setHasCached] = useState(false);
   const [selectedNode, setSelectedNode] = useState<SelectedNodeInfo | null>(null);
-  const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
+  const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
 
   // Track container dimensions
   useEffect(() => {
@@ -259,7 +259,7 @@ export default function ForceGraph3DCanvas({
 
   if (!projectId) {
     return (
-      <Flex justify="center" align="center" style={{ width: '100%', height: '100%' }}>
+      <Flex justify="center" align="center" style={{ width: '100%', flex: 1, minHeight: 0 }}>
         <Empty description="No project selected." />
       </Flex>
     );
@@ -267,7 +267,7 @@ export default function ForceGraph3DCanvas({
 
   if (isLoading) {
     return (
-      <Flex justify="center" align="center" style={{ width: '100%', height: '100%' }}>
+      <Flex justify="center" align="center" style={{ width: '100%', flex: 1, minHeight: 0 }}>
         <Spin size="large" />
       </Flex>
     );
@@ -280,7 +280,7 @@ export default function ForceGraph3DCanvas({
         align="center"
         vertical
         gap={8}
-        style={{ width: '100%', height: '100%' }}
+        style={{ width: '100%', flex: 1, minHeight: 0 }}
       >
         <WarningOutlined style={{ color: '#ff4d4f', fontSize: 24 }} />
         <span style={{ color: '#ff4d4f', fontSize: 13 }}>
@@ -292,42 +292,49 @@ export default function ForceGraph3DCanvas({
 
   if (nodes.length === 0) {
     return (
-      <Flex justify="center" align="center" style={{ width: '100%', height: '100%' }}>
+      <Flex justify="center" align="center" style={{ width: '100%', flex: 1, minHeight: 0 }}>
         <Empty description="No collections or models yet." />
       </Flex>
     );
   }
 
   return (
-    <div ref={containerRef} style={{ width: '100%', height: '100%', position: 'relative' }}>
-      <ForceGraph3D
-        graphData={graphData}
-        width={dimensions.width}
-        height={dimensions.height}
-        backgroundColor="rgba(10, 10, 15, 1)"
-        nodeId="id"
-        nodeVal={nodeVal}
-        nodeColor={nodeColor}
-        nodeLabel=""
-        nodeThreeObjectExtend={true}
-        nodeThreeObject={nodeThreeObject}
-        linkSource="source"
-        linkTarget="target"
-        linkColor={linkColor}
-        linkWidth={linkWidth}
-        linkDirectionalArrowLength={3.5}
-        linkDirectionalArrowRelPos={1}
-        linkCurvature={0.15}
-        linkOpacity={0.6}
-        warmupTicks={hasCached ? 0 : 50}
-        cooldownTicks={hasCached ? 0 : 300}
-        d3AlphaDecay={0.02}
-        d3VelocityDecay={0.4}
-        onEngineStop={handleEngineStop}
-        onNodeClick={handleNodeClick}
-        onBackgroundClick={handleBackgroundClick}
-        showNavInfo={false}
-      />
+    <div ref={containerRef} style={{ width: '100%', flex: 1, minHeight: 0, position: 'relative', touchAction: 'none' }}>
+      {dimensions.width > 0 && dimensions.height > 0 && (
+        <div style={{ position: 'absolute', inset: 0, overflow: 'hidden' }}>
+        <ForceGraph3D
+          graphData={graphData}
+          width={dimensions.width}
+          height={dimensions.height}
+          backgroundColor="rgba(10, 10, 15, 1)"
+          controlType="orbit"
+          enableNavigationControls={true}
+          enableNodeDrag={true}
+          nodeId="id"
+          nodeVal={nodeVal}
+          nodeColor={nodeColor}
+          nodeLabel=""
+          nodeThreeObjectExtend={true}
+          nodeThreeObject={nodeThreeObject}
+          linkSource="source"
+          linkTarget="target"
+          linkColor={linkColor}
+          linkWidth={linkWidth}
+          linkDirectionalArrowLength={3.5}
+          linkDirectionalArrowRelPos={1}
+          linkCurvature={0.15}
+          linkOpacity={0.6}
+          warmupTicks={hasCached ? 0 : 50}
+          cooldownTicks={hasCached ? 0 : 300}
+          d3AlphaDecay={0.02}
+          d3VelocityDecay={0.4}
+          onEngineStop={handleEngineStop}
+          onNodeClick={handleNodeClick}
+          onBackgroundClick={handleBackgroundClick}
+          showNavInfo={false}
+        />
+        </div>
+      )}
 
       {isComputing && (
         <div style={COMPUTING_OVERLAY_STYLE}>

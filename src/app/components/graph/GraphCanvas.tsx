@@ -2,8 +2,9 @@
 
 import { useEffect, useRef, useCallback, useState } from 'react';
 import type { CSSProperties } from 'react';
-import { Canvas } from '@react-three/fiber';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
+import * as THREE from 'three';
 import { invoke } from '@tauri-apps/api/core';
 import { Flex, Spin, Empty } from 'antd';
 import { LoadingOutlined, WarningOutlined } from '@ant-design/icons';
@@ -125,6 +126,79 @@ function collectEdgeData(graph: Graph): GraphEdgeData[] {
     });
   });
   return edges;
+}
+
+// ---------------------------------------------------------------------------
+// CameraController — must live inside <Canvas> to use R3F hooks
+// ---------------------------------------------------------------------------
+
+function CameraController() {
+  const { camera } = useThree();
+  const controlsRef = useRef<any>(null);
+
+  const [flyTarget, setFlyTarget] = useState<THREE.Vector3 | null>(null);
+  const flyProgress = useRef(0);
+
+  const activeSearchIndex = useGraphStore((s) => s.activeSearchIndex);
+  const searchResults = useGraphStore((s) => s.searchResults);
+  const fitViewRequested = useGraphStore((s) => s.fitViewRequested);
+  const clearFitView = useGraphStore((s) => s.clearFitView);
+
+  // Trigger fly-to when active search result changes
+  useEffect(() => {
+    if (searchResults.length === 0) return;
+    const result = searchResults[activeSearchIndex];
+    if (!result) return;
+
+    const graph = useGraphStore.getState().graph;
+    if (!graph || !graph.hasNode(result.nodeId)) return;
+
+    const attrs = graph.getNodeAttributes(result.nodeId);
+    const x = typeof attrs.x === 'number' ? attrs.x : 0;
+    const y = typeof attrs.y === 'number' ? attrs.y : 0;
+    const z = typeof attrs.z === 'number' ? attrs.z : 0;
+
+    setFlyTarget(new THREE.Vector3(x, y, z));
+    flyProgress.current = 0;
+  }, [activeSearchIndex, searchResults]);
+
+  // Trigger fit-view reset when requested
+  useEffect(() => {
+    if (!fitViewRequested) return;
+    setFlyTarget(new THREE.Vector3(0, 0, 0));
+    flyProgress.current = 0;
+    clearFitView();
+  }, [fitViewRequested, clearFitView]);
+
+  useFrame((_state, delta) => {
+    if (!flyTarget || flyProgress.current >= 1) return;
+
+    flyProgress.current = Math.min(1, flyProgress.current + delta * 3);
+    const t = flyProgress.current;
+    // Ease-out cubic
+    const ease = 1 - Math.pow(1 - t, 3);
+
+    const controls = controlsRef.current;
+    if (controls?.target) {
+      controls.target.lerp(flyTarget, ease);
+      controls.update();
+    }
+
+    // Move camera closer — maintain direction, target distance of 80 units
+    const currentOffset = camera.position
+      .clone()
+      .sub(controls?.target ?? new THREE.Vector3())
+      .normalize()
+      .multiplyScalar(80);
+    const desiredPos = flyTarget.clone().add(currentOffset);
+    camera.position.lerp(desiredPos, ease * 0.5);
+
+    if (flyProgress.current >= 1) {
+      setFlyTarget(null);
+    }
+  });
+
+  return <OrbitControls ref={controlsRef} makeDefault enableDamping dampingFactor={0.1} />;
 }
 
 // ---------------------------------------------------------------------------
@@ -485,8 +559,7 @@ export default function GraphCanvas({
   }, [projectId]);
 
   const handleFitView = useCallback(() => {
-    // OrbitControls.reset() is not easily accessible from outside the Canvas.
-    // For now, this is a no-op placeholder. Phase 3 will add a controlsRef.
+    useGraphStore.getState().requestFitView();
   }, []);
 
   // ---------------------------------------------------------------------------
@@ -576,8 +649,8 @@ export default function GraphCanvas({
         <ambientLight intensity={0.6} />
         <directionalLight position={[200, 200, 200]} intensity={0.8} />
 
-        {/* Camera controls */}
-        <OrbitControls makeDefault enableDamping dampingFactor={0.1} />
+        {/* Camera controls + fly-to animation */}
+        <CameraController />
 
         {/* Graph geometry */}
         <GraphNodes

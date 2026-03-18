@@ -72,6 +72,11 @@ interface GraphStore {
   // --- Phase 3: Visual settings ---
   bloomEnabled: boolean;
   setBloomEnabled: (enabled: boolean) => void;
+
+  // --- Phase 3: Camera control ---
+  fitViewRequested: boolean;
+  requestFitView: () => void;
+  clearFitView: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -152,4 +157,9 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
   // Phase 3: Visual settings
   bloomEnabled: false,
   setBloomEnabled: (enabled) => set({ bloomEnabled: enabled }),
+
+  // Phase 3: Camera control
+  fitViewRequested: false,
+  requestFitView: () => set({ fitViewRequested: true }),
+  clearFitView: () => set({ fitViewRequested: false }),
 }));

@@ -17,7 +17,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { useUpdateStore } from '../stores/updateStore';
 import { useEnvironmentStore } from '../stores/environmentStore';
 import { useProjectStore } from '../stores/projectStore';
-import { useLayoutComputeStore } from '../stores/layoutComputeStore';
+import { useGraphStore } from '../stores/graphStore';
 import { ProjectSettingsModal } from './ProjectSettingsModal';
 import { McpServerModal } from './McpServerModal';
 import { SyncServerModal } from './SyncServerModal';
@@ -40,7 +40,7 @@ export function StatusBar() {
 
   const { activeProjectId, setSettingsProjectId, settingsProjectId } = useProjectStore();
 
-  const layoutComputing = useLayoutComputeStore((s) => s.isComputing);
+  const layoutComputing = useGraphStore((s) => s.isComputing);
 
   const [showSettings, setShowSettings] = useState(false);
   const [showMcp, setShowMcp] = useState(false);

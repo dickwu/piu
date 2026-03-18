@@ -38,7 +38,7 @@ export function GraphNodes({
 
   const sphereGeo = useMemo(() => new THREE.SphereGeometry(1, 16, 16), []);
   const material = useMemo(
-    () => new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 30 }),
+    () => new THREE.MeshBasicMaterial({ vertexColors: true }),
     [],
   );
 

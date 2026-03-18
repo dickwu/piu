@@ -20,6 +20,7 @@ import GraphToolbar from './GraphToolbar';
 import GraphTooltip from './GraphTooltip';
 import { MapDetailPanel } from '../apiModelMap/MapDetailPanel';
 import { MapLegend } from '../apiModelMap/MapLegend';
+import { GraphMinimap } from './GraphMinimap';
 import { useGraphStore } from '../../stores/graphStore';
 import {
   type RustProjectGraphData,
@@ -640,6 +641,7 @@ export default function GraphCanvas({
       )}
 
       <MapLegend />
+      <GraphMinimap />
     </div>
   );
 }

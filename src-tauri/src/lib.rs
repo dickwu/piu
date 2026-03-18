@@ -6,6 +6,7 @@ pub mod db;
 pub mod http;
 pub mod mcp;
 pub mod mcp_relations;
+pub mod openapi;
 pub mod sync;
 
 const APP_NAME: &str = "piu";

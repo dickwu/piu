@@ -196,7 +196,7 @@ export interface ExecutionProgress {
 }
 
 export interface DataChangedEvent {
-  entity_type: 'project' | 'collection' | 'request' | 'environment' | 'model';
+  entity_type: 'project' | 'collection' | 'request' | 'environment' | 'model' | 'spec';
   action: 'created' | 'updated' | 'deleted';
   entity_id: string | null;
   project_id: string | null;
@@ -288,4 +288,12 @@ export function parseSharedHeaders(json: string): KeyValuePair[] {
   } catch {
     return [];
   }
+}
+
+// OpenAPI spec types
+export interface OpenApiSpecResult {
+  spec_json: string;
+  generated_at: string;
+  endpoint_count: number;
+  schema_count: number;
 }

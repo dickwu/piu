@@ -32,7 +32,7 @@ export function GraphEdges({ edges }: GraphEdgesProps) {
 
   const cylinderGeo = useMemo(() => new THREE.CylinderGeometry(0.05, 0.05, 1, 4), []);
   const material = useMemo(
-    () => new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.6 }),
+    () => new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.6 }),
     [],
   );
 
@@ -46,8 +46,6 @@ export function GraphEdges({ edges }: GraphEdgesProps) {
   useEffect(() => {
     const mesh = meshRef.current;
     if (!mesh || edges.length === 0) return;
-
-    const colorAttr = new Float32Array(edges.length * 3);
 
     for (let i = 0; i < edges.length; i++) {
       const edge = edges[i];
@@ -70,16 +68,11 @@ export function GraphEdges({ edges }: GraphEdgesProps) {
       mesh.setMatrixAt(i, _dummy.matrix);
 
       _color.set(edge.color);
-      colorAttr[i * 3] = _color.r;
-      colorAttr[i * 3 + 1] = _color.g;
-      colorAttr[i * 3 + 2] = _color.b;
+      mesh.setColorAt(i, _color);
     }
 
     mesh.instanceMatrix.needsUpdate = true;
-    mesh.geometry.setAttribute(
-      'instanceColor',
-      new THREE.InstancedBufferAttribute(colorAttr, 3),
-    );
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     mesh.count = edges.length;
   }, [edges]);
 

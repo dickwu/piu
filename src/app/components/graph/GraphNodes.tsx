@@ -38,7 +38,7 @@ export function GraphNodes({
 
   const sphereGeo = useMemo(() => new THREE.SphereGeometry(1, 16, 16), []);
   const material = useMemo(
-    () => new THREE.MeshBasicMaterial({ vertexColors: true }),
+    () => new THREE.MeshBasicMaterial(),
     [],
   );
 
@@ -52,8 +52,6 @@ export function GraphNodes({
   useEffect(() => {
     const mesh = meshRef.current;
     if (!mesh || nodes.length === 0) return;
-
-    const colorAttr = new Float32Array(nodes.length * 3);
 
     for (let i = 0; i < nodes.length; i++) {
       const node = nodes[i];
@@ -69,16 +67,12 @@ export function GraphNodes({
       const dimFactor = inPath ? 1.0 : 0.25;
 
       _color.set(node.color);
-      colorAttr[i * 3] = _color.r * dimFactor;
-      colorAttr[i * 3 + 1] = _color.g * dimFactor;
-      colorAttr[i * 3 + 2] = _color.b * dimFactor;
+      _color.multiplyScalar(dimFactor);
+      mesh.setColorAt(i, _color);
     }
 
     mesh.instanceMatrix.needsUpdate = true;
-    mesh.geometry.setAttribute(
-      'instanceColor',
-      new THREE.InstancedBufferAttribute(colorAttr, 3),
-    );
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     mesh.count = nodes.length;
   }, [nodes, visibleNodeIds, pathNodeIds]);
 

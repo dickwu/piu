@@ -20,6 +20,44 @@ export interface CommunityInfo {
   id: number;
   size: number;
   color: string;
+  summary: string; // auto-generated description
+}
+
+function generateCommunitySummary(graph: Graph, communityRank: number): string {
+  let collections = 0;
+  let requests = 0;
+  let models = 0;
+  const methods: Record<string, number> = {};
+  let primaryCollection = '';
+
+  graph.forEachNode((_id, attrs) => {
+    if ((attrs.community_rank as number) !== communityRank) return;
+    const entityType = attrs.entity_type as string;
+    if (entityType === 'collection') {
+      collections++;
+      if (!primaryCollection) primaryCollection = attrs.label as string;
+    } else if (entityType === 'request') {
+      requests++;
+      const props = (attrs.properties ?? {}) as Record<string, unknown>;
+      const method = ((props.method as string) ?? 'GET').toUpperCase();
+      methods[method] = (methods[method] ?? 0) + 1;
+    } else if (entityType === 'model') {
+      models++;
+    }
+  });
+
+  // Find dominant method
+  const sortedMethods = Object.entries(methods).sort((a, b) => b[1] - a[1]);
+  const dominant = sortedMethods[0];
+  const methodNote = dominant && dominant[1] > requests * 0.5 ? ` (${dominant[0]}-heavy)` : '';
+
+  const parts: string[] = [];
+  if (collections > 0) parts.push(`${collections} collection${collections > 1 ? 's' : ''}`);
+  if (requests > 0) parts.push(`${requests} request${requests > 1 ? 's' : ''}${methodNote}`);
+  if (models > 0) parts.push(`${models} model${models > 1 ? 's' : ''}`);
+
+  const name = primaryCollection || `Cluster ${communityRank}`;
+  return `${name}: ${parts.join(', ')}`;
 }
 
 /**
@@ -58,7 +96,13 @@ export function assignCommunities(graph: Graph): CommunityInfo[] {
     graph.setNodeAttribute(node, 'community_color', COMMUNITY_PALETTE[rank % COMMUNITY_PALETTE.length]);
   });
 
-  return sorted;
+  // Generate summaries for each community (after node attributes are assigned)
+  const result = sorted.map((c, rank) => ({
+    ...c,
+    summary: generateCommunitySummary(graph, rank),
+  }));
+
+  return result;
 }
 
 // ---------------------------------------------------------------------------

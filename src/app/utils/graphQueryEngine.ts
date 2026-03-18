@@ -1,5 +1,5 @@
 import Graph from 'graphology';
-import { findShortestPath, searchNodes } from './graphAlgorithms';
+import { findShortestPath } from './graphAlgorithms';
 
 // ---------------------------------------------------------------------------
 // Query result types

@@ -6,6 +6,7 @@ mod mcp_commands;
 mod model_commands;
 mod project_commands;
 mod request_commands;
+mod openapi_commands;
 mod sync_commands;
 
 pub use changelog_commands::*;
@@ -16,4 +17,5 @@ pub use mcp_commands::*;
 pub use model_commands::*;
 pub use project_commands::*;
 pub use request_commands::*;
+pub use openapi_commands::*;
 pub use sync_commands::*;

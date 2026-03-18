@@ -362,6 +362,63 @@ export default function GraphCanvas({
   }, [filters, setVisibleNodeIds]);
 
   // ---------------------------------------------------------------------------
+  // Keyboard shortcuts
+  // ---------------------------------------------------------------------------
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const isMeta = e.metaKey || e.ctrlKey;
+      const activeTag = document.activeElement?.tagName;
+
+      // Cmd+F — focus search
+      if (isMeta && e.key === 'f') {
+        e.preventDefault();
+        const input = document.querySelector<HTMLInputElement>('[data-graph-search] input');
+        input?.focus();
+        return;
+      }
+
+      // Escape — clear search or deselect
+      if (e.key === 'Escape') {
+        const { searchQuery, setSearchQuery, setSearchResults, clearPath } = useGraphStore.getState();
+        if (searchQuery) {
+          setSearchQuery('');
+          setSearchResults([]);
+        } else {
+          setSelectedNode(null);
+          clearPath();
+        }
+        return;
+      }
+
+      // Alt+Left — navigate back
+      if (e.altKey && e.key === 'ArrowLeft') {
+        e.preventDefault();
+        useGraphStore.getState().navigateBack();
+        return;
+      }
+
+      // Alt+Right — navigate forward
+      if (e.altKey && e.key === 'ArrowRight') {
+        e.preventDefault();
+        useGraphStore.getState().navigateForward();
+        return;
+      }
+
+      // 1/2/3 — toggle filters (only when not in an input)
+      if (activeTag !== 'INPUT' && activeTag !== 'TEXTAREA') {
+        const store = useGraphStore.getState();
+        if (e.key === '1') store.updateFilter('showCollections', !store.filters.showCollections);
+        if (e.key === '2') store.updateFilter('showRequests', !store.filters.showRequests);
+        if (e.key === '3') store.updateFilter('showModels', !store.filters.showModels);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [setSelectedNode]);
+
+  // ---------------------------------------------------------------------------
   // Node interaction
   // ---------------------------------------------------------------------------
 

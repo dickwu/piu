@@ -68,6 +68,10 @@ interface GraphStore {
   // --- Phase 2: Communities ---
   communities: CommunityInfo[];
   setCommunities: (communities: CommunityInfo[]) => void;
+
+  // --- Phase 3: Visual settings ---
+  bloomEnabled: boolean;
+  setBloomEnabled: (enabled: boolean) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -144,4 +148,8 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
   // Phase 2: Communities
   communities: [],
   setCommunities: (communities) => set({ communities }),
+
+  // Phase 3: Visual settings
+  bloomEnabled: false,
+  setBloomEnabled: (enabled) => set({ bloomEnabled: enabled }),
 }));

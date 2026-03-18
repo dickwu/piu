@@ -11,6 +11,7 @@ import Graph from 'graphology';
 import FA2LayoutSupervisor from 'graphology-layout-forceatlas2/worker';
 import { inferSettings } from 'graphology-layout-forceatlas2';
 
+import { EffectComposer, Bloom } from '@react-three/postprocessing';
 import { GraphNodes } from './GraphNodes';
 import type { GraphNodeData } from './GraphNodes';
 import { GraphEdges } from './GraphEdges';
@@ -146,6 +147,7 @@ export default function GraphCanvas({
   const visibleNodeIds = useGraphStore((s) => s.visibleNodeIds);
   const pathNodeIds = useGraphStore((s) => s.pathNodeIds);
   const setCommunities = useGraphStore((s) => s.setCommunities);
+  const bloomEnabled = useGraphStore((s) => s.bloomEnabled);
 
   const [nodeData, setNodeData] = useState<GraphNodeData[]>([]);
   const [edgeData, setEdgeData] = useState<GraphEdgeData[]>([]);
@@ -588,6 +590,17 @@ export default function GraphCanvas({
           onPointerMissed={handleDeselect}
         />
         <GraphEdges edges={edgeData} />
+
+        {bloomEnabled && (
+          <EffectComposer>
+            <Bloom
+              luminanceThreshold={0.6}
+              luminanceSmoothing={0.4}
+              intensity={0.5}
+              mipmapBlur
+            />
+          </EffectComposer>
+        )}
       </Canvas>
 
       {/* Computing overlay */}

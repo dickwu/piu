@@ -125,6 +125,8 @@ export default function GraphToolbar({ onResetLayout, onFitView, onFlyToNode }: 
   const resetFilters = useGraphStore((s) => s.resetFilters);
   const navigateBack = useGraphStore((s) => s.navigateBack);
   const navigateForward = useGraphStore((s) => s.navigateForward);
+  const bloomEnabled = useGraphStore((s) => s.bloomEnabled);
+  const setBloomEnabled = useGraphStore((s) => s.setBloomEnabled);
 
   const [hovered, setHovered] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -421,6 +423,27 @@ export default function GraphToolbar({ onResetLayout, onFitView, onFlyToNode }: 
           </button>
         )}
       </Flex>
+
+      <div style={DIVIDER} />
+
+      {/* Visual effects */}
+      <button
+        onClick={() => setBloomEnabled(!bloomEnabled)}
+        style={{
+          background: bloomEnabled ? 'rgba(251, 191, 36, 0.2)' : 'transparent',
+          border: `1px solid ${bloomEnabled ? 'rgba(251, 191, 36, 0.5)' : 'rgba(255,255,255,0.12)'}`,
+          borderRadius: 4,
+          padding: '2px 6px',
+          color: bloomEnabled ? '#fbbf24' : 'rgba(255,255,255,0.5)',
+          fontSize: 11,
+          cursor: 'pointer',
+          transition: 'all 0.15s ease',
+          flexShrink: 0,
+        }}
+        title="Toggle bloom effect (may impact performance on some hardware)"
+      >
+        ✦
+      </button>
     </div>
   );
 }

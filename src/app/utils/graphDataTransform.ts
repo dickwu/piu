@@ -1,3 +1,4 @@
+import Graph from 'graphology';
 import {
   EDGE_STYLES,
   type CollectionNodeData,
@@ -7,7 +8,7 @@ import {
 } from './apiModelMapLayout';
 
 // ---------------------------------------------------------------------------
-// Types matching Rust GraphNode/GraphEdge structs
+// Types matching Rust GraphNode/GraphEdge structs (unchanged from before)
 // ---------------------------------------------------------------------------
 
 export interface RustGraphNode {
@@ -42,120 +43,137 @@ export interface RustProjectGraphData {
 }
 
 // ---------------------------------------------------------------------------
-// react-force-graph-3d compatible types
+// Z-axis layering constants (entity type -> z offset)
 // ---------------------------------------------------------------------------
 
-export interface ForceGraphNode {
-  id: string;
-  entity_type: 'collection' | 'request' | 'model';
-  entity_id: string;
-  label: string;
-  properties: Record<string, unknown>;
-  size: number;
-  color: string;
-  fx?: number;
-  fy?: number;
-  fz?: number;
-  // d3-force-3d adds these at runtime
-  x?: number;
-  y?: number;
-  z?: number;
-}
-
-export interface ForceGraphLink {
-  source: string;
-  target: string;
-  edge_type: string;
-  label: string;
-  color: string;
-  width: number;
-}
+const Z_LAYER: Record<string, number> = {
+  collection: 0,
+  request: 50,
+  model: 100,
+};
 
 // ---------------------------------------------------------------------------
-// Transform functions
+// Build a graphology Graph from Rust JSON
 // ---------------------------------------------------------------------------
 
-/**
- * Transform Rust GraphNode[] into react-force-graph-3d compatible nodes.
- * If nodes have cached positions (fx/fy/fz), they are included so the
- * physics engine uses them as fixed positions.
- */
-export function transformNodes(rustNodes: RustGraphNode[]): ForceGraphNode[] {
-  return rustNodes.map((n) => {
+export function buildGraphologyInstance(data: RustProjectGraphData): Graph {
+  const graph = new Graph({ multi: false, type: 'directed', allowSelfLoops: false });
+
+  for (const node of data.nodes) {
     let properties: Record<string, unknown> = {};
     try {
-      properties = JSON.parse(n.properties);
+      properties = JSON.parse(node.properties);
     } catch {
-      // Fallback to empty properties
+      // fallback to empty
     }
 
-    const node: ForceGraphNode = {
-      id: n.id,
-      entity_type: n.entity_type,
-      entity_id: n.entity_id,
-      label: n.label,
+    graph.addNode(node.id, {
+      entity_type: node.entity_type,
+      entity_id: node.entity_id,
+      label: node.label,
       properties,
-      size: n.size,
-      color: n.color,
-    };
+      size: node.size,
+      color: node.color,
+      x: node.fx ?? undefined,
+      y: node.fy ?? undefined,
+      z: node.fz ?? Z_LAYER[node.entity_type] ?? 0,
+    });
+  }
 
-    // Include cached positions if available
-    if (n.fx !== null) node.fx = n.fx;
-    if (n.fy !== null) node.fy = n.fy;
-    if (n.fz !== null) node.fz = n.fz;
+  for (const edge of data.edges) {
+    if (!graph.hasNode(edge.source_id) || !graph.hasNode(edge.target_id)) continue;
 
-    return node;
-  });
-}
-
-/**
- * Transform Rust GraphEdge[] into react-force-graph-3d compatible links.
- * Maps source_id/target_id → source/target and applies EDGE_STYLES colors.
- */
-export function transformEdgesToLinks(rustEdges: RustGraphEdge[]): ForceGraphLink[] {
-  return rustEdges.map((edge) => {
     const style = EDGE_STYLES[edge.edge_type as EdgeStyleKey] ?? {
       stroke: '#555',
       strokeWidth: 1,
     };
-    return {
-      source: edge.source_id,
-      target: edge.target_id,
+
+    graph.addEdge(edge.source_id, edge.target_id, {
       edge_type: edge.edge_type,
       label: edge.label,
       color: style.stroke,
       width: style.strokeWidth,
-    };
+    });
+  }
+
+  return graph;
+}
+
+// ---------------------------------------------------------------------------
+// Check if any node has cached positions
+// ---------------------------------------------------------------------------
+
+export function hasCachedPositions(graph: Graph): boolean {
+  let found = false;
+  graph.someNode((_node, attrs) => {
+    if (typeof attrs.x === 'number' && typeof attrs.y === 'number') {
+      found = true;
+      return true;
+    }
+    return false;
+  });
+  return found;
+}
+
+// ---------------------------------------------------------------------------
+// Assign z-axis based on entity type
+// ---------------------------------------------------------------------------
+
+export function assignZLayer(graph: Graph): void {
+  graph.forEachNode((node, attrs) => {
+    const z = Z_LAYER[attrs.entity_type as string] ?? 0;
+    graph.setNodeAttribute(node, 'z', z);
   });
 }
 
-/**
- * Check if any node has cached positions (fx/fy/fz).
- * If so, we can skip the physics warm-up phase.
- */
-export function hasCachedPositions(nodes: RustGraphNode[]): boolean {
-  return nodes.some((n) => n.fx !== null && n.fy !== null && n.fz !== null);
+// ---------------------------------------------------------------------------
+// Extract positions for SQLite save
+// ---------------------------------------------------------------------------
+
+export interface PositionForSave {
+  id: string;
+  fx: number;
+  fy: number;
+  fz: number;
 }
 
-/**
- * Extract node data for MapDetailPanel from a ForceGraphNode's properties.
- */
-export function extractNodeData(
-  node: ForceGraphNode,
-): CollectionNodeData | RequestNodeData | ModelNodeData {
-  const props = node.properties;
+export function extractPositionsForSave(graph: Graph): PositionForSave[] {
+  const positions: PositionForSave[] = [];
+  graph.forEachNode((node, attrs) => {
+    if (typeof attrs.x === 'number' && typeof attrs.y === 'number') {
+      positions.push({
+        id: node,
+        fx: attrs.x,
+        fy: attrs.y,
+        fz: typeof attrs.z === 'number' ? attrs.z : 0,
+      });
+    }
+  });
+  return positions;
+}
 
-  switch (node.entity_type) {
+// ---------------------------------------------------------------------------
+// Extract node data for MapDetailPanel
+// ---------------------------------------------------------------------------
+
+export function extractNodeData(
+  graph: Graph,
+  nodeId: string,
+): CollectionNodeData | RequestNodeData | ModelNodeData {
+  const attrs = graph.getNodeAttributes(nodeId);
+  const props = (attrs.properties ?? {}) as Record<string, unknown>;
+
+  switch (attrs.entity_type) {
     case 'collection':
       return {
-        name: (props.name as string) ?? node.label,
+        name: (props.name as string) ?? attrs.label,
         pathPrefix: (props.pathPrefix as string | null) ?? null,
         requestCount: (props.requestCount as number) ?? 0,
       };
 
     case 'request':
       return {
-        name: (props.name as string) ?? node.label,
+        name: (props.name as string) ?? attrs.label,
         method: (props.method as string) ?? 'GET',
         url: (props.url as string) ?? '',
       };
@@ -165,10 +183,17 @@ export function extractNodeData(
         ? (props.fieldPreview as Array<{ name: string; type: string; required: boolean }>)
         : [];
       return {
-        name: (props.name as string) ?? node.label,
+        name: (props.name as string) ?? attrs.label,
         fieldCount: (props.fieldCount as number) ?? 0,
         fieldPreview,
       };
     }
+
+    default:
+      return {
+        name: attrs.label ?? nodeId,
+        method: 'GET',
+        url: '',
+      };
   }
 }

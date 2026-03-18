@@ -16,6 +16,7 @@ import type { GraphNodeData } from './GraphNodes';
 import { GraphEdges } from './GraphEdges';
 import type { GraphEdgeData } from './GraphEdges';
 import GraphToolbar from './GraphToolbar';
+import GraphTooltip from './GraphTooltip';
 import { MapDetailPanel } from '../apiModelMap/MapDetailPanel';
 import { MapLegend } from '../apiModelMap/MapLegend';
 import { useGraphStore } from '../../stores/graphStore';
@@ -551,6 +552,9 @@ export default function GraphCanvas({
           </span>
         </div>
       )}
+
+      {/* Hover tooltip */}
+      <GraphTooltip />
 
       {/* Node detail panel */}
       {selectedPanelInfo && (

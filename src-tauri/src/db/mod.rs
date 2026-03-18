@@ -17,6 +17,7 @@ pub mod graph;
 pub mod models;
 pub mod projects;
 pub mod requests;
+pub mod specs;
 
 // Re-export types
 pub use changelog::ChangelogEntry;
@@ -43,7 +44,7 @@ pub async fn init_db(db_path: &Path) -> DbResult<()> {
     conn.execute("PRAGMA foreign_keys = ON;", ()).await?;
 
     conn.execute_batch(&format!(
-        "{}{}{}{}{}{}{}{}",
+        "{}{}{}{}{}{}{}{}{}",
         projects::get_table_sql(),
         collections::get_table_sql(),
         requests::get_table_sql(),
@@ -52,6 +53,7 @@ pub async fn init_db(db_path: &Path) -> DbResult<()> {
         app_state::get_table_sql(),
         models::get_table_sql(),
         graph::get_table_sql(),
+        specs::get_table_sql(),
     ))
     .await?;
 
@@ -337,3 +339,6 @@ pub use graph::{
     clear_project_graph, list_graph_edges, list_graph_nodes, replace_project_graph,
     update_node_positions,
 };
+
+// Re-export spec functions
+pub use specs::{get_spec, upsert_spec};

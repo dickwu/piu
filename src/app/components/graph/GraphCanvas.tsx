@@ -31,6 +31,7 @@ import {
   assignCommunities,
   assignDegreeCentrality,
   computeVisibleSet,
+  findShortestPath,
 } from '../../utils/graphAlgorithms';
 
 // ---------------------------------------------------------------------------
@@ -364,21 +365,35 @@ export default function GraphCanvas({
   // ---------------------------------------------------------------------------
 
   const handleNodeClick = useCallback(
-    (nodeId: string) => {
+    (nodeId: string, event?: { shiftKey?: boolean }) => {
       const graph = graphRef.current;
       if (!graph || !graph.hasNode(nodeId)) return;
 
+      const current = useGraphStore.getState().selectedNode;
+
+      // Shift+click: find path between current and clicked node
+      if (event?.shiftKey && current && current.nodeId !== nodeId) {
+        const path = findShortestPath(graph, current.nodeId, nodeId);
+        if (path) {
+          useGraphStore.getState().setPathNodeIds(new Set(path));
+        }
+        return;
+      }
+
+      // Normal click: select node, clear path, push to history
+      useGraphStore.getState().clearPath();
       const attrs = graph.getNodeAttributes(nodeId);
       const entityType = attrs.entity_type as 'collection' | 'request' | 'model';
       const entityId = attrs.entity_id as string;
-
       setSelectedNode({ nodeId, entityType, entityId });
+      useGraphStore.getState().pushSelection(nodeId);
     },
     [],
   );
 
   const handleDeselect = useCallback(() => {
     setSelectedNode(null);
+    useGraphStore.getState().clearPath();
   }, [setSelectedNode]);
 
   const handleNodeHover = useCallback((nodeId: string | null) => {

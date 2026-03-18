@@ -26,6 +26,11 @@ import {
   extractPositionsForSave,
   extractNodeData,
 } from '../../utils/graphDataTransform';
+import {
+  assignCommunities,
+  assignDegreeCentrality,
+  computeVisibleSet,
+} from '../../utils/graphAlgorithms';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -130,6 +135,14 @@ export default function GraphCanvas({
 }: GraphCanvasProps) {
   const { setGraph, setComputing, setSelectedNode, selectedNode, setNodeIndexToId } =
     useGraphStore();
+
+  const filters = useGraphStore((s) => s.filters);
+  const setVisibleNodeIds = useGraphStore((s) => s.setVisibleNodeIds);
+  const hoveredNodeId = useGraphStore((s) => s.hoveredNodeId);
+  const setHoveredNodeId = useGraphStore((s) => s.setHoveredNodeId);
+  const visibleNodeIds = useGraphStore((s) => s.visibleNodeIds);
+  const pathNodeIds = useGraphStore((s) => s.pathNodeIds);
+  const setCommunities = useGraphStore((s) => s.setCommunities);
 
   const [nodeData, setNodeData] = useState<GraphNodeData[]>([]);
   const [edgeData, setEdgeData] = useState<GraphEdgeData[]>([]);
@@ -261,6 +274,9 @@ export default function GraphCanvas({
 
         if (cached) {
           // Positions are already stored — render immediately, no FA2 needed
+          const communityInfo = assignCommunities(graph);
+          setCommunities(communityInfo);
+          assignDegreeCentrality(graph);
           setNodeData(collectNodeData(graph));
           setEdgeData(collectEdgeData(graph));
           setIsLoading(false);
@@ -272,6 +288,10 @@ export default function GraphCanvas({
           graph.setNodeAttribute(nodeId, 'x', (Math.random() - 0.5) * 200);
           graph.setNodeAttribute(nodeId, 'y', (Math.random() - 0.5) * 200);
         });
+
+        const communityInfo = assignCommunities(graph);
+        setCommunities(communityInfo);
+        assignDegreeCentrality(graph);
 
         // Start FA2 layout supervisor
         setIsComputingLocal(true);
@@ -320,6 +340,25 @@ export default function GraphCanvas({
   }, [killLayout]);
 
   // ---------------------------------------------------------------------------
+  // Filter → visible set recomputation
+  // ---------------------------------------------------------------------------
+
+  useEffect(() => {
+    const graph = graphRef.current;
+    if (!graph) return;
+
+    const isDefault = filters.showCollections && filters.showRequests && filters.showModels
+      && filters.methods.length === 0 && filters.edgeTypes.length === 0
+      && filters.communityId === null;
+
+    if (isDefault) {
+      setVisibleNodeIds(null);
+    } else {
+      setVisibleNodeIds(computeVisibleSet(graph, filters));
+    }
+  }, [filters, setVisibleNodeIds]);
+
+  // ---------------------------------------------------------------------------
   // Node interaction
   // ---------------------------------------------------------------------------
 
@@ -340,6 +379,10 @@ export default function GraphCanvas({
   const handleDeselect = useCallback(() => {
     setSelectedNode(null);
   }, [setSelectedNode]);
+
+  const handleNodeHover = useCallback((nodeId: string | null) => {
+    setHoveredNodeId(nodeId);
+  }, [setHoveredNodeId]);
 
   const handleClosePanel = useCallback(() => {
     setSelectedNode(null);
@@ -434,7 +477,11 @@ export default function GraphCanvas({
         <GraphNodes
           nodes={nodeData}
           selectedNodeId={selectedNode?.nodeId ?? null}
+          hoveredNodeId={hoveredNodeId}
+          visibleNodeIds={visibleNodeIds}
+          pathNodeIds={pathNodeIds}
           onNodeClick={handleNodeClick}
+          onNodeHover={handleNodeHover}
           onPointerMissed={handleDeselect}
         />
         <GraphEdges edges={edgeData} />

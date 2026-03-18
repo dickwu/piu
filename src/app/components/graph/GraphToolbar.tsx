@@ -87,7 +87,7 @@ const FILTER_DOT: CSSProperties = {
 // ---------------------------------------------------------------------------
 
 function ResultDot({ entityType, method }: { entityType: string; method?: string }) {
-  let color = ENTITY_COLORS.request;
+  let color: string = ENTITY_COLORS.request;
   if (entityType === 'collection') color = ENTITY_COLORS.collection;
   else if (entityType === 'model') color = ENTITY_COLORS.model;
   else if (method) color = METHOD_COLORS[method.toUpperCase()] ?? ENTITY_COLORS.request;

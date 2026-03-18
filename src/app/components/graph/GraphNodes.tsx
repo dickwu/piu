@@ -19,14 +19,21 @@ export interface GraphNodeData {
 interface GraphNodesProps {
   nodes: GraphNodeData[];
   selectedNodeId: string | null;
-  onNodeClick: (nodeId: string) => void;
+  hoveredNodeId: string | null;
+  visibleNodeIds: Set<string> | null; // null = all visible
+  pathNodeIds: Set<string>;
+  onNodeClick: (nodeId: string, event?: { shiftKey?: boolean }) => void;
+  onNodeHover: (nodeId: string | null) => void;
   onPointerMissed: () => void;
 }
 
 const _dummy = new THREE.Object3D();
 const _color = new THREE.Color();
 
-export function GraphNodes({ nodes, selectedNodeId, onNodeClick, onPointerMissed }: GraphNodesProps) {
+export function GraphNodes({
+  nodes, selectedNodeId, hoveredNodeId, visibleNodeIds, pathNodeIds,
+  onNodeClick, onNodeHover, onPointerMissed,
+}: GraphNodesProps) {
   const meshRef = useRef<THREE.InstancedMesh>(null);
 
   const sphereGeo = useMemo(() => new THREE.SphereGeometry(1, 16, 16), []);
@@ -50,17 +57,21 @@ export function GraphNodes({ nodes, selectedNodeId, onNodeClick, onPointerMissed
 
     for (let i = 0; i < nodes.length; i++) {
       const node = nodes[i];
-      const scale = node.size;
+      const isVisible = !visibleNodeIds || visibleNodeIds.has(node.id);
+      const scale = isVisible ? node.size : 0;
 
       _dummy.position.set(node.x, node.y, node.z);
       _dummy.scale.set(scale, scale, scale);
       _dummy.updateMatrix();
       mesh.setMatrixAt(i, _dummy.matrix);
 
+      const inPath = pathNodeIds.size === 0 || pathNodeIds.has(node.id);
+      const dimFactor = inPath ? 1.0 : 0.25;
+
       _color.set(node.color);
-      colorAttr[i * 3] = _color.r;
-      colorAttr[i * 3 + 1] = _color.g;
-      colorAttr[i * 3 + 2] = _color.b;
+      colorAttr[i * 3] = _color.r * dimFactor;
+      colorAttr[i * 3 + 1] = _color.g * dimFactor;
+      colorAttr[i * 3 + 2] = _color.b * dimFactor;
     }
 
     mesh.instanceMatrix.needsUpdate = true;
@@ -69,7 +80,7 @@ export function GraphNodes({ nodes, selectedNodeId, onNodeClick, onPointerMissed
       new THREE.InstancedBufferAttribute(colorAttr, 3),
     );
     mesh.count = nodes.length;
-  }, [nodes]);
+  }, [nodes, visibleNodeIds, pathNodeIds]);
 
   const handleClick = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation();
@@ -78,8 +89,21 @@ export function GraphNodes({ nodes, selectedNodeId, onNodeClick, onPointerMissed
     const nodeIndexToId = useGraphStore.getState().nodeIndexToId;
     const nodeId = nodeIndexToId[instanceId];
     if (nodeId) {
-      onNodeClick(nodeId);
+      onNodeClick(nodeId, { shiftKey: e.nativeEvent.shiftKey });
     }
+  };
+
+  const handlePointerOver = (e: ThreeEvent<PointerEvent>) => {
+    e.stopPropagation();
+    const instanceId = e.instanceId;
+    if (instanceId === undefined) return;
+    const nodeIndexToId = useGraphStore.getState().nodeIndexToId;
+    const nodeId = nodeIndexToId[instanceId];
+    if (nodeId) onNodeHover(nodeId);
+  };
+
+  const handlePointerOut = () => {
+    onNodeHover(null);
   };
 
   if (nodes.length === 0) return null;
@@ -89,6 +113,8 @@ export function GraphNodes({ nodes, selectedNodeId, onNodeClick, onPointerMissed
       ref={meshRef}
       args={[sphereGeo, material, nodes.length]}
       onClick={handleClick}
+      onPointerOver={handlePointerOver}
+      onPointerOut={handlePointerOut}
       onPointerMissed={onPointerMissed}
     />
   );

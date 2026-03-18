@@ -13,7 +13,7 @@ import { ModelFieldEditor } from './ModelFieldEditor';
 import type { DataModel } from '../types';
 import { parseConfig } from '../types';
 
-const ForceGraph3DCanvas = dynamic(() => import('./apiModelMap/ForceGraph3DCanvas'), {
+const GraphCanvas = dynamic(() => import('./graph/GraphCanvas'), {
   ssr: false,
 });
 
@@ -98,7 +98,7 @@ export function GraphCenterPanel() {
   return (
     <>
       <div style={{ position: 'relative', width: '100%', flex: 1, minHeight: 0, overflow: 'hidden' }}>
-        <ForceGraph3DCanvas
+        <GraphCanvas
           projectId={activeProjectId}
           refreshKey={refreshKey}
           onEditModel={openEdit}

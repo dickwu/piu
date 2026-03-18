@@ -14,7 +14,7 @@ import type { DataModel } from '../../types';
 // Dynamic import — Three.js / WebGL require browser only, no SSR
 // ---------------------------------------------------------------------------
 
-const ForceGraph3DCanvas = dynamic(() => import('./ForceGraph3DCanvas'), {
+const GraphCanvas = dynamic(() => import('../graph/GraphCanvas'), {
   ssr: false,
 });
 
@@ -134,7 +134,7 @@ export function ApiModelMapModal({ open, onClose }: ApiModelMapModalProps) {
           },
         }}
       >
-        <ForceGraph3DCanvas
+        <GraphCanvas
           projectId={activeProjectId}
           refreshKey={refreshKey}
           onEditModel={openEdit}

@@ -52,6 +52,10 @@ Usage:
     python3 piu_tools.py changelog '{"entity_type":"request","limit":20}'
     python3 piu_tools.py diff-sync <project_id> <repo_path>  # Compare repo HEAD vs PIU commit
 
+    # ── API Documentation ─────────────────────────────────────────
+    python3 piu_tools.py generate-spec <project_id>           # Generate OpenAPI spec, print stats
+    python3 piu_tools.py get-spec <project_id>                # Retrieve generated OpenAPI spec JSON
+
     # ── Passthrough ──────────────────────────────────────────────
     python3 piu_tools.py tool <tool_name> '<json_args>'       # Generic MCP tool call
 
@@ -239,6 +243,14 @@ def get_changelog(entity_type=None, entity_id=None, limit=50, offset=0):
     if entity_id:
         args["entity_id"] = entity_id
     return call_tool("get_changelog", args)
+
+
+def generate_openapi_spec(project_id):
+    return call_tool("generate_openapi_spec", {"project_id": project_id})
+
+
+def get_openapi_spec(project_id):
+    return call_tool("get_openapi_spec", {"project_id": project_id})
 
 
 # ============ High-Level Workflow Commands ============
@@ -694,6 +706,14 @@ def main():
                 print(f"  Route files deleted:  {', '.join(rc['deleted'])}")
             if result["stale_entities"]:
                 print(f"  Stale entities: {len(result['stale_entities'])}")
+
+    elif cmd == "generate-spec":
+        init()
+        _print_json(generate_openapi_spec(sys.argv[2]))
+
+    elif cmd == "get-spec":
+        init()
+        _print_json(get_openapi_spec(sys.argv[2]))
 
     # ── Passthrough ──────────────────────────────────────────
     elif cmd == "tool":

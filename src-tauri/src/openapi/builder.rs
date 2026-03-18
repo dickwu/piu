@@ -270,7 +270,7 @@ pub async fn build_openapi_spec(project_id: &str) -> Result<OpenApiSpecResult, S
     spec.insert("openapi".into(), Value::String("3.1.0".into()));
     spec.insert("info".into(), Value::Object(info));
     spec.insert("servers".into(), servers);
-    if !tags.as_array().map_or(true, |v| v.is_empty()) {
+    if !tags.as_array().is_none_or(|v| v.is_empty()) {
         spec.insert("tags".into(), tags);
     }
     spec.insert("paths".into(), Value::Object(paths));

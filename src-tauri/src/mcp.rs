@@ -2709,6 +2709,51 @@ impl PiuMcp {
 
         text_result(&serde_json::json!({ "entries": enriched, "total": enriched.len() }))
     }
+
+    // ---- OpenAPI Spec ----
+
+    #[tool(
+        description = "Generate an OpenAPI 3.1 JSON spec for a project from its collections, requests, and data models stored in the local database. Persists the spec and returns generation statistics (endpoint count, schema count, generated_at timestamp). After generation, the frontend is notified via a data-changed event."
+    )]
+    async fn generate_openapi_spec(
+        &self,
+        Parameters(p): Parameters<ProjectIdParam>,
+    ) -> Result<CallToolResult, McpError> {
+        let result = crate::openapi::builder::build_openapi_spec(&p.project_id)
+            .await
+            .map_err(mcp_err)?;
+        emit_data_changed("spec", "created", Some(&p.project_id), Some(&p.project_id));
+        text_result(&serde_json::json!({
+            "project_id": p.project_id,
+            "generated_at": result.generated_at,
+            "endpoint_count": result.endpoint_count,
+            "schema_count": result.schema_count,
+        }))
+    }
+
+    #[tool(
+        description = "Retrieve the most recently generated OpenAPI 3.1 JSON spec for a project. Returns the raw spec JSON string and the timestamp it was generated. Use generate_openapi_spec first if no spec exists yet."
+    )]
+    async fn get_openapi_spec(
+        &self,
+        Parameters(p): Parameters<ProjectIdParam>,
+    ) -> Result<CallToolResult, McpError> {
+        let record = db::get_spec(&p.project_id)
+            .await
+            .map_err(mcp_err)?
+            .ok_or_else(|| {
+                mcp_err(format!(
+                    "No spec found for project {}. Run generate_openapi_spec first.",
+                    p.project_id
+                ))
+            })?;
+        let (spec_json, generated_at) = record;
+        text_result(&serde_json::json!({
+            "project_id": p.project_id,
+            "spec_json": spec_json,
+            "generated_at": generated_at,
+        }))
+    }
 }
 
 // ============ ServerHandler ============

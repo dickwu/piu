@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { Segmented } from 'antd';
 import { ProjectList } from './components/ProjectList';
 import { Sidebar } from './components/Sidebar';
 import { GraphCenterPanel } from './components/GraphCenterPanel';
@@ -12,6 +13,8 @@ import { useProjectStore } from './stores/projectStore';
 import { useResponseStore } from './stores/responseStore';
 import { useModelStore } from './stores/modelStore';
 import { useRequestEditorStore } from './stores/requestStore';
+import { ApiDocsPanel } from './components/api-docs/ApiDocsPanel';
+import { useSpecStore } from './stores/specStore';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { defaultRequestConfig, type DataChangedEvent } from '@/app/types';
 
@@ -22,6 +25,8 @@ export default function Home() {
   const { loadProjects, getActiveProject, activeProjectId } = useProjectStore();
   const initListener = useResponseStore((s) => s.initListener);
   const loadModels = useModelStore((s) => s.loadModels);
+  const [viewMode, setViewMode] = useState<'graph' | 'docs'>('graph');
+  const fetchSpec = useSpecStore((s) => s.fetchSpec);
 
   // Initialize Tauri event listener for request progress
   useEffect(() => {
@@ -115,6 +120,11 @@ export default function Home() {
             await useModelStore.getState().loadModels(effectiveProjectId);
           }
         }
+        if (snapshot.has('spec')) {
+          if (effectiveProjectId) {
+            await useSpecStore.getState().fetchSpec(effectiveProjectId);
+          }
+        }
       } finally {
         flushing = false;
         // If new events arrived during flush, schedule another flush
@@ -169,8 +179,10 @@ export default function Home() {
     if (activeProjectId) {
       loadActiveEnvironment(activeProjectId);
       loadModels(activeProjectId);
+      useSpecStore.getState().clearSpec();
+      fetchSpec(activeProjectId);
     }
-  }, [activeProjectId, loadCollections, loadEnvironments, loadActiveEnvironment, loadModels]);
+  }, [activeProjectId, loadCollections, loadEnvironments, loadActiveEnvironment, loadModels, fetchSpec]);
 
   return (
     <div className="app-shell animate-fade-in">
@@ -181,7 +193,18 @@ export default function Home() {
         </aside>
 
         <main className="panel-content">
-          <GraphCenterPanel />
+          <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '4px 8px 0' }}>
+            <Segmented
+              value={viewMode}
+              onChange={(v) => setViewMode(v as 'graph' | 'docs')}
+              options={[
+                { value: 'graph', label: 'Graph' },
+                { value: 'docs', label: 'Docs' },
+              ]}
+              size="small"
+            />
+          </div>
+          {viewMode === 'graph' ? <GraphCenterPanel /> : <ApiDocsPanel />}
         </main>
 
         <aside className="panel-sidebar panel-sidebar-right">

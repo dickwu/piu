@@ -16,6 +16,8 @@ import {
 import { useGraphStore } from '../../stores/graphStore';
 import { searchNodes } from '../../utils/graphAlgorithms';
 import type { SearchResult } from '../../utils/graphAlgorithms';
+import { executeGraphQuery } from '../../utils/graphQueryEngine';
+import type { QueryResult } from '../../utils/graphQueryEngine';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -130,6 +132,7 @@ export default function GraphToolbar({ onResetLayout, onFitView, onFlyToNode }: 
 
   const [hovered, setHovered] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [queryResult, setQueryResult] = useState<QueryResult | null>(null);
   const inputRef = useRef<InputRef>(null);
 
   // -------------------------------------------------------------------------
@@ -141,10 +144,29 @@ export default function GraphToolbar({ onResetLayout, onFitView, onFlyToNode }: 
       setSearchQuery(value);
       if (!graph || !value.trim()) {
         setSearchResults([]);
+        setQueryResult(null);
         setActiveSearchIndex(0);
         setDropdownOpen(false);
+        useGraphStore.getState().clearPath();
         return;
       }
+
+      // Try structured query first
+      const qResult = executeGraphQuery(graph, value);
+      if (qResult) {
+        setQueryResult(qResult);
+        setSearchResults([]);
+        setActiveSearchIndex(0);
+        setDropdownOpen(false);
+        if (qResult.highlightNodes.length > 0) {
+          useGraphStore.getState().setPathNodeIds(new Set(qResult.highlightNodes));
+        }
+        return;
+      }
+
+      // No structured match — fall back to fuzzy search
+      setQueryResult(null);
+      useGraphStore.getState().clearPath();
       const results = searchNodes(graph, value);
       setSearchResults(results);
       setActiveSearchIndex(0);
@@ -177,8 +199,10 @@ export default function GraphToolbar({ onResetLayout, onFitView, onFlyToNode }: 
   const clearSearch = useCallback(() => {
     setSearchQuery('');
     setSearchResults([]);
+    setQueryResult(null);
     setActiveSearchIndex(0);
     setDropdownOpen(false);
+    useGraphStore.getState().clearPath();
   }, [setSearchQuery, setSearchResults, setActiveSearchIndex]);
 
   const handleKeyDown = useCallback(
@@ -298,8 +322,40 @@ export default function GraphToolbar({ onResetLayout, onFitView, onFlyToNode }: 
           )}
         </div>
 
-        {/* Search dropdown */}
-        {dropdownOpen && searchResults.length > 0 && (
+        {/* Query result panel — shown when a structured query matches */}
+        {queryResult && searchQuery && (
+          <div
+            style={{
+              position: 'absolute',
+              top: 'calc(100% + 6px)',
+              left: 0,
+              right: 0,
+              marginTop: 4,
+              background: 'rgba(17, 19, 32, 0.95)',
+              border: '1px solid rgba(255,255,255,0.12)',
+              borderRadius: 8,
+              padding: 10,
+              zIndex: 30,
+              backdropFilter: 'blur(12px)',
+              maxWidth: 360,
+            }}
+          >
+            <div style={{ fontSize: 12, fontWeight: 600, color: '#fbbf24', marginBottom: 4 }}>
+              {queryResult.title}
+            </div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.65)', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>
+              {queryResult.description}
+            </div>
+            {queryResult.highlightNodes.length > 0 && (
+              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', marginTop: 6 }}>
+                {queryResult.highlightNodes.length} nodes highlighted
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Search dropdown — shown only for fuzzy results (no structured query match) */}
+        {!queryResult && dropdownOpen && searchResults.length > 0 && (
           <div
             style={{
               position: 'absolute',

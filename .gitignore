@@ -33,3 +33,6 @@ __pycache__/
 
 # Claude Code
 .claude/
+
+# Superpowers docs
+docs/superpowers/

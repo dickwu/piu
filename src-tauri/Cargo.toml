@@ -32,3 +32,4 @@ schemars = "1.0"
 anyhow = "1.0"
 axum = "0.8"
 tokio-util = { version = "0.7", features = ["rt"] }
+tauri-plugin-mcp-bridge = "0.10"

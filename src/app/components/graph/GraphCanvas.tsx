@@ -552,9 +552,9 @@ export default function GraphCanvas({
     <div
       style={{
         width: '100%',
-        flex: 1,
-        minHeight: 0,
-        position: 'relative',
+        height: '100%',
+        position: 'absolute',
+        inset: 0,
         touchAction: 'none',
       }}
     >

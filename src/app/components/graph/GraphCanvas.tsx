@@ -15,6 +15,7 @@ import { GraphNodes } from './GraphNodes';
 import type { GraphNodeData } from './GraphNodes';
 import { GraphEdges } from './GraphEdges';
 import type { GraphEdgeData } from './GraphEdges';
+import GraphToolbar from './GraphToolbar';
 import { MapDetailPanel } from '../apiModelMap/MapDetailPanel';
 import { MapLegend } from '../apiModelMap/MapLegend';
 import { useGraphStore } from '../../stores/graphStore';
@@ -389,6 +390,30 @@ export default function GraphCanvas({
   }, [setSelectedNode]);
 
   // ---------------------------------------------------------------------------
+  // Toolbar action handlers
+  // ---------------------------------------------------------------------------
+
+  const handleResetLayout = useCallback(() => {
+    const graph = graphRef.current;
+    if (!graph || !projectId) return;
+    // Clear cached positions
+    graph.forEachNode((node) => {
+      graph.removeNodeAttribute(node, 'x');
+      graph.removeNodeAttribute(node, 'y');
+    });
+    invoke('save_graph_positions', { positions: [] }).catch(() => {});
+    // Force re-render by clearing data — the effect will re-trigger on refreshKey
+    positionsSavedRef.current = false;
+    setNodeData([]);
+    setEdgeData([]);
+  }, [projectId]);
+
+  const handleFitView = useCallback(() => {
+    // OrbitControls.reset() is not easily accessible from outside the Canvas.
+    // For now, this is a no-op placeholder. Phase 3 will add a controlsRef.
+  }, []);
+
+  // ---------------------------------------------------------------------------
   // Derive selected node info for MapDetailPanel
   // ---------------------------------------------------------------------------
 
@@ -460,6 +485,11 @@ export default function GraphCanvas({
         touchAction: 'none',
       }}
     >
+      <GraphToolbar
+        onResetLayout={handleResetLayout}
+        onFitView={handleFitView}
+      />
+
       <Canvas
         style={{ position: 'absolute', inset: 0 }}
         camera={{ position: [0, 0, 400], fov: 60, near: 1, far: 5000 }}

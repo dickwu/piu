@@ -865,26 +865,29 @@ export default function GraphCanvas({
         )}
 
         {/* Cluster name labels in overview mode */}
-        {clusterMode === 'overview' && [...clusters.values()].map((cluster) => (
-          cluster.nodeIds.size >= 2 ? (
-            <Html
-              key={cluster.id}
-              position={[cluster.centroid.x, cluster.centroid.y, 0.5]}
-              center
-              style={{
-                color: getGraphTheme(graphTheme).labelColor,
-                fontSize: 12,
-                fontWeight: 600,
-                textShadow: getGraphTheme(graphTheme).labelShadow,
-                pointerEvents: 'none',
-                whiteSpace: 'nowrap',
-                opacity: getGraphTheme(graphTheme).clusterLabelOpacity,
-              }}
-            >
-              {cluster.name}
-            </Html>
-          ) : null
-        ))}
+        {clusterMode === 'overview' && (() => {
+          const themeConfig = getGraphTheme(graphTheme);
+          const clusterEntries = [...clusters.entries()];
+          return clusterEntries.map(([, cluster], idx) => (
+            cluster.nodeIds.size >= 2 ? (
+              <Html
+                key={cluster.id}
+                position={[cluster.centroid.x, cluster.centroid.y, 0.5]}
+                center
+                style={{
+                  color: themeConfig.clusterPalette[idx % themeConfig.clusterPalette.length],
+                  fontSize: 12,
+                  fontWeight: 600,
+                  textShadow: themeConfig.labelShadow,
+                  pointerEvents: 'none',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {cluster.name}
+              </Html>
+            ) : null
+          ));
+        })()}
 
         {bloomEnabled && getGraphTheme(graphTheme).bloomAvailable && (
           <EffectComposer>

@@ -1,6 +1,9 @@
 # Dependencies
 node_modules/
 
+# Superpowers brainstorming sessions
+.superpowers/
+
 # Next.js build
 .next/
 dist/

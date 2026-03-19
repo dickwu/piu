@@ -15,6 +15,7 @@ import {
 } from '@ant-design/icons';
 
 import { useGraphStore } from '../../stores/graphStore';
+import { getGraphTheme } from '../../utils/graphThemeConfig';
 import { searchNodes } from '../../utils/graphAlgorithms';
 import type { SearchResult } from '../../utils/graphAlgorithms';
 import { executeGraphQuery } from '../../utils/graphQueryEngine';
@@ -133,6 +134,8 @@ export default function GraphToolbar({ onResetLayout, onFitView, onFlyToNode }: 
   const navigateForward = useGraphStore((s) => s.navigateForward);
   const bloomEnabled = useGraphStore((s) => s.bloomEnabled);
   const setBloomEnabled = useGraphStore((s) => s.setBloomEnabled);
+  const graphTheme = useGraphStore((s) => s.graphTheme);
+  const toggleGraphTheme = useGraphStore((s) => s.toggleGraphTheme);
 
   const [hovered, setHovered] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -519,24 +522,41 @@ export default function GraphToolbar({ onResetLayout, onFitView, onFlyToNode }: 
 
       <div style={DIVIDER} />
 
+      {/* Theme toggle */}
+      <Tooltip title={graphTheme === 'dark' ? 'Switch to light mode (T)' : 'Switch to dark mode (T)'}>
+        <button
+          onClick={toggleGraphTheme}
+          style={{
+            ...iconBtnStyle,
+            fontSize: 13,
+          }}
+        >
+          {graphTheme === 'dark' ? '☀' : '☾'}
+        </button>
+      </Tooltip>
+
+      <div style={DIVIDER} />
+
       {/* Visual effects */}
-      <button
-        onClick={() => setBloomEnabled(!bloomEnabled)}
-        style={{
-          background: bloomEnabled ? 'rgba(251, 191, 36, 0.2)' : 'transparent',
-          border: `1px solid ${bloomEnabled ? 'rgba(251, 191, 36, 0.5)' : 'rgba(255,255,255,0.12)'}`,
-          borderRadius: 4,
-          padding: '2px 6px',
-          color: bloomEnabled ? '#fbbf24' : 'rgba(255,255,255,0.5)',
-          fontSize: 11,
-          cursor: 'pointer',
-          transition: 'all 0.15s ease',
-          flexShrink: 0,
-        }}
-        title="Toggle bloom effect (may impact performance on some hardware)"
-      >
-        ✦
-      </button>
+      <Tooltip title={!getGraphTheme(graphTheme).bloomAvailable ? 'Bloom unavailable in light mode' : (bloomEnabled ? 'Disable bloom' : 'Enable bloom')}>
+        <button
+          onClick={() => getGraphTheme(graphTheme).bloomAvailable && setBloomEnabled(!bloomEnabled)}
+          style={{
+            background: bloomEnabled && getGraphTheme(graphTheme).bloomAvailable ? 'rgba(251, 191, 36, 0.2)' : 'transparent',
+            border: `1px solid ${bloomEnabled && getGraphTheme(graphTheme).bloomAvailable ? 'rgba(251, 191, 36, 0.5)' : 'rgba(255,255,255,0.12)'}`,
+            borderRadius: 4,
+            padding: '2px 6px',
+            color: bloomEnabled && getGraphTheme(graphTheme).bloomAvailable ? '#fbbf24' : 'rgba(255,255,255,0.25)',
+            fontSize: 11,
+            cursor: getGraphTheme(graphTheme).bloomAvailable ? 'pointer' : 'not-allowed',
+            transition: 'all 0.15s ease',
+            flexShrink: 0,
+            opacity: getGraphTheme(graphTheme).bloomAvailable ? 1 : 0.4,
+          }}
+        >
+          ✦
+        </button>
+      </Tooltip>
 
       <div style={DIVIDER} />
 

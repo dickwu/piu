@@ -892,15 +892,29 @@ export default function GraphCanvas({
           />
         )}
 
-        {/* Cluster name labels in overview mode */}
+        {/* Cluster name labels in overview mode — anchored to largest node */}
         {clusterMode === 'overview' && (() => {
           const themeConfig = getGraphTheme(graphTheme);
           const clusterEntries = [...clusters.entries()];
-          return clusterEntries.map(([, cluster], idx) => (
-            cluster.nodeIds.size >= 2 ? (
+          return clusterEntries.map(([, cluster], idx) => {
+            if (cluster.nodeIds.size < 2) return null;
+
+            // Find the largest node in this cluster to anchor the label
+            let anchorX = cluster.centroid.x;
+            let anchorY = cluster.centroid.y;
+            let maxSize = -1;
+            for (const nd of nodeData) {
+              if (cluster.nodeIds.has(nd.id) && nd.size > maxSize) {
+                maxSize = nd.size;
+                anchorX = nd.x;
+                anchorY = nd.y;
+              }
+            }
+
+            return (
               <Html
                 key={cluster.id}
-                position={[cluster.centroid.x, cluster.centroid.y, 0.5]}
+                position={[anchorX, anchorY, 0.5]}
                 center
                 style={{
                   color: themeConfig.clusterPalette[idx % themeConfig.clusterPalette.length],
@@ -913,8 +927,8 @@ export default function GraphCanvas({
               >
                 {cluster.name}
               </Html>
-            ) : null
-          ));
+            );
+          });
         })()}
 
         {bloomEnabled && getGraphTheme(graphTheme).bloomAvailable && (

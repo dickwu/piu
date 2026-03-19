@@ -153,7 +153,7 @@ export function GraphClusterMetaballs({
       u_nodeCount: { value: 0 },
       u_blobRadius: { value: 0.08 },
       u_threshold: { value: 1.0 },
-      u_pixelSize: { value: new Float32Array([1.0 / 1920, 1.0 / 1080]) },
+      u_pixelSize: { value: new THREE.Vector2(1.0 / 1920, 1.0 / 1080) },
       u_fillAlpha: { value: 0.12 },
       u_strokeAlpha: { value: 0.50 },
       u_strokeWidth: { value: 2.0 },
@@ -176,16 +176,14 @@ export function GraphClusterMetaballs({
     const buf = uniforms.u_clusterColors.value as Float32Array;
     buf.fill(0);
     const config = getGraphTheme(graphTheme);
-    let idx = 0;
     for (const [id] of clusters.entries()) {
       const clusterIdx = clusterIndexMap.get(id);
       if (clusterIdx === undefined || clusterIdx >= MAX_CLUSTERS) continue;
-      const paletteColor = config.clusterPalette[idx % config.clusterPalette.length];
+      const paletteColor = config.clusterPalette[clusterIdx % config.clusterPalette.length];
       const c = new THREE.Color(paletteColor);
       buf[clusterIdx * 3] = c.r;
       buf[clusterIdx * 3 + 1] = c.g;
       buf[clusterIdx * 3 + 2] = c.b;
-      idx++;
     }
   }, [clusters, clusterIndexMap, uniforms, graphTheme]);
 
@@ -203,8 +201,7 @@ export function GraphClusterMetaballs({
     const updatePixelSize = () => {
       const w = canvas.width || 1920;
       const h = canvas.height || 1080;
-      (uniforms.u_pixelSize.value as Float32Array)[0] = 1.0 / w;
-      (uniforms.u_pixelSize.value as Float32Array)[1] = 1.0 / h;
+      (uniforms.u_pixelSize.value as THREE.Vector2).set(1.0 / w, 1.0 / h);
     };
     updatePixelSize();
     const observer = new ResizeObserver(updatePixelSize);

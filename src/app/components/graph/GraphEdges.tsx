@@ -35,8 +35,8 @@ export function GraphEdges({ edges, hidden, graphTheme }: GraphEdgesProps) {
 
   const cylinderGeo = useMemo(() => new THREE.CylinderGeometry(0.05, 0.05, 1, 4), []);
   const material = useMemo(
-    () => new THREE.MeshBasicMaterial({ transparent: true, opacity: getGraphTheme(graphTheme).edgeOpacity }),
-    [graphTheme],
+    () => new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.08 }),
+    [],
   );
 
   useEffect(() => {
@@ -45,6 +45,11 @@ export function GraphEdges({ edges, hidden, graphTheme }: GraphEdgesProps) {
       material.dispose();
     };
   }, [cylinderGeo, material]);
+
+  useEffect(() => {
+    material.opacity = getGraphTheme(graphTheme).edgeOpacity;
+    material.needsUpdate = true;
+  }, [graphTheme, material]);
 
   useEffect(() => {
     const mesh = meshRef.current;

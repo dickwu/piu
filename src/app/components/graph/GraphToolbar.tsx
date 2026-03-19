@@ -58,25 +58,11 @@ const TOOLBAR_REST: CSSProperties = {
   padding: '6px 10px',
   borderRadius: 10,
   backdropFilter: 'blur(12px)',
-  background: 'rgba(17, 19, 32, 0.6)',
-  border: '1px solid rgba(255,255,255,0.08)',
   opacity: 0.6,
   transition: 'opacity 0.18s ease, background 0.18s ease',
   pointerEvents: 'auto',
 };
 
-const TOOLBAR_HOVER: CSSProperties = {
-  ...TOOLBAR_REST,
-  opacity: 1,
-  background: 'rgba(17, 19, 32, 0.88)',
-};
-
-const DIVIDER: CSSProperties = {
-  width: 1,
-  height: 20,
-  background: 'rgba(255,255,255,0.12)',
-  flexShrink: 0,
-};
 
 const FILTER_DOT: CSSProperties = {
   display: 'inline-block',
@@ -288,8 +274,8 @@ export default function GraphToolbar({ onResetLayout, onFitView, onFlyToNode }: 
 
   const iconBtnStyle: CSSProperties = {
     background: 'transparent',
-    border: '1px solid rgba(255,255,255,0.1)',
-    color: 'rgba(255,255,255,0.75)',
+    border: graphTheme === 'dark' ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.1)',
+    color: graphTheme === 'dark' ? 'rgba(255,255,255,0.75)' : 'rgba(0,0,0,0.65)',
     borderRadius: 6,
     height: 28,
     minWidth: 28,
@@ -302,10 +288,17 @@ export default function GraphToolbar({ onResetLayout, onFitView, onFlyToNode }: 
     flexShrink: 0,
   };
 
+  const dividerStyle: CSSProperties = {
+    width: 1,
+    height: 20,
+    background: graphTheme === 'dark' ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.12)',
+    flexShrink: 0,
+  };
+
   const filterBtnStyle = (active: boolean, color: string): CSSProperties => ({
     ...iconBtnStyle,
-    color: active ? color : 'rgba(255,255,255,0.3)',
-    borderColor: active ? `${color}55` : 'rgba(255,255,255,0.08)',
+    color: active ? color : (graphTheme === 'dark' ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)'),
+    borderColor: active ? `${color}55` : (graphTheme === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'),
     textDecoration: active ? 'none' : 'line-through',
     fontWeight: 600,
     fontSize: 11,
@@ -318,7 +311,16 @@ export default function GraphToolbar({ onResetLayout, onFitView, onFlyToNode }: 
 
   return (
     <div
-      style={hovered ? TOOLBAR_HOVER : TOOLBAR_REST}
+      style={{
+        ...TOOLBAR_REST,
+        ...(hovered ? {
+          opacity: 1,
+          background: graphTheme === 'dark' ? 'rgba(17, 19, 32, 0.88)' : 'rgba(240, 242, 246, 0.92)',
+        } : {
+          background: graphTheme === 'dark' ? 'rgba(17, 19, 32, 0.6)' : 'rgba(240, 242, 246, 0.75)',
+        }),
+        border: graphTheme === 'dark' ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.08)',
+      }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
@@ -346,10 +348,10 @@ export default function GraphToolbar({ onResetLayout, onFitView, onFlyToNode }: 
             onBlur={() => setTimeout(() => setDropdownOpen(false), 150)}
             style={{
               width: 260,
-              background: 'rgba(255,255,255,0.06)',
-              border: '1px solid rgba(255,255,255,0.1)',
+              background: graphTheme === 'dark' ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+              border: graphTheme === 'dark' ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.1)',
               borderRadius: 6,
-              color: '#e2e8f0',
+              color: graphTheme === 'dark' ? '#e2e8f0' : '#1f2937',
               fontSize: 12,
               height: 28,
             }}
@@ -441,7 +443,7 @@ export default function GraphToolbar({ onResetLayout, onFitView, onFlyToNode }: 
         )}
       </div>
 
-      <div style={DIVIDER} />
+      <div style={dividerStyle} />
 
       {/* Transport controls */}
       <Flex align="center" gap={4} style={{ flexShrink: 0 }}>
@@ -478,7 +480,7 @@ export default function GraphToolbar({ onResetLayout, onFitView, onFlyToNode }: 
         </button>
       </Flex>
 
-      <div style={DIVIDER} />
+      <div style={dividerStyle} />
 
       {/* Filter toggles */}
       <Flex align="center" gap={4} style={{ flexShrink: 0 }}>
@@ -520,7 +522,7 @@ export default function GraphToolbar({ onResetLayout, onFitView, onFlyToNode }: 
         )}
       </Flex>
 
-      <div style={DIVIDER} />
+      <div style={dividerStyle} />
 
       {/* Theme toggle */}
       <Tooltip title={graphTheme === 'dark' ? 'Switch to light mode (T)' : 'Switch to dark mode (T)'}>
@@ -535,7 +537,7 @@ export default function GraphToolbar({ onResetLayout, onFitView, onFlyToNode }: 
         </button>
       </Tooltip>
 
-      <div style={DIVIDER} />
+      <div style={dividerStyle} />
 
       {/* Visual effects */}
       <Tooltip title={!getGraphTheme(graphTheme).bloomAvailable ? 'Bloom unavailable in light mode' : (bloomEnabled ? 'Disable bloom' : 'Enable bloom')}>
@@ -558,7 +560,7 @@ export default function GraphToolbar({ onResetLayout, onFitView, onFlyToNode }: 
         </button>
       </Tooltip>
 
-      <div style={DIVIDER} />
+      <div style={dividerStyle} />
 
       {/* Cluster controls */}
       <Flex align="center" gap={6} style={{ flexShrink: 0 }}>

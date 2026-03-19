@@ -39,6 +39,7 @@ import {
 import { computeClusters, findClusterForNode } from '../../utils/graphClustering';
 import { GraphClusterMetaballs } from './GraphClusterMetaballs';
 import { GraphStubEdges } from './GraphStubEdges';
+import { getGraphTheme } from '../../utils/graphThemeConfig';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -128,6 +129,18 @@ function collectEdgeData(graph: Graph): GraphEdgeData[] {
     });
   });
   return edges;
+}
+
+// ---------------------------------------------------------------------------
+// SceneBackground — must live inside <Canvas> to use R3F hooks
+// ---------------------------------------------------------------------------
+
+function SceneBackground({ color }: { color: string }) {
+  const { scene } = useThree();
+  useEffect(() => {
+    scene.background = new THREE.Color(color);
+  }, [scene, color]);
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -327,6 +340,7 @@ export default function GraphCanvas({
   const clusters = useGraphStore((s) => s.clusters);
   const focusedClusterId = useGraphStore((s) => s.focusedClusterId);
   const focusOverrideNodeIds = useGraphStore((s) => s.focusOverrideNodeIds);
+  const graphTheme = useGraphStore((s) => s.graphTheme);
 
   const [nodeData, setNodeData] = useState<GraphNodeData[]>([]);
   const [edgeData, setEdgeData] = useState<GraphEdgeData[]>([]);
@@ -626,6 +640,9 @@ export default function GraphCanvas({
         if (e.key === '1') store.updateFilter('showCollections', !store.filters.showCollections);
         if (e.key === '2') store.updateFilter('showRequests', !store.filters.showRequests);
         if (e.key === '3') store.updateFilter('showModels', !store.filters.showModels);
+        if (e.key === 't' || e.key === 'T') {
+          useGraphStore.getState().toggleGraphTheme();
+        }
       }
     };
 
@@ -808,6 +825,7 @@ export default function GraphCanvas({
         gl={{ antialias: true }}
         onPointerMissed={handleDeselect}
       >
+        <SceneBackground color={getGraphTheme(graphTheme).background} />
         <OrthographicCamera makeDefault zoom={1.5} near={-100} far={100} position={[0, 0, 10]} />
 
         {/* Camera controls + fly-to animation */}
@@ -824,8 +842,9 @@ export default function GraphCanvas({
           onNodeClick={handleNodeClick}
           onNodeHover={handleNodeHover}
           onPointerMissed={handleDeselect}
+          graphTheme={graphTheme}
         />
-        <GraphEdges edges={edgeData} hidden={clusterMode === 'overview'} />
+        <GraphEdges edges={edgeData} hidden={clusterMode === 'overview'} graphTheme={graphTheme} />
 
         {/* Metaball cluster blobs */}
         <GraphClusterMetaballs
@@ -833,6 +852,7 @@ export default function GraphCanvas({
           clusters={clusters}
           enabled={clusterMode !== 'off'}
           focusedClusterId={focusedClusterId}
+          graphTheme={graphTheme}
         />
 
         {/* Stub edges pointing toward external clusters in focus mode */}
@@ -852,12 +872,13 @@ export default function GraphCanvas({
               position={[cluster.centroid.x, cluster.centroid.y, 0.5]}
               center
               style={{
-                color: cluster.color,
+                color: getGraphTheme(graphTheme).labelColor,
                 fontSize: 12,
                 fontWeight: 600,
-                textShadow: '0 1px 4px rgba(0,0,0,0.8)',
+                textShadow: getGraphTheme(graphTheme).labelShadow,
                 pointerEvents: 'none',
                 whiteSpace: 'nowrap',
+                opacity: getGraphTheme(graphTheme).clusterLabelOpacity,
               }}
             >
               {cluster.name}
@@ -865,7 +886,7 @@ export default function GraphCanvas({
           ) : null
         ))}
 
-        {bloomEnabled && (
+        {bloomEnabled && getGraphTheme(graphTheme).bloomAvailable && (
           <EffectComposer>
             <Bloom
               luminanceThreshold={0.6}

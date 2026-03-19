@@ -7,6 +7,8 @@ import {
   type EdgeStyleKey,
 } from './apiModelMapLayout';
 
+const NODE_SIZE_FLOOR = 2;
+
 // ---------------------------------------------------------------------------
 // Types matching Rust GraphNode/GraphEdge structs (unchanged from before)
 // ---------------------------------------------------------------------------
@@ -62,7 +64,7 @@ export function buildGraphologyInstance(data: RustProjectGraphData): Graph {
       entity_id: node.entity_id,
       label: node.label,
       properties,
-      size: node.size,
+      size: Math.max(node.size, NODE_SIZE_FLOOR),
       color: node.color,
       x: node.fx ?? undefined,
       y: node.fy ?? undefined,

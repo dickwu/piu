@@ -3,7 +3,6 @@
 export interface GraphThemeConfig {
   background: string;
   nodeColor: string;
-  nodeSize: number;
   edgeColor: string;
   edgeOpacity: number;
   labelColor: string;
@@ -35,7 +34,6 @@ const LIGHT_CLUSTER_PALETTE: string[] = [
 export const DARK_THEME: GraphThemeConfig = {
   background: '#111320',
   nodeColor: '#a78bfa',
-  nodeSize: 3,
   edgeColor: 'rgba(255,255,255,0.08)',
   edgeOpacity: 0.08,
   labelColor: 'rgba(255,255,255,0.85)',
@@ -51,7 +49,6 @@ export const DARK_THEME: GraphThemeConfig = {
 export const LIGHT_THEME: GraphThemeConfig = {
   background: '#f3f4f6',
   nodeColor: '#8b5cf6',
-  nodeSize: 3,
   edgeColor: 'rgba(0,0,0,0.06)',
   edgeOpacity: 0.06,
   labelColor: '#374151',

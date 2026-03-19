@@ -11,6 +11,7 @@ import { LoadingOutlined, WarningOutlined } from '@ant-design/icons';
 import Graph from 'graphology';
 import FA2LayoutSupervisor from 'graphology-layout-forceatlas2/worker';
 import { inferSettings } from 'graphology-layout-forceatlas2';
+import noverlap from 'graphology-layout-noverlap';
 
 import { EffectComposer, Bloom } from '@react-three/postprocessing';
 import { GraphNodes } from './GraphNodes';
@@ -36,7 +37,7 @@ import {
   computeVisibleSet,
   findShortestPath,
 } from '../../utils/graphAlgorithms';
-import { computeClusters, findClusterForNode } from '../../utils/graphClustering';
+import { computeClusters, findClusterForNode, spreadClusters } from '../../utils/graphClustering';
 import { GraphClusterMetaballs } from './GraphClusterMetaballs';
 import { GraphStubEdges } from './GraphStubEdges';
 import { getGraphTheme } from '../../utils/graphThemeConfig';
@@ -45,7 +46,11 @@ import { getGraphTheme } from '../../utils/graphThemeConfig';
 // Constants
 // ---------------------------------------------------------------------------
 
-const FA2_TIMEOUT_MS = 10_000;
+const FA2_TIMEOUT_MS = 15_000;
+const FA2_SCALING_MULTIPLIER = 3;
+const FA2_GRAVITY_MULTIPLIER = 0.5;
+const NOVERLAP_MAX_ITERATIONS = 200;
+const NOVERLAP_MARGIN = 6;
 
 // ---------------------------------------------------------------------------
 // Overlay styles
@@ -419,13 +424,25 @@ export default function GraphCanvas({
     (graph: Graph) => {
       killLayout();
 
-      // Final position snapshot
-      setNodeData(collectNodeData(graph));
-      setEdgeData(collectEdgeData(graph));
-      savePositions(graph);
+      // Post-layout overlap removal
+      noverlap.assign(graph, {
+        maxIterations: NOVERLAP_MAX_ITERATIONS,
+        settings: {
+          margin: NOVERLAP_MARGIN,
+          ratio: 1.0,
+          speed: 3,
+          gridSize: 20,
+        },
+      });
 
-      // Compute clusters after layout settles
-      const clusterMap = computeClusters(graph);
+      // Compute clusters after layout + noverlap settle
+      let clusterMap = computeClusters(graph);
+
+      // Push overlapping clusters apart and get updated centroids
+      if (clusterMap.size >= 2) {
+        clusterMap = spreadClusters(graph, clusterMap);
+      }
+
       useGraphStore.getState().setClusters(clusterMap);
       const now = Date.now();
       if (now - lastModeChange.current >= 100) {
@@ -436,6 +453,11 @@ export default function GraphCanvas({
           useGraphStore.getState().setClusterMode('off');
         }
       }
+
+      // Final position snapshot — AFTER all position-modifying passes
+      setNodeData(collectNodeData(graph));
+      setEdgeData(collectEdgeData(graph));
+      savePositions(graph);
 
       setIsComputingLocal(false);
       setComputing(false);
@@ -522,7 +544,13 @@ export default function GraphCanvas({
         setIsComputingLocal(true);
         setComputing(true);
 
-        const settings = inferSettings(graph);
+        const inferred = inferSettings(graph);
+        const settings = {
+          ...inferred,
+          scalingRatio: (inferred.scalingRatio ?? 1) * FA2_SCALING_MULTIPLIER,
+          gravity: (inferred.gravity ?? 1) * FA2_GRAVITY_MULTIPLIER,
+          strongGravityMode: false,
+        };
         const supervisor = new FA2LayoutSupervisor(graph, { settings });
         layoutRef.current = supervisor;
         supervisor.start();

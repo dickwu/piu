@@ -33,6 +33,10 @@ interface GraphNodesProps {
 const _dummy = new THREE.Object3D();
 const _color = new THREE.Color();
 
+const NODE_SIZE_MIN = 1.5;
+const NODE_SIZE_MAX = 6.0;
+const NODE_SIZE_SCALE = 0.5;
+
 export function GraphNodes({
   nodes, selectedNodeId, hoveredNodeId, visibleNodeIds, pathNodeIds, clusterMode, graphTheme,
   onNodeClick, onNodeHover, onPointerMissed,
@@ -62,7 +66,9 @@ export function GraphNodes({
     for (let i = 0; i < nodes.length; i++) {
       const node = nodes[i];
       const isVisible = !visibleNodeIds || visibleNodeIds.has(node.id);
-      const scale = isVisible ? config.nodeSize : 0;
+      const scale = isVisible
+        ? Math.max(NODE_SIZE_MIN, Math.min(node.size * NODE_SIZE_SCALE, NODE_SIZE_MAX))
+        : 0;
 
       _dummy.position.set(node.x, node.y, node.z);
       _dummy.scale.set(scale, scale, scale);

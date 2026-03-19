@@ -14,6 +14,8 @@ const CLUSTER_PALETTE: string[] = [
 
 const MIN_CLUSTER_SIZE_FOR_SPLIT = 3;
 const MIN_GRAPH_SIZE_FOR_CLUSTERING = 5;
+const CLUSTER_GAP = 30;
+const SPREAD_MAX_ITERATIONS = 50;
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -316,6 +318,96 @@ function clusterName(
   }
   usedNames.add(name);
   return name;
+}
+
+// ---------------------------------------------------------------------------
+// Public: spreadClusters — push overlapping clusters apart
+// ---------------------------------------------------------------------------
+
+export function spreadClusters(
+  graph: Graph,
+  clusters: Map<string, ClusterInfo>,
+): Map<string, ClusterInfo> {
+  const entries = [...clusters.entries()];
+  if (entries.length < 2) return clusters;
+
+  // Build working data: centroid + bounding radius per cluster
+  const clusterData = entries.map(([id, cluster]) => {
+    const centroid = computeCentroid(cluster.nodeIds, graph);
+    let maxDist = 0;
+    for (const nodeId of cluster.nodeIds) {
+      const nx = graph.getNodeAttribute(nodeId, 'x') as number ?? 0;
+      const ny = graph.getNodeAttribute(nodeId, 'y') as number ?? 0;
+      const nodeSize = graph.getNodeAttribute(nodeId, 'size') as number ?? 2;
+      const dist = Math.sqrt((nx - centroid.x) ** 2 + (ny - centroid.y) ** 2) + nodeSize;
+      if (dist > maxDist) maxDist = dist;
+    }
+    return { id, cluster, cx: centroid.x, cy: centroid.y, radius: maxDist };
+  });
+
+  // Iterative repulsion
+  for (let iter = 0; iter < SPREAD_MAX_ITERATIONS; iter++) {
+    let anyOverlap = false;
+
+    for (let i = 0; i < clusterData.length; i++) {
+      for (let j = i + 1; j < clusterData.length; j++) {
+        const a = clusterData[i];
+        const b = clusterData[j];
+
+        const dx = b.cx - a.cx;
+        const dy = b.cy - a.cy;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const minDist = a.radius + b.radius + CLUSTER_GAP;
+
+        if (dist < minDist && dist > 0.001) {
+          anyOverlap = true;
+          const overlap = (minDist - dist) / 2;
+          const nx = dx / dist;
+          const ny = dy / dist;
+
+          a.cx -= nx * overlap;
+          a.cy -= ny * overlap;
+          b.cx += nx * overlap;
+          b.cy += ny * overlap;
+        } else if (dist <= 0.001) {
+          // Clusters at same position — push apart with jitter
+          anyOverlap = true;
+          const angle = (2 * Math.PI * i) / clusterData.length;
+          a.cx += 5 * Math.cos(angle);
+          a.cy += 5 * Math.sin(angle);
+        }
+      }
+    }
+
+    if (!anyOverlap) break;
+  }
+
+  // Apply displacements to node positions and rebuild cluster map with updated centroids
+  const result = new Map<string, ClusterInfo>();
+
+  for (const cd of clusterData) {
+    const originalCentroid = computeCentroid(cd.cluster.nodeIds, graph);
+    const offsetX = cd.cx - originalCentroid.x;
+    const offsetY = cd.cy - originalCentroid.y;
+
+    // Translate all nodes in this cluster as a rigid body
+    for (const nodeId of cd.cluster.nodeIds) {
+      const oldX = graph.getNodeAttribute(nodeId, 'x') as number ?? 0;
+      const oldY = graph.getNodeAttribute(nodeId, 'y') as number ?? 0;
+      graph.setNodeAttribute(nodeId, 'x', oldX + offsetX);
+      graph.setNodeAttribute(nodeId, 'y', oldY + offsetY);
+    }
+
+    // Recompute centroid from final positions
+    const newCentroid = computeCentroid(cd.cluster.nodeIds, graph);
+
+    result.set(cd.id, {
+      ...cd.cluster,
+      centroid: newCentroid,
+    });
+  }
+
+  return result;
 }
 
 // ---------------------------------------------------------------------------

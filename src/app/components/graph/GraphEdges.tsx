@@ -2,6 +2,7 @@
 
 import { useRef, useEffect, useMemo } from 'react';
 import * as THREE from 'three';
+import { getGraphTheme } from '../../utils/graphThemeConfig';
 
 export interface GraphEdgeData {
   sourceX: number;
@@ -17,6 +18,7 @@ export interface GraphEdgeData {
 interface GraphEdgesProps {
   edges: GraphEdgeData[];
   hidden?: boolean;
+  graphTheme: 'dark' | 'light';
 }
 
 const _start = new THREE.Vector3();
@@ -28,13 +30,13 @@ const _color = new THREE.Color();
 const _up = new THREE.Vector3(0, 1, 0);
 const _quat = new THREE.Quaternion();
 
-export function GraphEdges({ edges, hidden }: GraphEdgesProps) {
+export function GraphEdges({ edges, hidden, graphTheme }: GraphEdgesProps) {
   const meshRef = useRef<THREE.InstancedMesh>(null);
 
   const cylinderGeo = useMemo(() => new THREE.CylinderGeometry(0.05, 0.05, 1, 4), []);
   const material = useMemo(
-    () => new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.6 }),
-    [],
+    () => new THREE.MeshBasicMaterial({ transparent: true, opacity: getGraphTheme(graphTheme).edgeOpacity }),
+    [graphTheme],
   );
 
   useEffect(() => {
@@ -47,6 +49,8 @@ export function GraphEdges({ edges, hidden }: GraphEdgesProps) {
   useEffect(() => {
     const mesh = meshRef.current;
     if (!mesh || edges.length === 0) return;
+
+    const config = getGraphTheme(graphTheme);
 
     for (let i = 0; i < edges.length; i++) {
       const edge = edges[i];
@@ -68,14 +72,14 @@ export function GraphEdges({ edges, hidden }: GraphEdgesProps) {
       _dummy.updateMatrix();
       mesh.setMatrixAt(i, _dummy.matrix);
 
-      _color.set(edge.color);
+      _color.set(config.edgeColor);
       mesh.setColorAt(i, _color);
     }
 
     mesh.instanceMatrix.needsUpdate = true;
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     mesh.count = edges.length;
-  }, [edges]);
+  }, [edges, graphTheme]);
 
   if (edges.length === 0 || hidden) return null;
 

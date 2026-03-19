@@ -3,7 +3,7 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { OrbitControls } from '@react-three/drei';
+import { OrbitControls, OrthographicCamera, Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { invoke } from '@tauri-apps/api/core';
 import { Flex, Spin, Empty } from 'antd';
@@ -27,7 +27,6 @@ import {
   type RustProjectGraphData,
   buildGraphologyInstance,
   hasCachedPositions,
-  assignZLayer,
   extractPositionsForSave,
   extractNodeData,
 } from '../../utils/graphDataTransform';
@@ -37,6 +36,9 @@ import {
   computeVisibleSet,
   findShortestPath,
 } from '../../utils/graphAlgorithms';
+import { computeClusters, findClusterForNode } from '../../utils/graphClustering';
+import { GraphClusterMetaballs } from './GraphClusterMetaballs';
+import { GraphStubEdges } from './GraphStubEdges';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -97,7 +99,7 @@ function collectNodeData(graph: Graph): GraphNodeData[] {
       id: nodeId,
       x: typeof attrs.x === 'number' ? attrs.x : 0,
       y: typeof attrs.y === 'number' ? attrs.y : 0,
-      z: typeof attrs.z === 'number' ? attrs.z : 0,
+      z: 0,
       size: typeof attrs.size === 'number' ? attrs.size : 5,
       color: typeof attrs.color === 'string' ? attrs.color : '#888888',
       entityType: typeof attrs.entity_type === 'string' ? attrs.entity_type : 'request',
@@ -144,6 +146,22 @@ function CameraController() {
   const fitViewRequested = useGraphStore((s) => s.fitViewRequested);
   const clearFitView = useGraphStore((s) => s.clearFitView);
 
+  // Phase 4: cluster focus / overview transitions
+  const clusterMode = useGraphStore((s) => s.clusterMode);
+  const focusedClusterId = useGraphStore((s) => s.focusedClusterId);
+  const clusters = useGraphStore((s) => s.clusters);
+
+  const [focusTransition, setFocusTransition] = useState<{
+    targetPos: THREE.Vector3;
+    targetZoom: number;
+  } | null>(null);
+  const focusProgress = useRef(0);
+
+  // Enable camera layer 1 so Html labels and metaballs render correctly
+  useEffect(() => {
+    camera.layers.enable(1);
+  }, [camera]);
+
   // Trigger fly-to when active search result changes
   useEffect(() => {
     if (searchResults.length === 0) return;
@@ -156,21 +174,107 @@ function CameraController() {
     const attrs = graph.getNodeAttributes(result.nodeId);
     const x = typeof attrs.x === 'number' ? attrs.x : 0;
     const y = typeof attrs.y === 'number' ? attrs.y : 0;
-    const z = typeof attrs.z === 'number' ? attrs.z : 0;
 
-    setFlyTarget(new THREE.Vector3(x, y, z));
+    setFlyTarget(new THREE.Vector3(x, y, 10)); // z=10 in 2D mode
     flyProgress.current = 0;
   }, [activeSearchIndex, searchResults]);
 
   // Trigger fit-view reset when requested
   useEffect(() => {
     if (!fitViewRequested) return;
-    setFlyTarget(new THREE.Vector3(0, 0, 0));
+    setFlyTarget(new THREE.Vector3(0, 0, 10));
     flyProgress.current = 0;
     clearFitView();
   }, [fitViewRequested, clearFitView]);
 
+  // Trigger focus transition when entering focus mode
+  useEffect(() => {
+    if (clusterMode === 'focus' && focusedClusterId) {
+      const cluster = clusters.get(focusedClusterId);
+      if (!cluster) return;
+
+      const orthoCamera = camera as THREE.OrthographicCamera;
+
+      // Save pre-focus state so we can restore it when going back to overview
+      useGraphStore.getState().setPreFocusState(
+        orthoCamera.zoom,
+        { x: camera.position.x, y: camera.position.y },
+      );
+
+      // Compute bounding box of cluster nodes
+      const storeGraph = useGraphStore.getState().graph;
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      if (storeGraph) {
+        for (const nid of cluster.nodeIds) {
+          if (!storeGraph.hasNode(nid)) continue;
+          const a = storeGraph.getNodeAttributes(nid);
+          const nx = typeof a.x === 'number' ? a.x : 0;
+          const ny = typeof a.y === 'number' ? a.y : 0;
+          if (nx < minX) minX = nx;
+          if (nx > maxX) maxX = nx;
+          if (ny < minY) minY = ny;
+          if (ny > maxY) maxY = ny;
+        }
+      }
+
+      const clusterW = Math.max(maxX - minX, 50);
+      const clusterH = Math.max(maxY - minY, 50);
+      const viewW = (orthoCamera.right - orthoCamera.left) / orthoCamera.zoom;
+      const viewH = (orthoCamera.top - orthoCamera.bottom) / orthoCamera.zoom;
+      const targetZoom = Math.min(viewW / clusterW, viewH / clusterH) * 0.8 * orthoCamera.zoom;
+
+      setFocusTransition({
+        targetPos: new THREE.Vector3(cluster.centroid.x, cluster.centroid.y, 10),
+        targetZoom,
+      });
+      focusProgress.current = 0;
+    }
+  }, [clusterMode, focusedClusterId, clusters, camera]);
+
+  // Restore camera when returning to overview mode
+  useEffect(() => {
+    if (clusterMode === 'overview') {
+      const { preFocusZoom, preFocusPosition } = useGraphStore.getState();
+      setFocusTransition({
+        targetPos: new THREE.Vector3(preFocusPosition.x, preFocusPosition.y, 10),
+        targetZoom: preFocusZoom,
+      });
+      focusProgress.current = 0;
+    }
+  }, [clusterMode]);
+
   useFrame((_state, delta) => {
+    // Focus transition takes priority over search fly-to
+    if (focusTransition && focusProgress.current < 1) {
+      focusProgress.current = Math.min(1, focusProgress.current + delta * 2.5);
+      const ease = 1 - Math.pow(1 - focusProgress.current, 3);
+
+      camera.position.lerp(focusTransition.targetPos, ease);
+      const orthoCamera = camera as THREE.OrthographicCamera;
+      orthoCamera.zoom = THREE.MathUtils.lerp(
+        orthoCamera.zoom,
+        focusTransition.targetZoom,
+        ease,
+      );
+      orthoCamera.updateProjectionMatrix();
+
+      const controls = controlsRef.current;
+      if (controls?.target) {
+        const target2d = new THREE.Vector3(
+          focusTransition.targetPos.x,
+          focusTransition.targetPos.y,
+          0,
+        );
+        controls.target.lerp(target2d, ease);
+        controls.update();
+      }
+
+      if (focusProgress.current >= 1) {
+        setFocusTransition(null);
+      }
+      return; // skip fly-to while focus transition is active
+    }
+
     if (!flyTarget || flyProgress.current >= 1) return;
 
     flyProgress.current = Math.min(1, flyProgress.current + delta * 3);
@@ -184,21 +288,17 @@ function CameraController() {
       controls.update();
     }
 
-    // Move camera closer — maintain direction, target distance of 80 units
-    const currentOffset = camera.position
-      .clone()
-      .sub(controls?.target ?? new THREE.Vector3())
-      .normalize()
-      .multiplyScalar(80);
-    const desiredPos = flyTarget.clone().add(currentOffset);
-    camera.position.lerp(desiredPos, ease * 0.5);
+    camera.position.lerp(
+      new THREE.Vector3(flyTarget.x, flyTarget.y, 10),
+      ease * 0.5
+    );
 
     if (flyProgress.current >= 1) {
       setFlyTarget(null);
     }
   });
 
-  return <OrbitControls ref={controlsRef} makeDefault enableDamping dampingFactor={0.1} />;
+  return <OrbitControls ref={controlsRef} makeDefault enableRotate={false} enableDamping dampingFactor={0.1} />;
 }
 
 // ---------------------------------------------------------------------------
@@ -223,6 +323,10 @@ export default function GraphCanvas({
   const pathNodeIds = useGraphStore((s) => s.pathNodeIds);
   const setCommunities = useGraphStore((s) => s.setCommunities);
   const bloomEnabled = useGraphStore((s) => s.bloomEnabled);
+  const clusterMode = useGraphStore((s) => s.clusterMode);
+  const clusters = useGraphStore((s) => s.clusters);
+  const focusedClusterId = useGraphStore((s) => s.focusedClusterId);
+  const focusOverrideNodeIds = useGraphStore((s) => s.focusOverrideNodeIds);
 
   const [nodeData, setNodeData] = useState<GraphNodeData[]>([]);
   const [edgeData, setEdgeData] = useState<GraphEdgeData[]>([]);
@@ -236,6 +340,7 @@ export default function GraphCanvas({
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const graphRef = useRef<Graph | null>(null);
   const positionsSavedRef = useRef(false);
+  const lastModeChange = useRef(0);
 
   // ---------------------------------------------------------------------------
   // Kill layout + rAF cleanup (reusable)
@@ -305,6 +410,19 @@ export default function GraphCanvas({
       setEdgeData(collectEdgeData(graph));
       savePositions(graph);
 
+      // Compute clusters after layout settles
+      const clusterMap = computeClusters(graph);
+      useGraphStore.getState().setClusters(clusterMap);
+      const now = Date.now();
+      if (now - lastModeChange.current >= 100) {
+        lastModeChange.current = now;
+        if (clusterMap.size >= 2) {
+          useGraphStore.getState().setClusterMode('overview');
+        } else {
+          useGraphStore.getState().setClusterMode('off');
+        }
+      }
+
       setIsComputingLocal(false);
       setComputing(false);
     },
@@ -339,7 +457,6 @@ export default function GraphCanvas({
         if (cancelled) return;
 
         const graph = buildGraphologyInstance(data);
-        assignZLayer(graph);
         graphRef.current = graph;
 
         // Build nodeIndexToId mapping (stable insertion order)
@@ -359,6 +476,20 @@ export default function GraphCanvas({
           assignDegreeCentrality(graph);
           setNodeData(collectNodeData(graph));
           setEdgeData(collectEdgeData(graph));
+
+          // Compute clusters for cached path
+          const clusterMap = computeClusters(graph);
+          useGraphStore.getState().setClusters(clusterMap);
+          const nowCached = Date.now();
+          if (nowCached - lastModeChange.current >= 100) {
+            lastModeChange.current = nowCached;
+            if (clusterMap.size >= 2) {
+              useGraphStore.getState().setClusterMode('overview');
+            } else {
+              useGraphStore.getState().setClusterMode('off');
+            }
+          }
+
           setIsLoading(false);
           return;
         }
@@ -455,8 +586,15 @@ export default function GraphCanvas({
         return;
       }
 
-      // Escape — clear search or deselect
+      // Escape — exit cluster focus mode first, then clear search or deselect
       if (e.key === 'Escape') {
+        const { clusterMode } = useGraphStore.getState();
+        if (clusterMode === 'focus') {
+          useGraphStore.getState().setClusterMode('overview');
+          useGraphStore.getState().setFocusedClusterId(null);
+          useGraphStore.getState().setFocusOverrideNodeIds(null);
+          return;
+        }
         const { searchQuery, setSearchQuery, setSearchResults, clearPath } = useGraphStore.getState();
         if (searchQuery) {
           setSearchQuery('');
@@ -504,6 +642,22 @@ export default function GraphCanvas({
       const graph = graphRef.current;
       if (!graph || !graph.hasNode(nodeId)) return;
 
+      const { clusterMode: currentClusterMode, clusters: currentClusters } = useGraphStore.getState();
+
+      // Overview mode: clicking a node focuses the entire cluster
+      if (currentClusterMode === 'overview' && !event?.shiftKey) {
+        const clusterId = findClusterForNode(nodeId, currentClusters);
+        if (clusterId) {
+          const cluster = currentClusters.get(clusterId);
+          if (cluster) {
+            useGraphStore.getState().setFocusedClusterId(clusterId);
+            useGraphStore.getState().setFocusOverrideNodeIds(cluster.nodeIds);
+            useGraphStore.getState().setClusterMode('focus');
+          }
+        }
+        return;
+      }
+
       const current = useGraphStore.getState().selectedNode;
 
       // Shift+click: find path between current and clicked node
@@ -527,6 +681,13 @@ export default function GraphCanvas({
   );
 
   const handleDeselect = useCallback(() => {
+    const { clusterMode } = useGraphStore.getState();
+    if (clusterMode === 'focus') {
+      useGraphStore.getState().setClusterMode('overview');
+      useGraphStore.getState().setFocusedClusterId(null);
+      useGraphStore.getState().setFocusOverrideNodeIds(null);
+      return;
+    }
     setSelectedNode(null);
     useGraphStore.getState().clearPath();
   }, [setSelectedNode]);
@@ -574,6 +735,9 @@ export default function GraphCanvas({
           nodeData: extractNodeData(graphRef.current, selectedNode.nodeId),
         }
       : null;
+
+  // Focus override overrides the filter-computed visible set
+  const effectiveVisibleIds = focusOverrideNodeIds ?? visibleNodeIds;
 
   // ---------------------------------------------------------------------------
   // Early-exit render states
@@ -641,13 +805,10 @@ export default function GraphCanvas({
 
       <Canvas
         style={{ position: 'absolute', inset: 0 }}
-        camera={{ position: [0, 0, 400], fov: 60, near: 1, far: 5000 }}
         gl={{ antialias: true }}
         onPointerMissed={handleDeselect}
       >
-        {/* Lighting */}
-        <ambientLight intensity={0.6} />
-        <directionalLight position={[200, 200, 200]} intensity={0.8} />
+        <OrthographicCamera makeDefault zoom={1.5} near={-100} far={100} position={[0, 0, 10]} />
 
         {/* Camera controls + fly-to animation */}
         <CameraController />
@@ -657,13 +818,52 @@ export default function GraphCanvas({
           nodes={nodeData}
           selectedNodeId={selectedNode?.nodeId ?? null}
           hoveredNodeId={hoveredNodeId}
-          visibleNodeIds={visibleNodeIds}
+          visibleNodeIds={effectiveVisibleIds}
           pathNodeIds={pathNodeIds}
+          clusterMode={clusterMode}
           onNodeClick={handleNodeClick}
           onNodeHover={handleNodeHover}
           onPointerMissed={handleDeselect}
         />
-        <GraphEdges edges={edgeData} />
+        <GraphEdges edges={edgeData} hidden={clusterMode === 'overview'} />
+
+        {/* Metaball cluster blobs */}
+        <GraphClusterMetaballs
+          nodes={nodeData}
+          clusters={clusters}
+          enabled={clusterMode !== 'off'}
+          focusedClusterId={focusedClusterId}
+        />
+
+        {/* Stub edges pointing toward external clusters in focus mode */}
+        {clusterMode === 'focus' && (
+          <GraphStubEdges
+            focusedClusterId={focusedClusterId}
+            clusters={clusters}
+            graph={graphRef.current}
+          />
+        )}
+
+        {/* Cluster name labels in overview mode */}
+        {clusterMode === 'overview' && [...clusters.values()].map((cluster) => (
+          cluster.nodeIds.size >= 2 ? (
+            <Html
+              key={cluster.id}
+              position={[cluster.centroid.x, cluster.centroid.y, 0.5]}
+              center
+              style={{
+                color: cluster.color,
+                fontSize: 12,
+                fontWeight: 600,
+                textShadow: '0 1px 4px rgba(0,0,0,0.8)',
+                pointerEvents: 'none',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {cluster.name}
+            </Html>
+          ) : null
+        ))}
 
         {bloomEnabled && (
           <EffectComposer>

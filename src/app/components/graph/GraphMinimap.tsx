@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, memo } from 'react';
 import { useGraphStore } from '../../stores/graphStore';
+import type { ClusterInfo } from '../../stores/graphStore';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -56,11 +57,99 @@ function toMinimapCoord(
 }
 
 // ---------------------------------------------------------------------------
+// Cluster circle helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse a CSS hex or rgb(a) color string and return it with the given alpha
+ * as an rgba() string suitable for Canvas2D.
+ */
+function colorWithAlpha(color: string, alpha: number): string {
+  // Handle hex colors (#rrggbb or #rgb)
+  const hexMatch = color.match(/^#([0-9a-fA-F]{3,8})$/);
+  if (hexMatch) {
+    const hex = hexMatch[1];
+    let r: number;
+    let g: number;
+    let b: number;
+    if (hex.length === 3) {
+      r = parseInt(hex[0] + hex[0], 16);
+      g = parseInt(hex[1] + hex[1], 16);
+      b = parseInt(hex[2] + hex[2], 16);
+    } else {
+      r = parseInt(hex.slice(0, 2), 16);
+      g = parseInt(hex.slice(2, 4), 16);
+      b = parseInt(hex.slice(4, 6), 16);
+    }
+    return `rgba(${r},${g},${b},${alpha})`;
+  }
+  // Fallback: wrap in rgba via globalAlpha (caller will set globalAlpha instead)
+  return color;
+}
+
+/**
+ * Draw translucent bounding circles for each cluster on the minimap.
+ */
+function drawClusterCircles(
+  ctx: CanvasRenderingContext2D,
+  clusters: Map<string, ClusterInfo>,
+  graph: import('graphology').default,
+  bb: BoundingBox,
+  focusedClusterId: string | null,
+  isFocusMode: boolean,
+): void {
+  ctx.save();
+
+  clusters.forEach((cluster) => {
+    const isFocused = cluster.id === focusedClusterId;
+
+    // In focus mode, dim all circles except the focused one
+    const fillAlpha = isFocusMode && !isFocused ? 0.04 : 0.15;
+    const strokeAlpha = isFocusMode && !isFocused ? 0.12 : 0.40;
+
+    // Centroid in minimap coords
+    const cx = toMinimapCoord(cluster.centroid.x, bb.minX, bb.maxX, MINIMAP_W);
+    const cy = MINIMAP_H - toMinimapCoord(cluster.centroid.y, bb.minY, bb.maxY, MINIMAP_H);
+
+    // Compute radius as max distance from centroid to any member node (in minimap coords)
+    let maxDistSq = 0;
+    for (const nodeId of cluster.nodeIds) {
+      if (!graph.hasNode(nodeId)) continue;
+      const attrs = graph.getNodeAttributes(nodeId);
+      const nx = typeof attrs.x === 'number' ? attrs.x : 0;
+      const ny = typeof attrs.y === 'number' ? attrs.y : 0;
+      const px = toMinimapCoord(nx, bb.minX, bb.maxX, MINIMAP_W);
+      const py = MINIMAP_H - toMinimapCoord(ny, bb.minY, bb.maxY, MINIMAP_H);
+      const dx = px - cx;
+      const dy = py - cy;
+      const distSq = dx * dx + dy * dy;
+      if (distSq > maxDistSq) maxDistSq = distSq;
+    }
+
+    // Minimum radius so single-node clusters are still visible
+    const radius = Math.max(Math.sqrt(maxDistSq) + DOT_RADIUS, DOT_RADIUS * 3);
+
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.fillStyle = colorWithAlpha(cluster.color, fillAlpha);
+    ctx.fill();
+    ctx.strokeStyle = colorWithAlpha(cluster.color, strokeAlpha);
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  });
+
+  ctx.restore();
+}
+
+// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
 function GraphMinimapInner() {
   const graph = useGraphStore((s) => s.graph);
+  const clusterMode = useGraphStore((s) => s.clusterMode);
+  const clusters = useGraphStore((s) => s.clusters);
+  const focusedClusterId = useGraphStore((s) => s.focusedClusterId);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -87,6 +176,18 @@ function GraphMinimapInner() {
     const bb = computeBoundingBox(positions);
     if (!bb) return;
 
+    // Draw cluster bounding circles underneath node dots (when clustering is active)
+    if (clusterMode !== 'off' && clusters.size > 0) {
+      drawClusterCircles(
+        ctx,
+        clusters,
+        graph,
+        bb,
+        focusedClusterId,
+        clusterMode === 'focus',
+      );
+    }
+
     // Draw each node as a small filled dot
     for (const { x, y, color } of positions) {
       const px = toMinimapCoord(x, bb.minX, bb.maxX, MINIMAP_W);
@@ -101,7 +202,7 @@ function GraphMinimapInner() {
     }
 
     ctx.globalAlpha = 1;
-  }, [graph]);
+  }, [graph, clusterMode, clusters, focusedClusterId]);
 
   return (
     <div

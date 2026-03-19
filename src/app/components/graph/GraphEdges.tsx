@@ -16,6 +16,7 @@ export interface GraphEdgeData {
 
 interface GraphEdgesProps {
   edges: GraphEdgeData[];
+  hidden?: boolean;
 }
 
 const _start = new THREE.Vector3();
@@ -27,7 +28,7 @@ const _color = new THREE.Color();
 const _up = new THREE.Vector3(0, 1, 0);
 const _quat = new THREE.Quaternion();
 
-export function GraphEdges({ edges }: GraphEdgesProps) {
+export function GraphEdges({ edges, hidden }: GraphEdgesProps) {
   const meshRef = useRef<THREE.InstancedMesh>(null);
 
   const cylinderGeo = useMemo(() => new THREE.CylinderGeometry(0.05, 0.05, 1, 4), []);
@@ -76,7 +77,7 @@ export function GraphEdges({ edges }: GraphEdgesProps) {
     mesh.count = edges.length;
   }, [edges]);
 
-  if (edges.length === 0) return null;
+  if (edges.length === 0 || hidden) return null;
 
   return (
     <instancedMesh

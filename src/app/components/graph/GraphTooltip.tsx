@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useGraphStore } from '../../stores/graphStore';
+import { findClusterForNode, type ClusterInfo } from '../../utils/graphClustering';
+import type Graph from 'graphology';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -77,12 +79,60 @@ interface MousePos {
 }
 
 // ---------------------------------------------------------------------------
+// Cluster summary helper
+// ---------------------------------------------------------------------------
+
+function getClusterSummary(
+  clusterId: string,
+  clusters: Map<string, ClusterInfo>,
+  graph: Graph | null,
+): string {
+  const cluster = clusters.get(clusterId);
+  if (!cluster || !graph) return '';
+
+  let collections = 0;
+  let requests = 0;
+  let models = 0;
+  const methods: Record<string, number> = {};
+
+  for (const nid of cluster.nodeIds) {
+    if (!graph.hasNode(nid)) continue;
+    const attrs = graph.getNodeAttributes(nid);
+    const entityType = attrs.entity_type as string;
+    if (entityType === 'collection') {
+      collections++;
+    } else if (entityType === 'request') {
+      requests++;
+      const props = (attrs.properties ?? {}) as Record<string, unknown>;
+      const method = ((props.method as string) ?? 'GET').toUpperCase();
+      methods[method] = (methods[method] ?? 0) + 1;
+    } else if (entityType === 'model') {
+      models++;
+    }
+  }
+
+  const parts: string[] = [];
+  if (collections > 0) parts.push(`${collections} collection${collections > 1 ? 's' : ''}`);
+  if (requests > 0) parts.push(`${requests} request${requests > 1 ? 's' : ''}`);
+  if (models > 0) parts.push(`${models} model${models > 1 ? 's' : ''}`);
+
+  const sortedMethods = Object.entries(methods).sort((a, b) => b[1] - a[1]);
+  const dominant = sortedMethods[0];
+  const methodNote =
+    dominant && dominant[1] > requests * 0.5 ? ` (${dominant[0]}-heavy)` : '';
+
+  return parts.join(', ') + methodNote;
+}
+
+// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
 export default function GraphTooltip() {
   const hoveredNodeId = useGraphStore((s) => s.hoveredNodeId);
   const graph = useGraphStore((s) => s.graph);
+  const clusterMode = useGraphStore((s) => s.clusterMode);
+  const clusters = useGraphStore((s) => s.clusters);
 
   const [visible, setVisible] = useState(false);
   const [mousePos, setMousePos] = useState<MousePos>({ clientX: 0, clientY: 0 });
@@ -126,6 +176,91 @@ export default function GraphTooltip() {
     return null;
   }
 
+  // Clamp tooltip position to avoid going offscreen
+  const viewportW = window.innerWidth;
+  const viewportH = window.innerHeight;
+  const tooltipW = 280;
+  const tooltipH = 160; // rough estimate
+  const rawLeft = mousePos.clientX + TOOLTIP_OFFSET_X;
+  const rawTop = mousePos.clientY + TOOLTIP_OFFSET_Y;
+  const left = Math.min(rawLeft, viewportW - tooltipW - 8);
+  const top = Math.min(rawTop, viewportH - tooltipH - 8);
+
+  // ---------------------------------------------------------------------------
+  // Overview mode: show cluster info
+  // ---------------------------------------------------------------------------
+
+  if (clusterMode === 'overview') {
+    const clusterId = findClusterForNode(hoveredNodeId, clusters);
+    const cluster = clusterId !== null ? clusters.get(clusterId) : null;
+
+    if (cluster) {
+      const memberCount = cluster.nodeIds.size;
+      const summary = clusterId !== null ? getClusterSummary(clusterId, clusters, graph) : '';
+      const clusterColor = cluster.color;
+      const clusterBg = hexToRgba(clusterColor, 0.15);
+
+      return (
+        <div style={{ ...tooltipStyle, left, top }}>
+          {/* Cluster badge + name */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span
+              style={{
+                background: clusterBg,
+                color: clusterColor,
+                fontSize: 9,
+                fontWeight: 700,
+                padding: '2px 6px',
+                borderRadius: 4,
+                textTransform: 'uppercase',
+                letterSpacing: '0.06em',
+                flexShrink: 0,
+              }}
+            >
+              cluster
+            </span>
+            <span
+              style={{
+                fontSize: 13,
+                fontWeight: 700,
+                color: 'var(--text-primary)',
+                wordBreak: 'break-word',
+                lineHeight: 1.3,
+              }}
+            >
+              {cluster.name}
+            </span>
+          </div>
+
+          {/* Member count */}
+          <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
+            {memberCount} {memberCount === 1 ? 'node' : 'nodes'}
+          </div>
+
+          {/* Breakdown */}
+          {summary && (
+            <div
+              style={{
+                fontSize: 11,
+                color: 'var(--text-secondary)',
+                background: 'rgba(255, 255, 255, 0.04)',
+                border: '1px solid rgba(255, 255, 255, 0.08)',
+                borderRadius: 4,
+                padding: '3px 7px',
+              }}
+            >
+              {summary}
+            </div>
+          )}
+        </div>
+      );
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Default mode: show individual node info
+  // ---------------------------------------------------------------------------
+
   const attrs = graph.getNodeAttributes(hoveredNodeId);
   const entityType = (attrs.entity_type as string) ?? 'request';
   const props = (attrs.properties ?? {}) as Record<string, unknown>;
@@ -140,16 +275,6 @@ export default function GraphTooltip() {
       edgeType: (edgeAttrs.edge_type as string) ?? '',
     });
   });
-
-  // Clamp tooltip position to avoid going offscreen
-  const viewportW = window.innerWidth;
-  const viewportH = window.innerHeight;
-  const tooltipW = 280;
-  const tooltipH = 160; // rough estimate
-  const rawLeft = mousePos.clientX + TOOLTIP_OFFSET_X;
-  const rawTop = mousePos.clientY + TOOLTIP_OFFSET_Y;
-  const left = Math.min(rawLeft, viewportW - tooltipW - 8);
-  const top = Math.min(rawTop, viewportH - tooltipH - 8);
 
   const typeColor = ENTITY_TYPE_COLORS[entityType] ?? '#94a3b8';
   const typeBg = hexToRgba(typeColor, 0.15);

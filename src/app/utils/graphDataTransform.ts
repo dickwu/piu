@@ -43,16 +43,6 @@ export interface RustProjectGraphData {
 }
 
 // ---------------------------------------------------------------------------
-// Z-axis layering constants (entity type -> z offset)
-// ---------------------------------------------------------------------------
-
-const Z_LAYER: Record<string, number> = {
-  collection: 0,
-  request: 50,
-  model: 100,
-};
-
-// ---------------------------------------------------------------------------
 // Build a graphology Graph from Rust JSON
 // ---------------------------------------------------------------------------
 
@@ -76,7 +66,7 @@ export function buildGraphologyInstance(data: RustProjectGraphData): Graph {
       color: node.color,
       x: node.fx ?? undefined,
       y: node.fy ?? undefined,
-      z: node.fz ?? Z_LAYER[node.entity_type] ?? 0,
+      z: 0,
     });
   }
 
@@ -113,17 +103,6 @@ export function hasCachedPositions(graph: Graph): boolean {
     return false;
   });
   return found;
-}
-
-// ---------------------------------------------------------------------------
-// Assign z-axis based on entity type
-// ---------------------------------------------------------------------------
-
-export function assignZLayer(graph: Graph): void {
-  graph.forEachNode((node, attrs) => {
-    const z = Z_LAYER[attrs.entity_type as string] ?? 0;
-    graph.setNodeAttribute(node, 'z', z);
-  });
 }
 
 // ---------------------------------------------------------------------------

@@ -5,7 +5,7 @@ import { findShortestPath } from './graphAlgorithms';
 // Query result types
 // ---------------------------------------------------------------------------
 
-export type QueryResultType = 'path' | 'nodes' | 'community' | 'text' | 'search';
+export type QueryResultType = 'path' | 'nodes' | 'community' | 'text' | 'search' | 'cluster_toggle' | 'cluster_focus';
 
 export interface QueryResult {
   type: QueryResultType;
@@ -17,6 +17,10 @@ export interface QueryResult {
   path?: string[];
   /** If type is 'community', the community ID */
   communityId?: number;
+  /** If type is 'cluster_toggle', whether to enable or disable cluster mode */
+  action?: 'on' | 'off';
+  /** If type is 'cluster_focus', the cluster name to focus */
+  name?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -131,6 +135,7 @@ const PATTERNS: QueryPattern[] = [
     regex: /(?:show\s+)?(?:cluster|community|group)\s+(\d+)/i,
     handler: (graph, match) => {
       const communityId = parseInt(match[1], 10);
+      const clusterName = String(communityId);
       const nodes: string[] = [];
       graph.forEachNode((id, attrs) => {
         if ((attrs.community_rank as number) === communityId) nodes.push(id);
@@ -139,11 +144,51 @@ const PATTERNS: QueryPattern[] = [
         return { type: 'text', title: 'Not found', description: `No community with rank ${communityId}`, highlightNodes: [] };
       }
       return {
-        type: 'community',
-        title: `Community ${communityId} (${nodes.length} nodes)`,
-        description: `Isolated view of cluster ${communityId}`,
+        type: 'cluster_focus',
+        title: `Focus cluster ${communityId} (${nodes.length} nodes)`,
+        description: `Focusing cluster ${communityId}`,
         highlightNodes: nodes,
         communityId,
+        name: clusterName,
+      };
+    },
+  },
+
+  // "fuse" — enable cluster mode
+  {
+    regex: /^fuse$/i,
+    handler: () => ({
+      type: 'cluster_toggle',
+      action: 'on',
+      title: 'Cluster mode on',
+      description: 'Cluster mode enabled — nodes are grouped by community',
+      highlightNodes: [],
+    }),
+  },
+
+  // "unfuse" — disable cluster mode
+  {
+    regex: /^unfuse$/i,
+    handler: () => ({
+      type: 'cluster_toggle',
+      action: 'off',
+      title: 'Cluster mode off',
+      description: 'Cluster mode disabled — all individual nodes visible',
+      highlightNodes: [],
+    }),
+  },
+
+  // "focus <name>" — focus a named cluster
+  {
+    regex: /^focus\s+(.+)$/i,
+    handler: (_graph, match) => {
+      const clusterName = match[1].trim();
+      return {
+        type: 'cluster_focus',
+        name: clusterName,
+        title: `Focus cluster: ${clusterName}`,
+        description: `Focusing cluster "${clusterName}"`,
+        highlightNodes: [],
       };
     },
   },

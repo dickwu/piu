@@ -22,6 +22,7 @@ interface GraphNodesProps {
   hoveredNodeId: string | null;
   visibleNodeIds: Set<string> | null; // null = all visible
   pathNodeIds: Set<string>;
+  clusterMode: 'overview' | 'focus' | 'off';
   onNodeClick: (nodeId: string, event?: { shiftKey?: boolean }) => void;
   onNodeHover: (nodeId: string | null) => void;
   onPointerMissed: () => void;
@@ -31,7 +32,7 @@ const _dummy = new THREE.Object3D();
 const _color = new THREE.Color();
 
 export function GraphNodes({
-  nodes, selectedNodeId, hoveredNodeId, visibleNodeIds, pathNodeIds,
+  nodes, selectedNodeId, hoveredNodeId, visibleNodeIds, pathNodeIds, clusterMode,
   onNodeClick, onNodeHover, onPointerMissed,
 }: GraphNodesProps) {
   const meshRef = useRef<THREE.InstancedMesh>(null);
@@ -53,10 +54,13 @@ export function GraphNodes({
     const mesh = meshRef.current;
     if (!mesh || nodes.length === 0) return;
 
+    const overviewDim = clusterMode === 'overview' ? 0.4 : 1.0;
+    const scaleFactor = clusterMode === 'overview' ? 0.6 : 1.0;
+
     for (let i = 0; i < nodes.length; i++) {
       const node = nodes[i];
       const isVisible = !visibleNodeIds || visibleNodeIds.has(node.id);
-      const scale = isVisible ? node.size : 0;
+      const scale = isVisible ? node.size * scaleFactor : 0;
 
       _dummy.position.set(node.x, node.y, node.z);
       _dummy.scale.set(scale, scale, scale);
@@ -67,14 +71,14 @@ export function GraphNodes({
       const dimFactor = inPath ? 1.0 : 0.25;
 
       _color.set(node.color);
-      _color.multiplyScalar(dimFactor);
+      _color.multiplyScalar(dimFactor * overviewDim);
       mesh.setColorAt(i, _color);
     }
 
     mesh.instanceMatrix.needsUpdate = true;
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     mesh.count = nodes.length;
-  }, [nodes, visibleNodeIds, pathNodeIds]);
+  }, [nodes, visibleNodeIds, pathNodeIds, clusterMode]);
 
   const handleClick = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation();

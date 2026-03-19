@@ -17,6 +17,15 @@ interface SelectedNode {
   entityId: string;
 }
 
+// TEMPORARY — will be replaced by import from '../utils/graphClustering' in Task 3
+export interface ClusterInfo {
+  id: string;
+  name: string;
+  color: string;
+  nodeIds: Set<string>;
+  centroid: { x: number; y: number };
+}
+
 interface GraphStore {
   // --- Phase 1 (existing) ---
   graph: Graph | null;
@@ -77,6 +86,23 @@ interface GraphStore {
   fitViewRequested: boolean;
   requestFitView: () => void;
   clearFitView: () => void;
+
+  // --- Phase 4: Cluster fusion ---
+  clusterMode: 'overview' | 'focus' | 'off';
+  setClusterMode: (mode: 'overview' | 'focus' | 'off') => void;
+
+  clusters: Map<string, ClusterInfo>;
+  setClusters: (clusters: Map<string, ClusterInfo>) => void;
+
+  focusedClusterId: string | null;
+  setFocusedClusterId: (id: string | null) => void;
+
+  focusOverrideNodeIds: Set<string> | null;
+  setFocusOverrideNodeIds: (ids: Set<string> | null) => void;
+
+  preFocusZoom: number;
+  preFocusPosition: { x: number; y: number };
+  setPreFocusState: (zoom: number, position: { x: number; y: number }) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -162,4 +188,21 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
   fitViewRequested: false,
   requestFitView: () => set({ fitViewRequested: true }),
   clearFitView: () => set({ fitViewRequested: false }),
+
+  // Phase 4: Cluster fusion
+  clusterMode: 'off',
+  setClusterMode: (mode) => set({ clusterMode: mode }),
+
+  clusters: new Map(),
+  setClusters: (clusters) => set({ clusters }),
+
+  focusedClusterId: null,
+  setFocusedClusterId: (id) => set({ focusedClusterId: id }),
+
+  focusOverrideNodeIds: null,
+  setFocusOverrideNodeIds: (ids) => set({ focusOverrideNodeIds: ids }),
+
+  preFocusZoom: 1.5,
+  preFocusPosition: { x: 0, y: 0 },
+  setPreFocusState: (zoom, position) => set({ preFocusZoom: zoom, preFocusPosition: position }),
 }));

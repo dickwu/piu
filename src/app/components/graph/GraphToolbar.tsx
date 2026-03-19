@@ -2,7 +2,7 @@
 
 import { useCallback, useRef, useState } from 'react';
 import type { CSSProperties, KeyboardEvent } from 'react';
-import { Input, Flex } from 'antd';
+import { Input, Flex, Select, Tooltip } from 'antd';
 import type { InputRef } from 'antd';
 import {
   LeftOutlined,
@@ -11,6 +11,7 @@ import {
   ReloadOutlined,
   SearchOutlined,
   CloseOutlined,
+  GroupOutlined,
 } from '@ant-design/icons';
 
 import { useGraphStore } from '../../stores/graphStore';
@@ -18,6 +19,7 @@ import { searchNodes } from '../../utils/graphAlgorithms';
 import type { SearchResult } from '../../utils/graphAlgorithms';
 import { executeGraphQuery } from '../../utils/graphQueryEngine';
 import type { QueryResult } from '../../utils/graphQueryEngine';
+import type { ClusterInfo } from '../../utils/graphClustering';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -119,6 +121,8 @@ export default function GraphToolbar({ onResetLayout, onFitView, onFlyToNode }: 
   const filters = useGraphStore((s) => s.filters);
   const selectionHistory = useGraphStore((s) => s.selectionHistory);
   const selectionHistoryIndex = useGraphStore((s) => s.selectionHistoryIndex);
+  const clusterMode = useGraphStore((s) => s.clusterMode);
+  const clusters = useGraphStore((s) => s.clusters);
 
   const setSearchQuery = useGraphStore((s) => s.setSearchQuery);
   const setSearchResults = useGraphStore((s) => s.setSearchResults);
@@ -204,6 +208,39 @@ export default function GraphToolbar({ onResetLayout, onFitView, onFlyToNode }: 
     setDropdownOpen(false);
     useGraphStore.getState().clearPath();
   }, [setSearchQuery, setSearchResults, setActiveSearchIndex]);
+
+  // -------------------------------------------------------------------------
+  // Cluster handlers
+  // -------------------------------------------------------------------------
+
+  const handleClusterToggle = useCallback(() => {
+    const { clusterMode: current } = useGraphStore.getState();
+    if (current === 'overview') {
+      useGraphStore.getState().setClusterMode('off');
+    } else {
+      useGraphStore.getState().setClusterMode('overview');
+    }
+  }, []);
+
+  const handleBackToOverview = useCallback(() => {
+    useGraphStore.getState().setClusterMode('overview');
+    useGraphStore.getState().setFocusedClusterId(null);
+    useGraphStore.getState().setFocusOverrideNodeIds(null);
+  }, []);
+
+  const handleClusterSelect = useCallback((clusterId: string) => {
+    const { clusters: currentClusters } = useGraphStore.getState();
+    const cluster = currentClusters.get(clusterId);
+    if (!cluster) return;
+    useGraphStore.getState().setFocusedClusterId(clusterId);
+    useGraphStore.getState().setFocusOverrideNodeIds(cluster.nodeIds);
+    useGraphStore.getState().setClusterMode('focus');
+  }, []);
+
+  const clusterOptions = [...clusters.values()].map((c: ClusterInfo) => ({
+    label: c.name,
+    value: c.id,
+  }));
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLInputElement>) => {
@@ -500,6 +537,67 @@ export default function GraphToolbar({ onResetLayout, onFitView, onFlyToNode }: 
       >
         ✦
       </button>
+
+      <div style={DIVIDER} />
+
+      {/* Cluster controls */}
+      <Flex align="center" gap={6} style={{ flexShrink: 0 }}>
+        <Tooltip title={clusters.size === 0 ? 'Too few nodes to cluster' : (clusterMode === 'overview' ? 'Disable clustering' : 'Enable clustering')}>
+          <button
+            style={{
+              ...iconBtnStyle,
+              color: clusterMode !== 'off' ? '#a78bfa' : 'rgba(255,255,255,0.4)',
+              borderColor: clusterMode !== 'off' ? 'rgba(167,139,250,0.5)' : 'rgba(255,255,255,0.1)',
+              opacity: clusters.size === 0 ? 0.35 : 1,
+              cursor: clusters.size === 0 ? 'not-allowed' : 'pointer',
+            }}
+            onClick={clusters.size > 0 ? handleClusterToggle : undefined}
+            aria-disabled={clusters.size === 0}
+          >
+            <GroupOutlined style={{ fontSize: 12 }} />
+          </button>
+        </Tooltip>
+
+        {clusterMode === 'focus' && (
+          <button
+            style={{
+              ...iconBtnStyle,
+              color: '#a78bfa',
+              borderColor: 'rgba(167,139,250,0.5)',
+              padding: '0 8px',
+              fontSize: 11,
+            }}
+            onClick={handleBackToOverview}
+            title="Back to overview"
+          >
+            ← Overview
+          </button>
+        )}
+
+        {clusterMode !== 'off' && clusterOptions.length > 0 && (
+          <Select<string>
+            size="small"
+            placeholder="Jump to cluster..."
+            options={clusterOptions}
+            onChange={(clusterId: string) => {
+              handleClusterSelect(clusterId);
+            }}
+            value={undefined}
+            style={{ width: 150 }}
+            popupMatchSelectWidth={false}
+            styles={{
+              popup: {
+                root: {
+                  background: 'rgba(17,19,32,0.96)',
+                  border: '1px solid rgba(255,255,255,0.12)',
+                  borderRadius: 8,
+                  backdropFilter: 'blur(12px)',
+                },
+              },
+            }}
+          />
+        )}
+      </Flex>
     </div>
   );
 }

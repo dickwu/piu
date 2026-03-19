@@ -42,3 +42,7 @@ __pycache__/
 
 # Superpowers docs
 docs/superpowers/
+
+# Implementation plans (generated, not tracked)
+*-plan.md
+docs/specs/*-plan.md

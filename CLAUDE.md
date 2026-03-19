@@ -85,6 +85,10 @@ env.host + collection.path_prefix + request.url
 - **Modals/Drawers**: Always controlled with `open` state, `destroyOnHidden`, form reset on close
 - **Message/Modal/Notification API**: Must use `const { message, modal } = App.useApp()`, never static imports
 
+## Git Rules
+
+- **Never push `*-plan.md` files** — Implementation plans are local working documents, not tracked in git. They are gitignored via `*-plan.md`.
+
 ## CI/CD
 
 - **CI** (`.github/workflows/ci.yml`): Builds macOS (arm64 + x64), Linux (deb + rpm), Windows on push/PR to main

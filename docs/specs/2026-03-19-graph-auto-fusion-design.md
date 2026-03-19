@@ -1,7 +1,7 @@
 # Graph Auto-Fusion with Metaball Cluster Visualization
 
 **Date**: 2026-03-19
-**Status**: Draft
+**Status**: Draft (Rev 2 — addresses spec review findings)
 **Scope**: Graph visualization — semantic clustering, 2D mode, metaball boundaries, focus/overview interaction
 
 ## Summary
@@ -38,8 +38,8 @@ Enhance PIU's graph visualization with automatic semantic node fusion. Nodes are
 
 | File | Change |
 |------|--------|
-| `GraphCanvas.tsx` | Replace `<PerspectiveCamera>` with `<OrthographicCamera>` from drei |
-| `GraphCanvas.tsx` | `OrbitControls`: add `enableRotate={false}`, keep pan/zoom |
+| `GraphCanvas.tsx` | Replace `<PerspectiveCamera>` with `<OrthographicCamera makeDefault zoom={1.5} near={-100} far={100} />` from drei. Frustum is auto-computed from viewport size by drei — `zoom` controls the world-units-per-pixel ratio. Initial `zoom={1.5}` provides a sensible default for FA2 coordinate ranges (±100–300 units). |
+| `GraphCanvas.tsx` | `OrbitControls`: add `enableRotate={false}`, keep pan/zoom. Zoom changes `camera.zoom` (not camera position). `camera.updateProjectionMatrix()` is called automatically by drei's `OrbitControls`. |
 | `graphDataTransform.ts` | Remove `assignZLayer()` call and `Z_LAYER` constant |
 | `GraphNodes.tsx:61` | `_dummy.position.set(node.x, node.y, 0)` — always z=0 |
 | `GraphEdges.tsx` | Edge z-positions also set to 0 |
@@ -72,7 +72,9 @@ interface ClusterInfo {
 
 **Step 2 — URL-prefix split**: Within each Louvain community, group request nodes by their first URL path segment (e.g., `/users/...`, `/auth/...`). If a community contains requests from 2+ distinct path prefixes with significant counts (>3 each), split into sub-clusters.
 
-**Step 3 — Small-community merge**: Across Louvain communities, if two small communities (<=3 nodes) share a common path prefix, merge them.
+**Step 3 — Small-community merge**: Across Louvain communities, if two small communities (<=3 nodes) share a common path prefix, merge them. The merged cluster inherits the name of the larger community.
+
+**Step 4 — Independent palette assignment**: After all refinement steps complete, `graphClustering.ts` assigns its own color palette to the final clusters (sorted by size, largest first). These colors are independent of the `community_color` attributes set by `assignCommunities()` — the Louvain node attributes remain unchanged, but the cluster renderer uses the `ClusterInfo.color` from this step.
 
 ### Cluster Naming
 
@@ -98,56 +100,107 @@ A fullscreen quad behind all nodes that renders smooth organic cluster boundarie
 
 ### Architecture
 
-- Single `<mesh>` with `PlaneGeometry` covering the orthographic viewport, placed at z=-1 (behind nodes at z=0)
-- Custom `ShaderMaterial` with metaball SDF fragment shader
-- Cluster data passed as uniforms:
-  - `u_nodePositions: vec2[]` — all node x,y positions
-  - `u_nodeCluster: int[]` — cluster index per node
-  - `u_clusterColors: vec3[]` — RGB per cluster
-  - `u_nodeCount: int` — total node count
-  - `u_blobRadius: float` — controls blob size (default 28.0)
-  - `u_threshold: float` — SDF cutoff (default 1.0)
-  - `u_resolution: vec2` — viewport size
+- Uses `RawShaderMaterial` on a clip-space fullscreen quad (vertex shader outputs `gl_Position` directly in NDC — no model/view/projection needed). This ensures the quad always covers the full screen regardless of camera zoom/pan.
+- Placed at z=-1 (behind nodes at z=0)
+- **Bloom exclusion**: The metaball mesh is assigned to `layers.set(1)` (a non-default layer). The `EffectComposer` + `Bloom` pass only processes layer 0 (the default). This prevents the bloom pass from applying glow to the cluster blobs.
+- `raycast={() => null}` — clicks pass through to nodes
+
+### Uniform Contract
+
+Compile-time constant: `const int MAX_NODES = 512;`
+
+All arrays are declared at this fixed size. For graphs with fewer nodes, the remaining slots are padded with `vec2(99999.0)` (positions far off-screen that contribute negligible field values). The `u_nodeCount` uniform tells the loop when to stop iterating.
+
+| Uniform | Type | Description |
+|---------|------|-------------|
+| `u_nodePositions[MAX_NODES]` | `vec2` | Node positions in **NDC** (see Coordinate Space below) |
+| `u_nodeCluster[MAX_NODES]` | `int` | Cluster index per node (0-based) |
+| `u_clusterColors[MAX_CLUSTERS]` | `vec3` | RGB per cluster (`MAX_CLUSTERS = 24`) |
+| `u_nodeCount` | `int` | Actual node count (loop bound) |
+| `u_clusterCount` | `int` | Actual cluster count |
+| `u_blobRadius` | `float` | Controls blob size in NDC units (default 0.08) |
+| `u_threshold` | `float` | SDF cutoff (default 1.0) |
+
+### Coordinate Space
+
+Node positions must be in **Normalized Device Coordinates (NDC)**, not world space. In `useFrame`, before uploading uniforms, each node's world position is projected:
+
+```typescript
+// In useFrame callback:
+const mvp = camera.projectionMatrix.clone().multiply(camera.matrixWorldInverse);
+const v = new THREE.Vector4(node.x, node.y, 0, 1).applyMatrix4(mvp);
+ndcPositions[i] = [v.x / v.w, v.y / v.w]; // range [-1, 1]
+```
+
+The fragment shader uses `vUv` (0→1 range from the fullscreen quad) remapped to NDC (-1→1) for the per-pixel distance comparison. This ensures the metaball field is camera-independent.
 
 ### Fragment Shader Logic (per pixel)
 
+The shader **accumulates** field values per cluster (not per node). This is what makes nearby same-cluster nodes merge into one smooth blob:
+
 ```glsl
-float maxField = 0.0;
-int maxCluster = -1;
+#version 300 es
+precision highp float;
 
-for (int i = 0; i < u_nodeCount; i++) {
-    vec2 diff = gl_FragCoord.xy - u_nodePositions[i];
-    float distSq = dot(diff, diff);
-    float r = u_blobRadius;
-    float field = (r * r) / distSq;
+const int MAX_NODES = 512;
+const int MAX_CLUSTERS = 24;
 
-    // Accumulate per-cluster
-    // (simplified: track highest-field cluster per pixel)
-    if (field > maxField) {
-        maxField = field;
-        maxCluster = u_nodeCluster[i];
+uniform vec2 u_nodePositions[MAX_NODES];
+uniform int u_nodeCluster[MAX_NODES];
+uniform vec3 u_clusterColors[MAX_CLUSTERS];
+uniform int u_nodeCount;
+uniform float u_blobRadius;
+uniform float u_threshold;
+
+in vec2 vUv;
+out vec4 fragColor;
+
+void main() {
+    vec2 ndc = vUv * 2.0 - 1.0; // map UV [0,1] → NDC [-1,1]
+
+    // Accumulate field per cluster
+    float clusterField[MAX_CLUSTERS];
+    for (int c = 0; c < MAX_CLUSTERS; c++) clusterField[c] = 0.0;
+
+    for (int i = 0; i < MAX_NODES; i++) {
+        if (i >= u_nodeCount) break;
+        vec2 diff = ndc - u_nodePositions[i];
+        float distSq = dot(diff, diff);
+        float r = u_blobRadius;
+        float field = (r * r) / max(distSq, 0.0001);
+        int cluster = u_nodeCluster[i];
+        clusterField[cluster] += field; // ACCUMULATE per cluster
     }
-}
 
-if (maxField > u_threshold && maxCluster >= 0) {
-    float alpha = min((maxField - u_threshold) * 0.3, 1.0);
-    alpha = min(alpha, 0.18); // translucent
-    gl_FragColor = vec4(u_clusterColors[maxCluster], alpha);
-} else {
-    discard;
+    // Find dominant cluster
+    float maxField = 0.0;
+    int maxCluster = -1;
+    for (int c = 0; c < MAX_CLUSTERS; c++) {
+        if (clusterField[c] > maxField) {
+            maxField = clusterField[c];
+            maxCluster = c;
+        }
+    }
+
+    if (maxField > u_threshold && maxCluster >= 0) {
+        float alpha = min((maxField - u_threshold) * 0.3, 1.0);
+        alpha = min(alpha, 0.18); // translucent
+        fragColor = vec4(u_clusterColors[maxCluster], alpha);
+    } else {
+        discard;
+    }
 }
 ```
 
 ### Performance
 
-- Typical PIU project: <200 nodes → shader iterates ~200 positions per pixel — trivially fast
-- If node count exceeds 500: reduce resolution (sample every 2nd pixel)
-- WebGL2 uniform array limit: typically 1024 vec2s — well above ceiling
-- `raycast={() => null}` — clicks pass through to nodes
+- Typical PIU project: <200 nodes, <12 clusters → shader iterates ~200 positions + 12 cluster comparisons per pixel — trivially fast on any GPU
+- **Node count threshold guard**: If node count exceeds 300, render metaball quad at half resolution (attach to a smaller `WebGLRenderTarget`, then blit to screen). If node count exceeds 500, fall back to Canvas2D bounding circles (like minimap).
+- WebGL2 uniform limit for `vec2[512]`: 512 * 2 = 1024 floats ≈ 256 `vec4` slots. WebGL2 guarantees `gl_MaxVertexUniformVectors >= 256` and `gl_MaxFragmentUniformVectors >= 224`. For 512-node arrays, this is tight — if the target platform's fragment uniform limit is hit, reduce `MAX_NODES` to 256 or switch to a `DataTexture` (1D float texture) for positions. Check via `gl.getParameter(gl.MAX_FRAGMENT_UNIFORM_VECTORS)` at init time.
 
 ### Update Cadence
 
-- Node positions updated via uniforms in `useFrame` when FA2 layout runs
+- Node NDC positions recalculated and uploaded in `useFrame` when FA2 layout runs or camera changes
 - During layout animation, blobs smoothly morph as nodes settle
 - Only active when `clusterMode !== 'off'`
 
@@ -167,7 +220,19 @@ setClusters: (clusters: Map<string, ClusterInfo>) => void;
 
 focusedClusterId: string | null;
 setFocusedClusterId: (id: string | null) => void;
+
+// Focus mode uses a separate override set that takes priority over
+// the filter-derived visibleNodeIds. This avoids conflicts with
+// existing FilterState.communityId and entity type toggles.
+focusOverrideNodeIds: Set<string> | null; // null = no override
+setFocusOverrideNodeIds: (ids: Set<string> | null) => void;
 ```
+
+**Effective visible set** (computed in `GraphCanvas.tsx`):
+```typescript
+const effectiveVisibleIds = focusOverrideNodeIds ?? visibleNodeIds;
+```
+When `focusOverrideNodeIds` is non-null (focus mode), it takes priority. Filter-derived `visibleNodeIds` is preserved but not applied until focus mode exits. This means entering focus mode does NOT clear the user's active filters — they're restored when returning to overview.
 
 ### Overview Mode (default when fusion is on)
 
@@ -199,11 +264,17 @@ Renders stub edges during focus mode:
 - Color: the external cluster's color
 - Label: external cluster name (via drei `<Html>`)
 
-### Camera Transitions
+### Camera Transitions (Orthographic-Specific)
 
-- Overview → Focus: lerp camera position/zoom in `useFrame` over ~400ms to frame the focused cluster's bounding box with padding
-- Focus → Overview: lerp back to fit-all view over ~400ms
-- Uses the orthographic camera's `zoom` and `position` properties
+Orthographic zoom works via `camera.zoom` (a multiplier), NOT by moving the camera closer. `camera.updateProjectionMatrix()` must be called after each zoom change.
+
+- **Overview → Focus**: In `useFrame`, lerp both `camera.position` (x,y to cluster centroid) and `camera.zoom` (to a value that frames the cluster's bounding box with 20% padding) over ~400ms. Call `camera.updateProjectionMatrix()` each frame during the transition. Target zoom = `min(viewportWidth / clusterWidth, viewportHeight / clusterHeight) * 0.8`.
+- **Focus → Overview**: Lerp `camera.position` back to (0,0,10) and `camera.zoom` back to the stored pre-focus value over ~400ms.
+- Store `preFocusZoom: number` and `preFocusPosition: {x,y}` in the graph store to restore on back-navigation.
+
+### GraphStubEdges.tsx — Shared Geometry
+
+Stub edges reuse the same cylinder orientation math from `GraphEdges.tsx` (`setFromUnitVectors(_up, _dir)`) to avoid code duplication. Extract the shared `orientCylinder(from, to)` helper into a utility or keep it as a shared constant.
 
 ---
 
@@ -229,7 +300,7 @@ Renders stub edges during focus mode:
 
 | Mode | Rendering |
 |------|-----------|
-| Overview | Draw cluster regions as filled translucent convex hull outlines |
+| Overview | Draw cluster regions as filled translucent bounding circles (centroid + max-distance-to-member as radius). No convex hull library needed — simple Euclidean distance calculation. |
 | Focus | Highlight focused cluster region, dim the rest |
 
 ### Query Engine (`graphQueryEngine.ts`)
@@ -250,18 +321,47 @@ Renders stub edges during focus mode:
 | Focus | Stub edge | Focus on the target cluster |
 | Off | Any node | Select node (existing behavior) |
 
+### Click Branching Implementation
+
+The existing `handleNodeClick` in `GraphCanvas.tsx` currently calls `setSelectedNode()` and `pushSelection()`. In cluster mode, this must branch:
+
+```typescript
+function handleNodeClick(nodeId: string, event?: { shiftKey?: boolean }) {
+  const { clusterMode, clusters } = useGraphStore.getState();
+
+  if (clusterMode === 'overview' && !event?.shiftKey) {
+    // Find which cluster this node belongs to
+    const clusterId = findClusterForNode(nodeId, clusters);
+    if (clusterId) {
+      focusCluster(clusterId); // sets focusedClusterId, focusOverrideNodeIds, clusterMode='focus'
+    }
+    return; // do NOT select the individual node
+  }
+
+  // All other cases: existing behavior (select node, push history)
+  // ... existing setSelectedNode + pushSelection logic
+}
+```
+
+The `GraphNodes.tsx` component itself is unchanged — it still calls `onNodeClick(nodeId, event)`. The branching happens in the parent (`GraphCanvas.tsx`).
+
 ---
 
 ## Section 6: Error Handling & Edge Cases
 
 | Scenario | Handling |
 |----------|---------|
+| Empty graph (0 nodes) | `graphClustering.ts` returns an empty `Map`. Metaball shader not activated. Cluster toggle disabled. |
 | Small graph (< 5 nodes) | Skip clustering, show all nodes ungrouped. Cluster toggle disabled with tooltip. |
 | Single-node clusters | No metaball blob rendered. Node shown normally. |
+| All nodes in one cluster | Single metaball blob covers the entire graph. Focus mode still works (clicking zooms to fit that one cluster). |
 | Empty clusters after filtering | Hide that cluster's blob. Recalculate visible clusters on filter change. |
 | FA2 still running | Metaball positions update every frame via `useFrame`. Blobs morph smoothly. |
-| Node count > 500 | Reduce shader resolution (sample every 2nd pixel) for 60fps. |
-| WebGL uniform limit | Max 1024 vec2s — well above expected ceiling (<200 nodes). |
+| Rapid cluster mode toggling | Debounce `setClusterMode` (100ms). Camera transitions cancel cleanly if a new transition starts. |
+| Window resize during focus mode | `camera.updateProjectionMatrix()` is called on resize. Focus bounding box is recalculated. |
+| Node count > 300 | Render metaball to half-resolution `WebGLRenderTarget`, blit to screen. |
+| Node count > 500 | Disable metaball shader. Fall back to Canvas2D bounding circles (like minimap). |
+| Fragment uniform limit exceeded | Check `gl.getParameter(gl.MAX_FRAGMENT_UNIFORM_VECTORS)` at init. If < 256, reduce `MAX_NODES` to 256 or switch to `DataTexture` for position data. |
 
 ### Persistence
 
@@ -273,9 +373,13 @@ Renders stub edges during focus mode:
 
 ### Performance Guard
 
-If the shader drops below 30fps (detected via `useFrame` delta), automatically:
-1. Halve the shader resolution
-2. If still slow, disable metaball rendering and fall back to simple convex hull outlines (Canvas2D overlay like minimap)
+Performance degradation is triggered by **node count thresholds** (deterministic, not frame-rate heuristics — `useFrame` delta reflects total frame cost, not just the metaball shader):
+
+| Node Count | Strategy |
+|------------|----------|
+| 0–300 | Full-resolution metaball shader |
+| 301–500 | Half-resolution render target, blit to screen |
+| 500+ | Disable shader, Canvas2D bounding circles fallback |
 
 ---
 

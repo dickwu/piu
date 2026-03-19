@@ -1,7 +1,7 @@
 # Graph Auto-Fusion with Metaball Cluster Visualization
 
 **Date**: 2026-03-19
-**Status**: Draft (Rev 2 — addresses spec review findings)
+**Status**: Draft (Rev 3 — addresses all spec review findings)
 **Scope**: Graph visualization — semantic clustering, 2D mode, metaball boundaries, focus/overview interaction
 
 ## Summary
@@ -66,7 +66,7 @@ interface ClusterInfo {
 }
 ```
 
-### Algorithm: 3-Step Refinement
+### Algorithm: 4-Step Refinement
 
 **Step 1 — Louvain base**: Start with existing `assignCommunities()` output. Each node has a `community_rank` attribute.
 
@@ -102,7 +102,7 @@ A fullscreen quad behind all nodes that renders smooth organic cluster boundarie
 
 - Uses `RawShaderMaterial` on a clip-space fullscreen quad (vertex shader outputs `gl_Position` directly in NDC — no model/view/projection needed). This ensures the quad always covers the full screen regardless of camera zoom/pan.
 - Placed at z=-1 (behind nodes at z=0)
-- **Bloom exclusion**: The metaball mesh is assigned to `layers.set(1)` (a non-default layer). The `EffectComposer` + `Bloom` pass only processes layer 0 (the default). This prevents the bloom pass from applying glow to the cluster blobs.
+- **Bloom exclusion**: The metaball mesh is assigned to `layers.set(1)` (a non-default layer). The `EffectComposer` + `Bloom` pass only processes layer 0 (the default). This prevents the bloom pass from applying glow to the cluster blobs. **Important**: The scene camera must also have layer 1 enabled via `camera.layers.enable(1)` in the camera setup (Section 1) — otherwise the metaball quad will be present in the scene graph but not rendered by the camera. The `raycast={() => null}` is kept as an explicit safety net even though `layers.set(1)` also removes the mesh from the default raycaster.
 - `raycast={() => null}` — clicks pass through to nodes
 
 ### Uniform Contract
@@ -114,7 +114,7 @@ All arrays are declared at this fixed size. For graphs with fewer nodes, the rem
 | Uniform | Type | Description |
 |---------|------|-------------|
 | `u_nodePositions[MAX_NODES]` | `vec2` | Node positions in **NDC** (see Coordinate Space below) |
-| `u_nodeCluster[MAX_NODES]` | `int` | Cluster index per node (0-based) |
+| `u_nodeCluster[MAX_NODES]` | `float` | Cluster index per node (0-based). Declared as `float` (not `int`) to avoid Three.js integer uniform handling ambiguity. Cast to `int` in shader: `int cluster = int(u_nodeCluster[i]);`. Upload as `Float32Array` from JS. |
 | `u_clusterColors[MAX_CLUSTERS]` | `vec3` | RGB per cluster (`MAX_CLUSTERS = 24`) |
 | `u_nodeCount` | `int` | Actual node count (loop bound) |
 | `u_clusterCount` | `int` | Actual cluster count |
@@ -123,13 +123,23 @@ All arrays are declared at this fixed size. For graphs with fewer nodes, the rem
 
 ### Coordinate Space
 
-Node positions must be in **Normalized Device Coordinates (NDC)**, not world space. In `useFrame`, before uploading uniforms, each node's world position is projected:
+Node positions must be in **Normalized Device Coordinates (NDC)**, not world space. In `useFrame`, before uploading uniforms, each node's world position is projected. **The MVP matrix and scratch vector are allocated once and reused** to avoid per-frame GC pressure:
 
 ```typescript
+// Module-level (allocated once):
+const _mvp = new THREE.Matrix4();
+const _v4 = new THREE.Vector4();
+
 // In useFrame callback:
-const mvp = camera.projectionMatrix.clone().multiply(camera.matrixWorldInverse);
-const v = new THREE.Vector4(node.x, node.y, 0, 1).applyMatrix4(mvp);
-ndcPositions[i] = [v.x / v.w, v.y / v.w]; // range [-1, 1]
+camera.updateMatrixWorld(); // ensure matrices are fresh
+_mvp.copy(camera.projectionMatrix).multiply(camera.matrixWorldInverse);
+
+for (let i = 0; i < nodes.length; i++) {
+  _v4.set(nodes[i].x, nodes[i].y, 0, 1).applyMatrix4(_mvp);
+  ndcPositions[i * 2]     = _v4.x / _v4.w;  // range [-1, 1]
+  ndcPositions[i * 2 + 1] = _v4.y / _v4.w;
+}
+// Upload ndcPositions Float32Array to u_nodePositions uniform
 ```
 
 The fragment shader uses `vUv` (0→1 range from the fullscreen quad) remapped to NDC (-1→1) for the per-pixel distance comparison. This ensures the metaball field is camera-independent.
@@ -146,7 +156,7 @@ const int MAX_NODES = 512;
 const int MAX_CLUSTERS = 24;
 
 uniform vec2 u_nodePositions[MAX_NODES];
-uniform int u_nodeCluster[MAX_NODES];
+uniform float u_nodeCluster[MAX_NODES]; // float to avoid Three.js int[] issues
 uniform vec3 u_clusterColors[MAX_CLUSTERS];
 uniform int u_nodeCount;
 uniform float u_blobRadius;
@@ -168,7 +178,7 @@ void main() {
         float distSq = dot(diff, diff);
         float r = u_blobRadius;
         float field = (r * r) / max(distSq, 0.0001);
-        int cluster = u_nodeCluster[i];
+        int cluster = int(u_nodeCluster[i]); // float→int cast
         clusterField[cluster] += field; // ACCUMULATE per cluster
     }
 
@@ -195,7 +205,7 @@ void main() {
 ### Performance
 
 - Typical PIU project: <200 nodes, <12 clusters → shader iterates ~200 positions + 12 cluster comparisons per pixel — trivially fast on any GPU
-- **Node count threshold guard**: If node count exceeds 300, render metaball quad at half resolution (attach to a smaller `WebGLRenderTarget`, then blit to screen). If node count exceeds 500, fall back to Canvas2D bounding circles (like minimap).
+- **Node count threshold guard**: If node count exceeds 300, render metaball quad at half resolution via a smaller `WebGLRenderTarget`. Blit to screen using a second fullscreen quad at z=-2 with `MeshBasicMaterial({ map: renderTarget.texture, transparent: true })`. If node count exceeds 500, fall back to Canvas2D bounding circles (like minimap).
 - WebGL2 uniform limit for `vec2[512]`: 512 * 2 = 1024 floats ≈ 256 `vec4` slots. WebGL2 guarantees `gl_MaxVertexUniformVectors >= 256` and `gl_MaxFragmentUniformVectors >= 224`. For 512-node arrays, this is tight — if the target platform's fragment uniform limit is hit, reduce `MAX_NODES` to 256 or switch to a `DataTexture` (1D float texture) for positions. Check via `gl.getParameter(gl.MAX_FRAGMENT_UNIFORM_VECTORS)` at init time.
 
 ### Update Cadence
@@ -269,7 +279,7 @@ Renders stub edges during focus mode:
 Orthographic zoom works via `camera.zoom` (a multiplier), NOT by moving the camera closer. `camera.updateProjectionMatrix()` must be called after each zoom change.
 
 - **Overview → Focus**: In `useFrame`, lerp both `camera.position` (x,y to cluster centroid) and `camera.zoom` (to a value that frames the cluster's bounding box with 20% padding) over ~400ms. Call `camera.updateProjectionMatrix()` each frame during the transition. Target zoom = `min(viewportWidth / clusterWidth, viewportHeight / clusterHeight) * 0.8`.
-- **Focus → Overview**: Lerp `camera.position` back to (0,0,10) and `camera.zoom` back to the stored pre-focus value over ~400ms.
+- **Focus → Overview**: Lerp `camera.position` back to `(preFocusPosition.x, preFocusPosition.y, 10)` and `camera.zoom` back to `preFocusZoom` over ~400ms.
 - Store `preFocusZoom: number` and `preFocusPosition: {x,y}` in the graph store to restore on back-navigation.
 
 ### GraphStubEdges.tsx — Shared Geometry

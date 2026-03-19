@@ -4,6 +4,7 @@ import { useRef, useEffect, useMemo } from 'react';
 import * as THREE from 'three';
 import type { ThreeEvent } from '@react-three/fiber';
 import { useGraphStore } from '../../stores/graphStore';
+import { getGraphTheme } from '../../utils/graphThemeConfig';
 
 export interface GraphNodeData {
   id: string;
@@ -23,6 +24,7 @@ interface GraphNodesProps {
   visibleNodeIds: Set<string> | null; // null = all visible
   pathNodeIds: Set<string>;
   clusterMode: 'overview' | 'focus' | 'off';
+  graphTheme: 'dark' | 'light';
   onNodeClick: (nodeId: string, event?: { shiftKey?: boolean }) => void;
   onNodeHover: (nodeId: string | null) => void;
   onPointerMissed: () => void;
@@ -32,7 +34,7 @@ const _dummy = new THREE.Object3D();
 const _color = new THREE.Color();
 
 export function GraphNodes({
-  nodes, selectedNodeId, hoveredNodeId, visibleNodeIds, pathNodeIds, clusterMode,
+  nodes, selectedNodeId, hoveredNodeId, visibleNodeIds, pathNodeIds, clusterMode, graphTheme,
   onNodeClick, onNodeHover, onPointerMissed,
 }: GraphNodesProps) {
   const meshRef = useRef<THREE.InstancedMesh>(null);
@@ -54,13 +56,13 @@ export function GraphNodes({
     const mesh = meshRef.current;
     if (!mesh || nodes.length === 0) return;
 
+    const config = getGraphTheme(graphTheme);
     const overviewDim = clusterMode === 'overview' ? 0.4 : 1.0;
-    const scaleFactor = clusterMode === 'overview' ? 0.6 : 1.0;
 
     for (let i = 0; i < nodes.length; i++) {
       const node = nodes[i];
       const isVisible = !visibleNodeIds || visibleNodeIds.has(node.id);
-      const scale = isVisible ? node.size * scaleFactor : 0;
+      const scale = isVisible ? config.nodeSize : 0;
 
       _dummy.position.set(node.x, node.y, node.z);
       _dummy.scale.set(scale, scale, scale);
@@ -70,7 +72,7 @@ export function GraphNodes({
       const inPath = pathNodeIds.size === 0 || pathNodeIds.has(node.id);
       const dimFactor = inPath ? 1.0 : 0.25;
 
-      _color.set(node.color);
+      _color.set(config.nodeColor);
       _color.multiplyScalar(dimFactor * overviewDim);
       mesh.setColorAt(i, _color);
     }
@@ -78,7 +80,7 @@ export function GraphNodes({
     mesh.instanceMatrix.needsUpdate = true;
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     mesh.count = nodes.length;
-  }, [nodes, visibleNodeIds, pathNodeIds, clusterMode]);
+  }, [nodes, visibleNodeIds, pathNodeIds, clusterMode, graphTheme]);
 
   const handleClick = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation();

@@ -103,6 +103,10 @@ interface GraphStore {
   preFocusZoom: number;
   preFocusPosition: { x: number; y: number };
   setPreFocusState: (zoom: number, position: { x: number; y: number }) => void;
+
+  // --- Phase 5: Theme ---
+  graphTheme: 'dark' | 'light';
+  toggleGraphTheme: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -205,4 +209,9 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
   preFocusZoom: 1.5,
   preFocusPosition: { x: 0, y: 0 },
   setPreFocusState: (zoom, position) => set({ preFocusZoom: zoom, preFocusPosition: position }),
+
+  // Phase 5: Theme
+  graphTheme: 'dark',
+  toggleGraphTheme: () =>
+    set((state) => ({ graphTheme: state.graphTheme === 'dark' ? 'light' : 'dark' })),
 }));

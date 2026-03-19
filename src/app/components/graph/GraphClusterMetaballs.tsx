@@ -5,6 +5,7 @@ import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { ClusterInfo } from '../../utils/graphClustering';
 import type { GraphNodeData } from './GraphNodes';
+import { getGraphTheme } from '../../utils/graphThemeConfig';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -43,12 +44,28 @@ uniform vec3 u_clusterColors[${MAX_CLUSTERS}];
 uniform int u_nodeCount;
 uniform float u_blobRadius;
 uniform float u_threshold;
+uniform vec2 u_pixelSize;
+uniform float u_fillAlpha;
+uniform float u_strokeAlpha;
+uniform float u_strokeWidth;
 
 in vec2 vUv;
 out vec4 fragColor;
 
+float fieldForCluster(vec2 ndc, int targetCluster) {
+  float blobR2 = u_blobRadius * u_blobRadius;
+  float field = 0.0;
+  for (int i = 0; i < u_nodeCount; i++) {
+    int ci = int(u_nodeCluster[i]);
+    if (ci != targetCluster) continue;
+    vec2 diff = ndc - u_nodePositions[i];
+    float distSq = dot(diff, diff);
+    field += blobR2 / max(distSq, 0.0001);
+  }
+  return field;
+}
+
 void main() {
-  // Map vUv [0,1] -> NDC [-1,1]
   vec2 ndc = vUv * 2.0 - 1.0;
 
   float clusterField[${MAX_CLUSTERS}];
@@ -57,21 +74,16 @@ void main() {
   }
 
   float blobR2 = u_blobRadius * u_blobRadius;
-
   for (int i = 0; i < u_nodeCount; i++) {
     int ci = int(u_nodeCluster[i]);
     if (ci < 0 || ci >= ${MAX_CLUSTERS}) continue;
-
     vec2 diff = ndc - u_nodePositions[i];
     float distSq = dot(diff, diff);
-    float field = blobR2 / max(distSq, 0.0001);
-    clusterField[ci] += field;
+    clusterField[ci] += blobR2 / max(distSq, 0.0001);
   }
 
-  // Find dominant cluster
   int dominantCluster = -1;
   float dominantField = u_threshold;
-
   for (int c = 0; c < ${MAX_CLUSTERS}; c++) {
     if (clusterField[c] > dominantField) {
       dominantField = clusterField[c];
@@ -83,9 +95,20 @@ void main() {
     discard;
   }
 
-  vec3 clusterColor = u_clusterColors[dominantCluster];
-  float alpha = clamp(dominantField - u_threshold, 0.0, 1.0);
-  fragColor = vec4(clusterColor, min(alpha, 0.18));
+  float fieldL = fieldForCluster(ndc + vec2(-u_pixelSize.x, 0.0), dominantCluster);
+  float fieldR = fieldForCluster(ndc + vec2( u_pixelSize.x, 0.0), dominantCluster);
+  float fieldT = fieldForCluster(ndc + vec2(0.0,  u_pixelSize.y), dominantCluster);
+  float fieldB = fieldForCluster(ndc + vec2(0.0, -u_pixelSize.y), dominantCluster);
+
+  float gradient = length(vec2(fieldR - fieldL, fieldT - fieldB));
+
+  float strokeMask = smoothstep(0.0, u_strokeWidth, gradient)
+                   * smoothstep(u_threshold * 0.5, u_threshold, dominantField);
+
+  vec3 color = u_clusterColors[dominantCluster];
+  float alpha = mix(u_fillAlpha, u_strokeAlpha, strokeMask);
+
+  fragColor = vec4(color, alpha);
 }
 `;
 
@@ -98,6 +121,7 @@ export interface GraphClusterMetaballsProps {
   clusters: Map<string, ClusterInfo>;
   enabled: boolean;
   focusedClusterId: string | null;
+  graphTheme: 'dark' | 'light';
 }
 
 // ---------------------------------------------------------------------------
@@ -109,6 +133,7 @@ export function GraphClusterMetaballs({
   clusters,
   enabled,
   focusedClusterId,
+  graphTheme,
 }: GraphClusterMetaballsProps) {
   const meshRef = useRef<THREE.Mesh>(null);
   const { camera, gl } = useThree();
@@ -128,6 +153,10 @@ export function GraphClusterMetaballs({
       u_nodeCount: { value: 0 },
       u_blobRadius: { value: 0.08 },
       u_threshold: { value: 1.0 },
+      u_pixelSize: { value: new Float32Array([1.0 / 1920, 1.0 / 1080]) },
+      u_fillAlpha: { value: 0.12 },
+      u_strokeAlpha: { value: 0.50 },
+      u_strokeWidth: { value: 2.0 },
     };
   }, []);
 
@@ -142,19 +171,46 @@ export function GraphClusterMetaballs({
     return map;
   }, [clusters]);
 
-  // Upload cluster colors whenever clusters change
+  // Upload cluster colors whenever clusters change, using theme palette
   useEffect(() => {
     const buf = uniforms.u_clusterColors.value as Float32Array;
     buf.fill(0);
-    for (const [id, info] of clusters.entries()) {
-      const idx = clusterIndexMap.get(id);
-      if (idx === undefined || idx >= MAX_CLUSTERS) continue;
-      const c = new THREE.Color(info.color);
-      buf[idx * 3] = c.r;
-      buf[idx * 3 + 1] = c.g;
-      buf[idx * 3 + 2] = c.b;
+    const config = getGraphTheme(graphTheme);
+    let idx = 0;
+    for (const [id] of clusters.entries()) {
+      const clusterIdx = clusterIndexMap.get(id);
+      if (clusterIdx === undefined || clusterIdx >= MAX_CLUSTERS) continue;
+      const paletteColor = config.clusterPalette[idx % config.clusterPalette.length];
+      const c = new THREE.Color(paletteColor);
+      buf[clusterIdx * 3] = c.r;
+      buf[clusterIdx * 3 + 1] = c.g;
+      buf[clusterIdx * 3 + 2] = c.b;
+      idx++;
     }
-  }, [clusters, clusterIndexMap, uniforms]);
+  }, [clusters, clusterIndexMap, uniforms, graphTheme]);
+
+  // Sync theme-driven alpha and stroke uniforms
+  useEffect(() => {
+    const config = getGraphTheme(graphTheme);
+    uniforms.u_fillAlpha.value = config.blobFillAlpha;
+    uniforms.u_strokeAlpha.value = config.blobStrokeAlpha;
+    uniforms.u_strokeWidth.value = config.blobStrokeWidth;
+  }, [graphTheme, uniforms]);
+
+  // Keep pixel size uniform in sync with canvas dimensions
+  useEffect(() => {
+    const canvas = gl.domElement;
+    const updatePixelSize = () => {
+      const w = canvas.width || 1920;
+      const h = canvas.height || 1080;
+      (uniforms.u_pixelSize.value as Float32Array)[0] = 1.0 / w;
+      (uniforms.u_pixelSize.value as Float32Array)[1] = 1.0 / h;
+    };
+    updatePixelSize();
+    const observer = new ResizeObserver(updatePixelSize);
+    observer.observe(canvas);
+    return () => observer.disconnect();
+  }, [gl, uniforms]);
 
   // Warn if the device's fragment uniform limit may be too low for MAX_NODES
   useEffect(() => {
@@ -241,7 +297,7 @@ export function GraphClusterMetaballs({
         transparent: true,
         depthWrite: false,
         depthTest: false,
-        blending: THREE.AdditiveBlending,
+        blending: THREE.NormalBlending,
       }),
     [uniforms],
   );

@@ -59,16 +59,14 @@ async fn init_db_with_recovery<R: tauri::Runtime>(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let mut builder = tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init());
 
-    #[cfg(debug_assertions)]
-    {
-        builder = builder.plugin(tauri_plugin_connector::init());
-    }
+    #[cfg(feature = "devtools")]
+    let builder = builder.plugin(tauri_plugin_connector::init());
 
     builder
         .setup(|app| {

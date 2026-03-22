@@ -26,6 +26,15 @@ export interface ClusterInfo {
   centroid: { x: number; y: number };
 }
 
+// --- Animation types (ported from GitNexus) ---
+export type AnimationType = 'pulse' | 'ripple' | 'glow';
+
+export interface NodeAnimation {
+  type: AnimationType;
+  startTime: number;
+  duration: number;
+}
+
 interface GraphStore {
   // --- Phase 1 (existing) ---
   graph: Graph | null;
@@ -107,6 +116,17 @@ interface GraphStore {
   // --- Phase 5: Theme ---
   graphTheme: 'dark' | 'light';
   toggleGraphTheme: () => void;
+
+  // --- Phase 6: Animation + Highlight (GitNexus-style) ---
+  animatedNodes: Map<string, NodeAnimation>;
+  triggerNodeAnimation: (nodeIds: string[], type: AnimationType) => void;
+  clearAnimations: () => void;
+
+  highlightedNodeIds: Set<string> | null;
+  setHighlightedNodeIds: (ids: Set<string> | null) => void;
+
+  blastRadiusNodeIds: Set<string> | null;
+  setBlastRadiusNodeIds: (ids: Set<string> | null) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -214,4 +234,32 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
   graphTheme: 'dark',
   toggleGraphTheme: () =>
     set((state) => ({ graphTheme: state.graphTheme === 'dark' ? 'light' : 'dark' })),
+
+  // Phase 6: Animation + Highlight
+  animatedNodes: new Map(),
+  triggerNodeAnimation: (nodeIds, type) => {
+    const now = Date.now();
+    const duration = type === 'pulse' ? 2000 : type === 'ripple' ? 3000 : 4000;
+    set((state) => {
+      const next = new Map(state.animatedNodes);
+      for (const id of nodeIds) {
+        next.set(id, { type, startTime: now, duration });
+      }
+      return { animatedNodes: next };
+    });
+    setTimeout(() => {
+      set((state) => {
+        const next = new Map(state.animatedNodes);
+        for (const id of nodeIds) next.delete(id);
+        return { animatedNodes: next };
+      });
+    }, duration + 100);
+  },
+  clearAnimations: () => set({ animatedNodes: new Map() }),
+
+  highlightedNodeIds: null,
+  setHighlightedNodeIds: (ids) => set({ highlightedNodeIds: ids }),
+
+  blastRadiusNodeIds: null,
+  setBlastRadiusNodeIds: (ids) => set({ blastRadiusNodeIds: ids }),
 }));

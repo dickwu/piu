@@ -121,8 +121,10 @@ function collectNodeData(graph: Graph): GraphNodeData[] {
 
 function collectEdgeData(graph: Graph): GraphEdgeData[] {
   const edges: GraphEdgeData[] = [];
-  graph.forEachEdge((_edge, attrs, _source, _target, sAttrs, tAttrs) => {
+  graph.forEachEdge((_edge, attrs, source, target, sAttrs, tAttrs) => {
     edges.push({
+      sourceId: source,
+      targetId: target,
       sourceX: typeof sAttrs.x === 'number' ? sAttrs.x : 0,
       sourceY: typeof sAttrs.y === 'number' ? sAttrs.y : 0,
       sourceZ: typeof sAttrs.z === 'number' ? sAttrs.z : 0,

@@ -27,6 +27,8 @@ Built with **Tauri 2.0** (Rust backend) + **React 19** + **Next.js** + **Ant Des
 - 🔗 **Git Commit Tracking** — Projects, collections, and requests track their source git repo URL, commit SHA, and backend framework type. The `get_sync_status` MCP tool detects stale entities by comparing per-entity commit IDs against the project-level commit
 - 🛠️ **Backend Sync Skill** — A Claude Code skill that clones a backend repo, detects the framework (Express, FastAPI, Django, Gin, Axum, etc.), extracts routes, and creates PIU projects/collections/requests via MCP — all tagged with the source commit SHA
 - 🔍 **Frontend Sync Skill** — A Claude Code skill that scans a frontend repo for HTTP API calls and cross-references them against a PIU project to find mismatches, missing endpoints, and type contract violations
+- 🧠 **LLM Search & Knowledge Graph** — FTS5 full-text search across all entity types with BM25 ranking. Auto-generated natural-language descriptions make every entity self-describing. MCP tools: `search_entities`, `find_related_entities`, `get_entity_detail`, `get_api_surface`, `get_project_summary`
+- 🔗 **Entity Relations & Backlinks** — Pre-computed relationship graph with bidirectional traversal (Obsidian-style backlinks). Ask "what uses this model?" and get endpoints, collections, and inheritance chains in one call
 
 ## Tech Stack
 
@@ -42,15 +44,30 @@ Built with **Tauri 2.0** (Rust backend) + **React 19** + **Next.js** + **Ant Des
 
 ## Installation
 
+### macOS (Homebrew)
+
+```bash
+brew tap dickwu/tap
+brew install --cask piu
+```
+
+The installer automatically removes the macOS quarantine flag. If you still see a "damaged app" warning:
+
+```bash
+sudo xattr -d com.apple.quarantine /Applications/Piu.app
+```
+
+### Manual Download
+
 Download the latest release for your platform from [Releases](https://github.com/dickwu/piu/releases).
 
 | Platform | File |
 |---|---|
-| macOS (Apple Silicon) | `piu_x.x.x_aarch64.dmg` |
-| macOS (Intel) | `piu_x.x.x_x64.dmg` |
-| Windows | `piu_x.x.x_x64-setup.exe` or `.msi` |
-| Linux (Debian/Ubuntu) | `piu_x.x.x_amd64.deb` |
-| Linux (Fedora/RHEL) | `piu-x.x.x-1.x86_64.rpm` |
+| macOS (Apple Silicon) | `Piu_x.x.x_aarch64.dmg` |
+| macOS (Intel) | `Piu_x.x.x_x64.dmg` |
+| Windows | `Piu_x.x.x_x64-setup.exe` or `.msi` |
+| Linux (Debian/Ubuntu) | `Piu_x.x.x_amd64.deb` |
+| Linux (Fedora/RHEL) | `Piu-x.x.x-1.x86_64.rpm` |
 
 ## Development
 

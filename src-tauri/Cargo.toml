@@ -1,6 +1,6 @@
 [package]
 name = "piu"
-version = "0.1.36"
+version = "0.1.37"
 description = "A desktop API management application."
 authors = []
 edition = "2021"

@@ -1,6 +1,7 @@
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 
+use crate::db::entity_graph::{self, EntityRelation};
 use crate::db::graph::{GraphEdge, GraphNode, NodePositionUpdate};
 
 // ---------------------------------------------------------------------------
@@ -91,75 +92,46 @@ fn method_color(method: &str) -> &'static str {
 }
 
 // ---------------------------------------------------------------------------
-// Cycle detection helpers
+// EntityRelation → visual graph mapping
 // ---------------------------------------------------------------------------
 
-fn has_collection_ancestor_cycle(
-    start_id: &str,
-    collection_by_id: &HashMap<String, &crate::db::Collection>,
-) -> bool {
-    let mut visited = HashSet::new();
-    let mut cursor: Option<&str> = Some(start_id);
-    while let Some(id) = cursor {
-        if visited.contains(id) {
-            return true;
+/// Convert an `EntityRelation` into (source_graph_id, target_graph_id, visual_edge_type).
+///
+/// The graph nodes use prefixed IDs (`col:`, `req:`, `model:`) while
+/// `EntityRelation` uses raw entity IDs. This function bridges the two.
+fn relation_to_graph_ids(rel: &EntityRelation) -> (String, String, String) {
+    let prefix = |etype: &str, eid: &str| -> String {
+        match etype {
+            "collection" => format!("col:{}", eid),
+            "request" => format!("req:{}", eid),
+            "model" => format!("model:{}", eid),
+            // project nodes are not rendered — edges from/to projects are skipped
+            // by the node_ids filter in build_graph
+            _ => format!("{}:{}", etype, eid),
         }
-        visited.insert(id.to_string());
-        cursor = collection_by_id
-            .get(id)
-            .and_then(|c| c.parent_id.as_deref());
-    }
-    false
-}
+    };
 
-fn has_model_inheritance_cycle(
-    start_id: &str,
-    model_by_id: &HashMap<String, &crate::db::DataModel>,
-) -> bool {
-    let mut visited = HashSet::new();
-    let mut cursor: Option<&str> = Some(start_id);
-    while let Some(id) = cursor {
-        if visited.contains(id) {
-            return true;
+    let source = prefix(&rel.source_type, &rel.source_id);
+    let target = prefix(&rel.target_type, &rel.target_id);
+
+    let visual_type = match rel.relation.as_str() {
+        "contains" => {
+            // Determine visual type from source/target entity types
+            match (rel.source_type.as_str(), rel.target_type.as_str()) {
+                ("collection", "collection") => "col-subcol".to_string(),
+                ("collection", "request") => "col-request".to_string(),
+                _ => "contains".to_string(),
+            }
         }
-        visited.insert(id.to_string());
-        cursor = model_by_id
-            .get(id)
-            .and_then(|m| m.parent_model_id.as_deref());
-    }
-    false
-}
+        "uses_request_model" => "req-reqModel".to_string(),
+        "uses_response_model" => "req-resModel".to_string(),
+        "inherits" => "model-inherits".to_string(),
+        "mixes_in" => "model-mixin".to_string(),
+        "references_field" => "model-fieldRef".to_string(),
+        other => other.to_string(),
+    };
 
-// ---------------------------------------------------------------------------
-// JSON parsing helpers (safe, never panic)
-// ---------------------------------------------------------------------------
-
-/// Parse the request config JSON to extract method, url, requestModelId, responseModelId
-fn parse_request_config(config_json: &str) -> serde_json::Value {
-    serde_json::from_str(config_json).unwrap_or_else(|_| {
-        serde_json::json!({
-            "method": "GET",
-            "url": "",
-        })
-    })
-}
-
-/// Parse model fields JSON array
-fn parse_model_fields(fields_json: &str) -> Vec<serde_json::Value> {
-    serde_json::from_str::<Vec<serde_json::Value>>(fields_json)
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|f| f.get("name").and_then(|v| v.as_str()).is_some())
-        .collect()
-}
-
-/// Parse mixin_model_ids JSON array
-fn parse_mixin_ids(json: &str) -> Vec<String> {
-    serde_json::from_str::<Vec<serde_json::Value>>(json)
-        .unwrap_or_default()
-        .into_iter()
-        .filter_map(|v| v.as_str().map(String::from))
-        .collect()
+    (source, target, visual_type)
 }
 
 // ---------------------------------------------------------------------------
@@ -174,20 +146,12 @@ fn build_graph(
 ) -> (Vec<GraphNode>, Vec<GraphEdge>) {
     let now = chrono::Utc::now().timestamp_millis();
     let mut nodes: Vec<GraphNode> = Vec::new();
-    let mut edges: Vec<GraphEdge> = Vec::new();
-    let mut seen_edges: HashSet<String> = HashSet::new();
 
-    // Build lookup maps
+    // Build lookup for request grouping (used for collection node sizing)
     let collection_ids: HashSet<&str> = collections.iter().map(|c| c.id.as_str()).collect();
-    let model_ids: HashSet<&str> = models.iter().map(|m| m.id.as_str()).collect();
-    let collection_by_id: HashMap<String, &crate::db::Collection> =
-        collections.iter().map(|c| (c.id.clone(), c)).collect();
-    let model_by_id: HashMap<String, &crate::db::DataModel> =
-        models.iter().map(|m| (m.id.clone(), m)).collect();
 
     // Group requests by collection
     let mut requests_by_collection: HashMap<String, Vec<&crate::db::ApiRequest>> = HashMap::new();
-    let mut root_requests: Vec<&crate::db::ApiRequest> = Vec::new();
 
     for req in requests {
         if let Some(ref col_id) = req.collection_id {
@@ -196,18 +160,17 @@ fn build_graph(
                     .entry(col_id.clone())
                     .or_default()
                     .push(req);
-            } else {
-                root_requests.push(req);
             }
-        } else {
-            root_requests.push(req);
         }
     }
 
-    // Pre-parse all request configs
+    // Pre-parse all request configs (uses shared JSON parser)
     let mut parsed_configs: HashMap<String, serde_json::Value> = HashMap::new();
     for req in requests {
-        parsed_configs.insert(req.id.clone(), parse_request_config(&req.config));
+        parsed_configs.insert(
+            req.id.clone(),
+            entity_graph::parse_request_config(&req.config),
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -292,7 +255,7 @@ fn build_graph(
     // Node creation — Model nodes
     // -----------------------------------------------------------------------
     for model in models {
-        let fields = parse_model_fields(&model.fields);
+        let fields = entity_graph::parse_model_fields(&model.fields);
         let field_preview: Vec<serde_json::Value> = fields
             .iter()
             .map(|f| {
@@ -330,156 +293,50 @@ fn build_graph(
     }
 
     // -----------------------------------------------------------------------
-    // Edge helper
+    // Edges: extract via shared entity_graph module, then convert to visual
     // -----------------------------------------------------------------------
+    let relations = entity_graph::extract_relations(project_id, collections, requests, models);
     let node_ids: HashSet<String> = nodes.iter().map(|n| n.id.clone()).collect();
+    let mut seen_edges: HashSet<String> = HashSet::new();
 
-    let mut add_edge =
-        |source: &str, target: &str, edge_type: &str, label_override: Option<&str>| {
-            let key = format!("{}|{}|{}", source, target, edge_type);
-            if seen_edges.contains(&key) {
-                return;
-            }
-            if !node_ids.contains(source) || !node_ids.contains(target) {
-                return;
-            }
-            seen_edges.insert(key.clone());
+    let edges: Vec<GraphEdge> = relations
+        .iter()
+        .filter_map(|rel| {
+            let (source, target, visual_type) = relation_to_graph_ids(rel);
 
-            let style = edge_style(edge_type);
-            let lbl = label_override.unwrap_or_else(|| edge_label(edge_type));
+            // Skip edges whose endpoints are not in the node set
+            if !node_ids.contains(&source) || !node_ids.contains(&target) {
+                return None;
+            }
+
+            let key = format!("{}|{}|{}", source, target, visual_type);
+            if !seen_edges.insert(key.clone()) {
+                return None;
+            }
+
+            let style = edge_style(&visual_type);
+            let lbl = rel
+                .label
+                .as_deref()
+                .unwrap_or_else(|| edge_label(&visual_type));
 
             let properties = serde_json::json!({
                 "stroke": style.stroke,
                 "strokeWidth": style.stroke_width,
             });
 
-            edges.push(GraphEdge {
+            Some(GraphEdge {
                 id: key,
                 project_id: project_id.to_string(),
-                source_id: source.to_string(),
-                target_id: target.to_string(),
-                edge_type: edge_type.to_string(),
+                source_id: source,
+                target_id: target,
+                edge_type: visual_type,
                 label: lbl.to_string(),
                 properties: properties.to_string(),
                 created_at: now,
-            });
-        };
-
-    // -----------------------------------------------------------------------
-    // Edges: collection → sub-collection
-    // -----------------------------------------------------------------------
-    for col in collections {
-        if let Some(ref parent_id) = col.parent_id {
-            if collection_ids.contains(parent_id.as_str())
-                && !has_collection_ancestor_cycle(parent_id, &collection_by_id)
-            {
-                add_edge(
-                    &format!("col:{}", parent_id),
-                    &format!("col:{}", col.id),
-                    "col-subcol",
-                    None,
-                );
-            }
-        }
-    }
-
-    // -----------------------------------------------------------------------
-    // Edges: collection → request
-    // -----------------------------------------------------------------------
-    for col in collections {
-        if let Some(reqs) = requests_by_collection.get(&col.id) {
-            for req in reqs {
-                add_edge(
-                    &format!("col:{}", col.id),
-                    &format!("req:{}", req.id),
-                    "col-request",
-                    None,
-                );
-            }
-        }
-    }
-
-    // -----------------------------------------------------------------------
-    // Edges: request → model (request body + response model)
-    // -----------------------------------------------------------------------
-    for req in requests {
-        let cfg = &parsed_configs[&req.id];
-
-        if let Some(req_model_id) = cfg.get("requestModelId").and_then(|v| v.as_str()) {
-            if model_ids.contains(req_model_id) {
-                add_edge(
-                    &format!("req:{}", req.id),
-                    &format!("model:{}", req_model_id),
-                    "req-reqModel",
-                    None,
-                );
-            }
-        }
-
-        if let Some(res_model_id) = cfg.get("responseModelId").and_then(|v| v.as_str()) {
-            if model_ids.contains(res_model_id) {
-                add_edge(
-                    &format!("req:{}", req.id),
-                    &format!("model:{}", res_model_id),
-                    "req-resModel",
-                    None,
-                );
-            }
-        }
-    }
-
-    // -----------------------------------------------------------------------
-    // Edges: model → model (inheritance)
-    // -----------------------------------------------------------------------
-    for model in models {
-        if let Some(ref parent_id) = model.parent_model_id {
-            if model_ids.contains(parent_id.as_str())
-                && !has_model_inheritance_cycle(parent_id, &model_by_id)
-            {
-                add_edge(
-                    &format!("model:{}", parent_id),
-                    &format!("model:{}", model.id),
-                    "model-inherits",
-                    None,
-                );
-            }
-        }
-    }
-
-    // -----------------------------------------------------------------------
-    // Edges: model → mixin
-    // -----------------------------------------------------------------------
-    for model in models {
-        for mixin_id in parse_mixin_ids(&model.mixin_model_ids) {
-            if model_ids.contains(mixin_id.as_str()) {
-                add_edge(
-                    &format!("model:{}", model.id),
-                    &format!("model:{}", mixin_id),
-                    "model-mixin",
-                    None,
-                );
-            }
-        }
-    }
-
-    // -----------------------------------------------------------------------
-    // Edges: model → field reference
-    // -----------------------------------------------------------------------
-    for model in models {
-        for field in parse_model_fields(&model.fields) {
-            if let Some(ref_id) = field.get("ref_model_id").and_then(|v| v.as_str()) {
-                if model_ids.contains(ref_id) {
-                    let field_name = field.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                    add_edge(
-                        &format!("model:{}", model.id),
-                        &format!("model:{}", ref_id),
-                        "model-fieldRef",
-                        Some(field_name),
-                    );
-                }
-            }
-        }
-    }
+            })
+        })
+        .collect();
 
     (nodes, edges)
 }

@@ -11,8 +11,52 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::OnceLock;
 use tauri::Emitter;
+use tokio::sync::Mutex as TokioMutex;
 
 static APP_HANDLE: OnceLock<tauri::AppHandle> = OnceLock::new();
+
+static REBUILD_DEBOUNCE: OnceLock<TokioMutex<HashMap<String, tokio::task::JoinHandle<()>>>> =
+    OnceLock::new();
+
+fn get_debounce_map() -> &'static TokioMutex<HashMap<String, tokio::task::JoinHandle<()>>> {
+    REBUILD_DEBOUNCE.get_or_init(|| TokioMutex::new(HashMap::new()))
+}
+
+fn schedule_rebuild(project_id: String) {
+    tokio::spawn(async move {
+        let debounce_map = get_debounce_map();
+
+        // Cancel existing pending rebuild for this project
+        {
+            let mut map = debounce_map.lock().await;
+            if let Some(handle) = map.remove(&project_id) {
+                handle.abort();
+            }
+        }
+
+        let pid = project_id.clone();
+        let handle = tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            // Run rebuilds sequentially
+            if let Err(e) = db::rebuild_project_descriptions(&pid).await {
+                log::warn!("Failed to rebuild descriptions for {}: {}", pid, e);
+            }
+            if let Err(e) = db::rebuild_search_index(&pid).await {
+                log::warn!("Failed to rebuild search index for {}: {}", pid, e);
+            }
+            if let Err(e) = db::rebuild_entity_relations(&pid).await {
+                log::warn!("Failed to rebuild relations for {}: {}", pid, e);
+            }
+            // Clean up debounce map
+            let debounce_map = get_debounce_map();
+            let mut map = debounce_map.lock().await;
+            map.remove(&pid);
+        });
+
+        let mut map = debounce_map.lock().await;
+        map.insert(project_id, handle);
+    });
+}
 
 pub fn set_app_handle(handle: tauri::AppHandle) {
     if APP_HANDLE.set(handle).is_err() {
@@ -199,15 +243,37 @@ struct SetEnvVarsParam {
 }
 
 #[derive(Deserialize, JsonSchema)]
-struct SearchParam {
-    #[schemars(description = "Search query (matches request name, URL, or config content)")]
+struct SearchEntitiesParam {
+    #[schemars(
+        description = "Search query (keywords). Searches across names, descriptions, URLs, field names, and config content."
+    )]
     query: String,
+    #[schemars(
+        description = "Filter by entity type: project, collection, request, model, or environment"
+    )]
+    entity_type: Option<String>,
     #[schemars(description = "Filter by project ID")]
     project_id: Option<String>,
-    #[schemars(description = "Filter by HTTP method (GET, POST, etc.)")]
-    method: Option<String>,
-    #[schemars(description = "Maximum results to return (default 50)")]
+    #[schemars(description = "Maximum results to return (default 20)")]
     limit: Option<i64>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct FindRelatedParam {
+    #[schemars(description = "Entity type: project, collection, request, model, or environment")]
+    entity_type: String,
+    #[schemars(description = "Entity ID")]
+    entity_id: String,
+    #[schemars(description = "Maximum traversal depth (default 2, max 5)")]
+    max_depth: Option<usize>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct EntityDetailParam {
+    #[schemars(description = "Entity type: project, collection, request, model, or environment")]
+    entity_type: String,
+    #[schemars(description = "Entity ID")]
+    entity_id: String,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -389,6 +455,11 @@ fn emit_data_changed(
         None => {
             log::warn!("Cannot emit data-changed: AppHandle not initialized");
         }
+    }
+
+    // Schedule debounced rebuild if we have a project_id
+    if let Some(pid) = project_id {
+        schedule_rebuild(pid.to_string());
     }
 }
 
@@ -1121,6 +1192,17 @@ impl PiuMcp {
         &self,
         Parameters(p): Parameters<UpdateRequestParam>,
     ) -> Result<CallToolResult, McpError> {
+        // Capture old project_id before update for cross-project move detection
+        let old_project_id = if p.collection_id.is_some() {
+            db::get_request(&p.request_id)
+                .await
+                .ok()
+                .flatten()
+                .and_then(|r| r.project_id)
+        } else {
+            None
+        };
+
         let source_commit_id = p.source_commit_id.as_ref().map(|o| o.as_deref());
         let req = db::update_request(
             &p.request_id,
@@ -1133,12 +1215,22 @@ impl PiuMcp {
         )
         .await
         .map_err(mcp_err)?;
+
+        // Emit for the new project
         emit_data_changed(
             "request",
             "updated",
             Some(&p.request_id),
             req.project_id.as_deref(),
         );
+
+        // If the request moved to a different project, also emit for the old project
+        if let Some(ref old_pid) = old_project_id {
+            if req.project_id.as_deref() != Some(old_pid.as_str()) {
+                emit_data_changed("request", "deleted", Some(&p.request_id), Some(old_pid));
+            }
+        }
+
         text_result(&enrich_request(&req))
     }
 
@@ -2469,98 +2561,388 @@ impl PiuMcp {
         }))
     }
 
-    // ---- Search ----
+    // ---- Search & Discovery ----
 
     #[tool(
-        description = "Search across all API requests by name, URL, method, or config content. Use this to find existing endpoints before creating duplicates during import. Optionally filter by project ID or HTTP method. Returns matching requests with their collection and project context."
+        description = "Search across all entity types (projects, collections, API requests, data models, environments) by keyword. Returns ranked results with auto-generated descriptions and relevance scores. Use this as the primary discovery tool — find anything by keyword. Supports phrases in quotes, boolean operators (AND, OR, NOT), and prefix matching with *."
     )]
-    async fn search_requests(
+    async fn search_entities(
         &self,
-        Parameters(p): Parameters<SearchParam>,
+        Parameters(p): Parameters<SearchEntitiesParam>,
     ) -> Result<CallToolResult, McpError> {
-        let limit = p.limit.unwrap_or(50);
-        let conn = db::get_connection().map_err(mcp_err)?;
-        let conn = conn.lock().await;
+        let limit = p.limit.unwrap_or(20).min(100) as usize;
+        let results = db::search_entities(
+            &p.query,
+            p.project_id.as_deref(),
+            p.entity_type.as_deref(),
+            limit,
+        )
+        .await
+        .map_err(mcp_err)?;
 
-        let mut results = Vec::new();
+        let result_json: Vec<serde_json::Value> = results
+            .iter()
+            .map(|r| {
+                serde_json::json!({
+                    "entity_type": r.entity_type,
+                    "entity_id": r.entity_id,
+                    "name": r.name,
+                    "description": r.description_text,
+                    "snippet": r.snippet,
+                    "relevance_score": r.relevance_score,
+                })
+            })
+            .collect();
 
-        // Get all collections, optionally filtered by project
-        let collections: Vec<db::Collection> = if let Some(ref pid) = p.project_id {
-            drop(conn);
-            db::list_collections(Some(pid)).await.unwrap_or_default()
-        } else {
-            drop(conn);
-            db::list_collections(None).await.unwrap_or_default()
+        text_result(&serde_json::json!({
+            "results": result_json,
+            "total": result_json.len(),
+            "query": p.query,
+        }))
+    }
+
+    #[tool(
+        description = "Find all entities related to a given entity via containment, inheritance, field references, or model usage. Traverses relationships bidirectionally up to the specified depth. Use this to explore API topology — e.g., 'what endpoints use this model?' or 'what models does this collection reference?'"
+    )]
+    async fn find_related_entities(
+        &self,
+        Parameters(p): Parameters<FindRelatedParam>,
+    ) -> Result<CallToolResult, McpError> {
+        let max_depth = p.max_depth.unwrap_or(2).min(5);
+        let related = db::find_related_entities(&p.entity_type, &p.entity_id, max_depth)
+            .await
+            .map_err(mcp_err)?;
+
+        let result_json: Vec<serde_json::Value> = related
+            .iter()
+            .map(|r| {
+                serde_json::json!({
+                    "entity_type": r.entity_type,
+                    "entity_id": r.entity_id,
+                    "name": r.name,
+                    "relation": r.relation,
+                    "label": r.label,
+                    "distance": r.distance,
+                    "description": r.description_text,
+                })
+            })
+            .collect();
+
+        text_result(&serde_json::json!({
+            "entity_type": p.entity_type,
+            "entity_id": p.entity_id,
+            "related": result_json,
+            "total": result_json.len(),
+            "max_depth": max_depth,
+        }))
+    }
+
+    #[tool(
+        description = "Get full details of any entity including its configuration, auto-generated description, and backlinks (what other entities reference it). Use this after search_entities to drill into a specific result."
+    )]
+    async fn get_entity_detail(
+        &self,
+        Parameters(p): Parameters<EntityDetailParam>,
+    ) -> Result<CallToolResult, McpError> {
+        // Get the entity detail based on type
+        let entity_data: serde_json::Value = match p.entity_type.as_str() {
+            "project" => {
+                let proj = db::get_project(&p.entity_id)
+                    .await
+                    .map_err(mcp_err)?
+                    .ok_or_else(|| mcp_err(format!("Project {} not found", p.entity_id)))?;
+                serde_json::json!({
+                    "id": proj.id, "name": proj.name, "description": proj.description,
+                    "source_repo_url": proj.source_repo_url, "backend_type": proj.backend_type,
+                    "version": proj.version, "created_at": proj.created_at, "updated_at": proj.updated_at,
+                })
+            }
+            "collection" => {
+                let col = db::get_collection(&p.entity_id)
+                    .await
+                    .map_err(mcp_err)?
+                    .ok_or_else(|| mcp_err(format!("Collection {} not found", p.entity_id)))?;
+                serde_json::json!({
+                    "id": col.id, "name": col.name, "parent_id": col.parent_id,
+                    "path_prefix": col.path_prefix, "description": col.description,
+                    "shared_headers": col.shared_headers, "project_id": col.project_id,
+                    "version": col.version, "created_at": col.created_at, "updated_at": col.updated_at,
+                })
+            }
+            "request" => {
+                let req = db::get_request(&p.entity_id)
+                    .await
+                    .map_err(mcp_err)?
+                    .ok_or_else(|| mcp_err(format!("Request {} not found", p.entity_id)))?;
+                let config = parse_config(&req.config);
+                serde_json::json!({
+                    "id": req.id, "name": req.name, "collection_id": req.collection_id,
+                    "project_id": req.project_id, "config": config,
+                    "version": req.version, "created_at": req.created_at, "updated_at": req.updated_at,
+                })
+            }
+            "model" => {
+                let model = db::get_model(&p.entity_id)
+                    .await
+                    .map_err(mcp_err)?
+                    .ok_or_else(|| mcp_err(format!("Model {} not found", p.entity_id)))?;
+                let fields: Vec<serde_json::Value> =
+                    serde_json::from_str(&model.fields).unwrap_or_default();
+                serde_json::json!({
+                    "id": model.id, "name": model.name, "description": model.description,
+                    "project_id": model.project_id, "fields": fields,
+                    "parent_model_id": model.parent_model_id, "mixin_model_ids": model.mixin_model_ids,
+                    "version": model.version, "created_at": model.created_at, "updated_at": model.updated_at,
+                })
+            }
+            "environment" => {
+                let env = db::list_environments(None)
+                    .await
+                    .map_err(mcp_err)?
+                    .into_iter()
+                    .find(|e| e.id == p.entity_id)
+                    .ok_or_else(|| mcp_err(format!("Environment {} not found", p.entity_id)))?;
+                let vars = db::list_env_variables(&p.entity_id)
+                    .await
+                    .unwrap_or_default();
+                serde_json::json!({
+                    "id": env.id, "name": env.name, "host": env.host,
+                    "is_active": env.is_active, "project_id": env.project_id,
+                    "variables": vars.iter().map(|v| serde_json::json!({
+                        "key": v.key, "value": v.value, "enabled": v.enabled,
+                    })).collect::<Vec<_>>(),
+                    "version": env.version, "created_at": env.created_at, "updated_at": env.updated_at,
+                })
+            }
+            _ => return Err(mcp_err(format!("Unknown entity type: {}", p.entity_type))),
         };
 
-        let projects = db::list_projects().await.unwrap_or_default();
+        // Get description
+        let description: String = {
+            let conn = db::get_connection().map_err(mcp_err)?;
+            let conn_guard = conn.lock().await;
+            let mut rows = conn_guard
+                .query(
+                    "SELECT description_text FROM entity_descriptions WHERE entity_type = ?1 AND entity_id = ?2",
+                    turso::params![p.entity_type.as_str(), p.entity_id.as_str()],
+                )
+                .await
+                .map_err(mcp_err)?;
+            let desc = if let Some(row) = rows.next().await.map_err(mcp_err)? {
+                row.get::<String>(0).unwrap_or_default()
+            } else {
+                String::new()
+            };
+            drop(rows);
+            desc
+        };
 
+        // Get backlinks
+        let backlinks = db::find_backlinks(&p.entity_type, &p.entity_id)
+            .await
+            .unwrap_or_default();
+
+        let backlink_json: Vec<serde_json::Value> = backlinks
+            .iter()
+            .map(|b| {
+                serde_json::json!({
+                    "entity_type": b.entity_type,
+                    "entity_id": b.entity_id,
+                    "name": b.name,
+                    "relation": b.relation,
+                    "label": b.label,
+                })
+            })
+            .collect();
+
+        text_result(&serde_json::json!({
+            "entity_type": p.entity_type,
+            "entity_id": p.entity_id,
+            "detail": entity_data,
+            "description": description,
+            "backlinks": backlink_json,
+        }))
+    }
+
+    #[tool(
+        description = "Get a structured summary of all API endpoints in a project, grouped by collection, with HTTP methods, paths, and model associations. Like a table of contents for the API."
+    )]
+    async fn get_api_surface(
+        &self,
+        Parameters(p): Parameters<ProjectIdParam>,
+    ) -> Result<CallToolResult, McpError> {
+        let collections = db::list_collections(Some(&p.project_id))
+            .await
+            .map_err(mcp_err)?;
+        let models = db::list_models(&p.project_id).await.map_err(mcp_err)?;
+        let model_names: HashMap<String, String> = models
+            .iter()
+            .map(|m| (m.id.clone(), m.name.clone()))
+            .collect();
+
+        let mut sections = Vec::new();
         for col in &collections {
             let reqs = db::list_requests(&col.id).await.unwrap_or_default();
-            for req in &reqs {
-                let config = parse_config(&req.config);
-                let method = config
-                    .get("method")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("GET");
-                let url = config.get("url").and_then(|v| v.as_str()).unwrap_or("");
-
-                // Filter by method if specified
-                if let Some(ref filter_method) = p.method {
-                    if !method.eq_ignore_ascii_case(filter_method) {
-                        continue;
-                    }
-                }
-
-                // Match against name, URL, or config content
-                let name_lower = req.name.to_lowercase();
-                let url_lower = url.to_lowercase();
-                let config_lower = req.config.to_lowercase();
-                let query_lower = p.query.to_lowercase();
-
-                if name_lower.contains(&query_lower)
-                    || url_lower.contains(&query_lower)
-                    || config_lower.contains(&query_lower)
-                {
-                    let project_name = col
-                        .project_id
-                        .as_ref()
-                        .and_then(|pid| projects.iter().find(|pr| pr.id == *pid))
-                        .map(|pr| pr.name.as_str());
-
-                    results.push(serde_json::json!({
-                        "id": req.id,
-                        "name": req.name,
-                        "method": method,
-                        "url": url,
-                        "collection": {
-                            "id": col.id,
-                            "name": col.name,
-                            "path_prefix": col.path_prefix,
-                        },
-                        "project": {
-                            "id": col.project_id,
-                            "name": project_name,
-                        },
-                        "source_commit_id": req.source_commit_id,
-                        "version": req.version,
-                        "updated_at": req.updated_at,
-                    }));
-
-                    if results.len() >= limit as usize {
-                        break;
-                    }
-                }
-            }
-            if results.len() >= limit as usize {
-                break;
+            let endpoints: Vec<serde_json::Value> = reqs
+                .iter()
+                .map(|r| {
+                    let config = parse_config(&r.config);
+                    let method = config
+                        .get("method")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("GET");
+                    let url = config.get("url").and_then(|v| v.as_str()).unwrap_or("");
+                    let full_path = format!("{}{}", col.path_prefix.as_deref().unwrap_or(""), url);
+                    let req_model = config
+                        .get("requestModelId")
+                        .and_then(|v| v.as_str())
+                        .and_then(|id| model_names.get(id));
+                    let res_model = config
+                        .get("responseModelId")
+                        .and_then(|v| v.as_str())
+                        .and_then(|id| model_names.get(id));
+                    serde_json::json!({
+                        "id": r.id, "name": r.name, "method": method, "path": full_path,
+                        "request_model": req_model, "response_model": res_model,
+                    })
+                })
+                .collect();
+            if !endpoints.is_empty() || col.parent_id.is_none() {
+                sections.push(serde_json::json!({
+                    "collection_id": col.id, "name": col.name,
+                    "path_prefix": col.path_prefix, "description": col.description,
+                    "parent_id": col.parent_id,
+                    "endpoints": endpoints, "endpoint_count": endpoints.len(),
+                }));
             }
         }
 
+        // Root requests (no collection)
+        let root_reqs = db::list_root_requests(&p.project_id)
+            .await
+            .unwrap_or_default();
+        if !root_reqs.is_empty() {
+            let root_endpoints: Vec<serde_json::Value> = root_reqs
+                .iter()
+                .map(|r| {
+                    let config = parse_config(&r.config);
+                    let method = config
+                        .get("method")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("GET");
+                    let url = config.get("url").and_then(|v| v.as_str()).unwrap_or("");
+                    serde_json::json!({
+                        "id": r.id, "name": r.name, "method": method, "path": url,
+                    })
+                })
+                .collect();
+            sections.push(serde_json::json!({
+                "collection_id": serde_json::Value::Null, "name": "(Root endpoints)",
+                "endpoints": root_endpoints, "endpoint_count": root_endpoints.len(),
+            }));
+        }
+
         text_result(&serde_json::json!({
-            "results": results,
-            "total": results.len(),
-            "query": p.query,
+            "project_id": p.project_id,
+            "sections": sections,
+            "total_sections": sections.len(),
+        }))
+    }
+
+    #[tool(
+        description = "Get a natural-language summary of a project's entire API surface: entity counts, method distribution, collection hierarchy, model inheritance graph, and environment setup. Use this as the first call when exploring a new project."
+    )]
+    async fn get_project_summary(
+        &self,
+        Parameters(p): Parameters<ProjectIdParam>,
+    ) -> Result<CallToolResult, McpError> {
+        let project = db::get_project(&p.project_id)
+            .await
+            .map_err(mcp_err)?
+            .ok_or_else(|| mcp_err(format!("Project {} not found", p.project_id)))?;
+
+        let collections = db::list_collections(Some(&p.project_id))
+            .await
+            .map_err(mcp_err)?;
+        let models = db::list_models(&p.project_id).await.map_err(mcp_err)?;
+        let envs = db::list_environments(Some(&p.project_id))
+            .await
+            .map_err(mcp_err)?;
+
+        // Count requests and methods
+        let mut all_requests = Vec::new();
+        for col in &collections {
+            all_requests.extend(db::list_requests(&col.id).await.unwrap_or_default());
+        }
+        all_requests.extend(
+            db::list_root_requests(&p.project_id)
+                .await
+                .unwrap_or_default(),
+        );
+
+        let mut method_counts: HashMap<String, usize> = HashMap::new();
+        for req in &all_requests {
+            let config = parse_config(&req.config);
+            let method = config
+                .get("method")
+                .and_then(|v| v.as_str())
+                .unwrap_or("GET")
+                .to_uppercase();
+            *method_counts.entry(method).or_insert(0) += 1;
+        }
+
+        // Get description from entity_descriptions
+        let description: String = {
+            let conn = db::get_connection().map_err(mcp_err)?;
+            let conn_guard = conn.lock().await;
+            let mut rows = conn_guard
+                .query(
+                    "SELECT description_text FROM entity_descriptions WHERE entity_type = 'project' AND entity_id = ?1",
+                    turso::params![p.project_id.as_str()],
+                )
+                .await
+                .map_err(mcp_err)?;
+            let desc = if let Some(row) = rows.next().await.map_err(mcp_err)? {
+                row.get::<String>(0).unwrap_or_default()
+            } else {
+                String::new()
+            };
+            drop(rows);
+            desc
+        };
+
+        // Model inheritance summary
+        let models_with_parents: Vec<&str> = models
+            .iter()
+            .filter(|m| m.parent_model_id.is_some())
+            .map(|m| m.name.as_str())
+            .collect();
+
+        // Top-level collections
+        let root_collections: Vec<&str> = collections
+            .iter()
+            .filter(|c| c.parent_id.is_none())
+            .map(|c| c.name.as_str())
+            .collect();
+
+        text_result(&serde_json::json!({
+            "project": {
+                "id": project.id, "name": project.name, "description": project.description,
+                "source_repo_url": project.source_repo_url, "backend_type": project.backend_type,
+            },
+            "summary": description,
+            "stats": {
+                "collections": collections.len(),
+                "requests": all_requests.len(),
+                "models": models.len(),
+                "environments": envs.len(),
+            },
+            "method_distribution": method_counts,
+            "top_level_collections": root_collections,
+            "models_with_inheritance": models_with_parents,
+            "environments": envs.iter().map(|e| serde_json::json!({
+                "name": e.name, "host": e.host, "is_active": e.is_active,
+            })).collect::<Vec<_>>(),
         }))
     }
 

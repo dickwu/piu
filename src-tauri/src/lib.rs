@@ -99,6 +99,17 @@ pub fn run() {
                 return Ok(());
             }
 
+            // Rebuild search indexes, descriptions, and relations on startup
+            tokio::spawn(async {
+                if let Ok(projects) = db::list_projects().await {
+                    for project in &projects {
+                        let _ = db::rebuild_project_descriptions(&project.id).await;
+                        let _ = db::rebuild_search_index(&project.id).await;
+                        let _ = db::rebuild_entity_relations(&project.id).await;
+                    }
+                }
+            });
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -162,6 +173,9 @@ pub fn run() {
             // OpenAPI commands
             commands::generate_openapi_spec,
             commands::get_openapi_spec,
+            // Search & discovery commands
+            commands::search_commands::search_entities,
+            commands::search_commands::find_related_entities,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

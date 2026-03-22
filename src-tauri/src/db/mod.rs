@@ -12,11 +12,15 @@ pub type DbResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 pub mod app_state;
 pub mod changelog;
 pub mod collections;
+pub mod descriptions;
+pub mod entity_graph;
 pub mod environments;
 pub mod graph;
 pub mod models;
 pub mod projects;
+pub mod relations;
 pub mod requests;
+pub mod search;
 pub mod specs;
 
 // Re-export types
@@ -44,7 +48,7 @@ pub async fn init_db(db_path: &Path) -> DbResult<()> {
     conn.execute("PRAGMA foreign_keys = ON;", ()).await?;
 
     conn.execute_batch(&format!(
-        "{}{}{}{}{}{}{}{}{}",
+        "{}{}{}{}{}{}{}{}{}{}{}{}",
         projects::get_table_sql(),
         collections::get_table_sql(),
         requests::get_table_sql(),
@@ -54,6 +58,9 @@ pub async fn init_db(db_path: &Path) -> DbResult<()> {
         models::get_table_sql(),
         graph::get_table_sql(),
         specs::get_table_sql(),
+        descriptions::get_table_sql(),
+        relations::get_table_sql(),
+        search::get_table_sql(),
     ))
     .await?;
 
@@ -342,3 +349,15 @@ pub use graph::{
 
 // Re-export spec functions
 pub use specs::{get_spec, upsert_spec};
+
+// Re-export description functions
+pub use descriptions::rebuild_project_descriptions;
+
+// Re-export entity graph functions
+pub use entity_graph::extract_relations;
+
+// Re-export relation functions
+pub use relations::{find_backlinks, find_related_entities, rebuild_entity_relations};
+
+// Re-export search functions
+pub use search::{rebuild_search_index, search_entities, SearchResult};

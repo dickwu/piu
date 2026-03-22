@@ -7,6 +7,7 @@ mod model_commands;
 mod openapi_commands;
 mod project_commands;
 mod request_commands;
+pub mod search_commands;
 mod sync_commands;
 
 pub use changelog_commands::*;

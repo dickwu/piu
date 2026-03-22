@@ -1271,13 +1271,15 @@ async fn upsert_data_model(model: &db::DataModel, project_id: &str) -> Result<bo
     }
 
     conn.execute(
-        "INSERT INTO data_models (id, project_id, name, description, fields, sort_order, version, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+        "INSERT INTO data_models (id, project_id, name, description, fields, parent_model_id, mixin_model_ids, sort_order, version, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
          ON CONFLICT(id) DO UPDATE SET
             project_id = excluded.project_id,
             name = excluded.name,
             description = excluded.description,
             fields = excluded.fields,
+            parent_model_id = excluded.parent_model_id,
+            mixin_model_ids = excluded.mixin_model_ids,
             sort_order = excluded.sort_order,
             version = excluded.version,
             updated_at = excluded.updated_at
@@ -1288,6 +1290,8 @@ async fn upsert_data_model(model: &db::DataModel, project_id: &str) -> Result<bo
             model.name.clone(),
             model.description.clone(),
             model.fields.clone(),
+            model.parent_model_id.clone(),
+            model.mixin_model_ids.clone(),
             model.sort_order,
             model.version,
             model.created_at,

@@ -77,3 +77,86 @@ jobs:
           prerelease: false
           includeUpdaterJson: true
           args: ${{ matrix.args }}
+
+  update-homebrew-cask:
+    needs: publish-tauri
+    runs-on: macos-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Download DMGs and compute SHA256
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          curl -sL -o arm64.dmg "https://github.com/dickwu/piu/releases/download/v${VERSION}/Piu_${VERSION}_aarch64.dmg"
+          curl -sL -o x64.dmg "https://github.com/dickwu/piu/releases/download/v${VERSION}/Piu_${VERSION}_x64.dmg"
+          echo "SHA_ARM64=$(shasum -a 256 arm64.dmg | cut -d' ' -f1)" >> "$GITHUB_ENV"
+          echo "SHA_X64=$(shasum -a 256 x64.dmg | cut -d' ' -f1)" >> "$GITHUB_ENV"
+
+      - name: Update Homebrew cask in tap repo
+        env:
+          GH_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          CASK_CONTENT=$(cat <<CASK
+          cask "piu" do
+            version "${VERSION}"
+
+            on_arm do
+              url "https://github.com/dickwu/piu/releases/download/v#{version}/Piu_#{version}_aarch64.dmg"
+              sha256 "${SHA_ARM64}"
+            end
+            on_intel do
+              url "https://github.com/dickwu/piu/releases/download/v#{version}/Piu_#{version}_x64.dmg"
+              sha256 "${SHA_X64}"
+            end
+
+            name "PIU"
+            desc "Native desktop API client — Postman alternative built with Tauri"
+            homepage "https://github.com/dickwu/piu"
+
+            livecheck do
+              url :url
+              strategy :github_latest
+            end
+
+            app "Piu.app"
+
+            postflight do
+              system_command "/usr/bin/xattr",
+                             args: ["-d", "com.apple.quarantine", "#{appdir}/Piu.app"],
+                             sudo: true
+            end
+
+            zap trash: [
+              "~/Library/Application Support/com.dickwu.piu",
+              "~/Library/Caches/com.dickwu.piu",
+              "~/Library/Preferences/com.dickwu.piu.plist",
+              "~/Library/Saved Application State/com.dickwu.piu.savedState",
+            ]
+          end
+          CASK
+          )
+          # Remove heredoc indentation
+          CASK_CONTENT=$(echo "$CASK_CONTENT" | sed 's/^          //')
+
+          # Get current file SHA (needed for update)
+          CURRENT_SHA=$(gh api repos/dickwu/homebrew-tap/contents/Casks/piu.rb --jq '.sha' 2>/dev/null || echo "")
+
+          ENCODED=$(echo "$CASK_CONTENT" | base64)
+
+          if [ -n "$CURRENT_SHA" ]; then
+            gh api repos/dickwu/homebrew-tap/contents/Casks/piu.rb \
+              -X PUT \
+              -f message="chore: bump PIU cask to v${VERSION}" \
+              -f content="$ENCODED" \
+              -f sha="$CURRENT_SHA"
+          else
+            gh api repos/dickwu/homebrew-tap/contents/Casks/piu.rb \
+              -X PUT \
+              -f message="chore: bump PIU cask to v${VERSION}" \
+              -f content="$ENCODED"
+          fi

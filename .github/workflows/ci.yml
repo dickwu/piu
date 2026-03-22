@@ -54,6 +54,7 @@ jobs:
             libappindicator3-dev \
             librsvg2-dev \
             libpipewire-0.3-dev \
+            libgbm-dev \
             patchelf \
             pkg-config
 

@@ -46,3 +46,4 @@ docs/superpowers/
 # Implementation plans (generated, not tracked)
 *-plan.md
 docs/specs/*-plan.md
+.gstack/

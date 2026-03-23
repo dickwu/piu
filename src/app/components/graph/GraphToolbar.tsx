@@ -12,19 +12,27 @@ import {
   SearchOutlined,
   CloseOutlined,
   GroupOutlined,
+  ZoomInOutlined,
+  ZoomOutOutlined,
 } from '@ant-design/icons';
 
 import { useGraphStore } from '../../stores/graphStore';
-import { getGraphTheme } from '../../utils/graphThemeConfig';
 import { searchNodes } from '../../utils/graphAlgorithms';
 import type { SearchResult } from '../../utils/graphAlgorithms';
 import { executeGraphQuery } from '../../utils/graphQueryEngine';
 import type { QueryResult } from '../../utils/graphQueryEngine';
+import type { SigmaControls } from '../../hooks/useSigma';
 import type { ClusterInfo } from '../../utils/graphClustering';
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
+
+const ENTITY_COLORS: Record<string, string> = {
+  collection: '#fbbf24',
+  request: '#34d399',
+  model: '#4a9eff',
+};
 
 const METHOD_COLORS: Record<string, string> = {
   GET: '#34d399',
@@ -34,12 +42,6 @@ const METHOD_COLORS: Record<string, string> = {
   DELETE: '#f87171',
   HEAD: '#94a3b8',
   OPTIONS: '#94a3b8',
-};
-
-const ENTITY_COLORS: Record<string, string> = {
-  collection: '#fbbf24',
-  request: '#34d399',
-  model: '#4a9eff',
 };
 
 // ---------------------------------------------------------------------------
@@ -62,7 +64,6 @@ const TOOLBAR_REST: CSSProperties = {
   transition: 'opacity 0.18s ease, background 0.18s ease',
   pointerEvents: 'auto',
 };
-
 
 const FILTER_DOT: CSSProperties = {
   display: 'inline-block',
@@ -91,16 +92,15 @@ function ResultDot({ entityType, method }: { entityType: string; method?: string
 // ---------------------------------------------------------------------------
 
 interface GraphToolbarProps {
-  onResetLayout: () => void;
-  onFitView: () => void;
-  onFlyToNode?: (nodeId: string) => void;
+  controls: SigmaControls;
+  onQueryResult?: (result: QueryResult | null) => void;
 }
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-export default function GraphToolbar({ onResetLayout, onFitView, onFlyToNode }: GraphToolbarProps) {
+export default function GraphToolbar({ controls, onQueryResult }: GraphToolbarProps) {
   const graph = useGraphStore((s) => s.graph);
   const searchQuery = useGraphStore((s) => s.searchQuery);
   const searchResults = useGraphStore((s) => s.searchResults);
@@ -118,8 +118,6 @@ export default function GraphToolbar({ onResetLayout, onFitView, onFlyToNode }: 
   const resetFilters = useGraphStore((s) => s.resetFilters);
   const navigateBack = useGraphStore((s) => s.navigateBack);
   const navigateForward = useGraphStore((s) => s.navigateForward);
-  const bloomEnabled = useGraphStore((s) => s.bloomEnabled);
-  const setBloomEnabled = useGraphStore((s) => s.setBloomEnabled);
   const graphTheme = useGraphStore((s) => s.graphTheme);
   const toggleGraphTheme = useGraphStore((s) => s.toggleGraphTheme);
 
@@ -141,6 +139,8 @@ export default function GraphToolbar({ onResetLayout, onFitView, onFlyToNode }: 
         setActiveSearchIndex(0);
         setDropdownOpen(false);
         useGraphStore.getState().clearPath();
+        useGraphStore.getState().setHighlightedNodeIds(null);
+        onQueryResult?.(null);
         return;
       }
 
@@ -151,28 +151,28 @@ export default function GraphToolbar({ onResetLayout, onFitView, onFlyToNode }: 
         setSearchResults([]);
         setActiveSearchIndex(0);
         setDropdownOpen(false);
-        if (qResult.highlightNodes.length > 0) {
-          useGraphStore.getState().setPathNodeIds(new Set(qResult.highlightNodes));
-        }
+        onQueryResult?.(qResult);
         return;
       }
 
-      // No structured match — fall back to fuzzy search
+      // No structured match -- fall back to fuzzy search
       setQueryResult(null);
       useGraphStore.getState().clearPath();
+      useGraphStore.getState().setHighlightedNodeIds(null);
+      onQueryResult?.(null);
       const results = searchNodes(graph, value);
       setSearchResults(results);
       setActiveSearchIndex(0);
       setDropdownOpen(results.length > 0);
     },
-    [graph, setSearchQuery, setSearchResults, setActiveSearchIndex],
+    [graph, setSearchQuery, setSearchResults, setActiveSearchIndex, onQueryResult],
   );
 
   const flyToResult = useCallback(
     (result: SearchResult) => {
-      onFlyToNode?.(result.nodeId);
+      controls.focusNode(result.nodeId);
     },
-    [onFlyToNode],
+    [controls],
   );
 
   const cycleNext = useCallback(() => {
@@ -196,7 +196,9 @@ export default function GraphToolbar({ onResetLayout, onFitView, onFlyToNode }: 
     setActiveSearchIndex(0);
     setDropdownOpen(false);
     useGraphStore.getState().clearPath();
-  }, [setSearchQuery, setSearchResults, setActiveSearchIndex]);
+    useGraphStore.getState().setHighlightedNodeIds(null);
+    onQueryResult?.(null);
+  }, [setSearchQuery, setSearchResults, setActiveSearchIndex, onQueryResult]);
 
   // -------------------------------------------------------------------------
   // Cluster handlers
@@ -214,17 +216,19 @@ export default function GraphToolbar({ onResetLayout, onFitView, onFlyToNode }: 
   const handleBackToOverview = useCallback(() => {
     useGraphStore.getState().setClusterMode('overview');
     useGraphStore.getState().setFocusedClusterId(null);
-    useGraphStore.getState().setFocusOverrideNodeIds(null);
   }, []);
 
-  const handleClusterSelect = useCallback((clusterId: string) => {
-    const { clusters: currentClusters } = useGraphStore.getState();
-    const cluster = currentClusters.get(clusterId);
-    if (!cluster) return;
-    useGraphStore.getState().setFocusedClusterId(clusterId);
-    useGraphStore.getState().setFocusOverrideNodeIds(cluster.nodeIds);
-    useGraphStore.getState().setClusterMode('focus');
-  }, []);
+  const handleClusterSelect = useCallback(
+    (clusterId: string) => {
+      const { clusters: currentClusters } = useGraphStore.getState();
+      const cluster = currentClusters.get(clusterId);
+      if (!cluster) return;
+      useGraphStore.getState().setFocusedClusterId(clusterId);
+      useGraphStore.getState().setClusterMode('focus');
+      controls.focusCluster(clusterId);
+    },
+    [controls],
+  );
 
   const clusterOptions = [...clusters.values()].map((c: ClusterInfo) => ({
     label: c.name,
@@ -364,7 +368,7 @@ export default function GraphToolbar({ onResetLayout, onFitView, onFlyToNode }: 
           )}
         </div>
 
-        {/* Query result panel — shown when a structured query matches */}
+        {/* Query result panel -- shown when a structured query matches */}
         {queryResult && searchQuery && (
           <div
             style={{
@@ -396,7 +400,7 @@ export default function GraphToolbar({ onResetLayout, onFitView, onFlyToNode }: 
           </div>
         )}
 
-        {/* Search dropdown — shown only for fuzzy results (no structured query match) */}
+        {/* Search dropdown -- shown only for fuzzy results (no structured query match) */}
         {!queryResult && dropdownOpen && searchResults.length > 0 && (
           <div
             style={{
@@ -457,7 +461,7 @@ export default function GraphToolbar({ onResetLayout, onFitView, onFlyToNode }: 
 
         <button
           style={iconBtnStyle}
-          onClick={onFitView}
+          onClick={controls.resetView}
           title="Fit view"
         >
           <HomeOutlined style={{ fontSize: 11 }} />
@@ -473,8 +477,24 @@ export default function GraphToolbar({ onResetLayout, onFitView, onFlyToNode }: 
 
         <button
           style={iconBtnStyle}
-          onClick={onResetLayout}
-          title="Reset layout"
+          onClick={controls.zoomIn}
+          title="Zoom in"
+        >
+          <ZoomInOutlined style={{ fontSize: 11 }} />
+        </button>
+
+        <button
+          style={iconBtnStyle}
+          onClick={controls.zoomOut}
+          title="Zoom out"
+        >
+          <ZoomOutOutlined style={{ fontSize: 11 }} />
+        </button>
+
+        <button
+          style={iconBtnStyle}
+          onClick={controls.restartLayout}
+          title="Restart layout"
         >
           <ReloadOutlined style={{ fontSize: 11 }} />
         </button>
@@ -534,29 +554,6 @@ export default function GraphToolbar({ onResetLayout, onFitView, onFlyToNode }: 
           }}
         >
           {graphTheme === 'dark' ? '☀' : '☾'}
-        </button>
-      </Tooltip>
-
-      <div style={dividerStyle} />
-
-      {/* Visual effects */}
-      <Tooltip title={!getGraphTheme(graphTheme).bloomAvailable ? 'Bloom unavailable in light mode' : (bloomEnabled ? 'Disable bloom' : 'Enable bloom')}>
-        <button
-          onClick={() => getGraphTheme(graphTheme).bloomAvailable && setBloomEnabled(!bloomEnabled)}
-          style={{
-            background: bloomEnabled && getGraphTheme(graphTheme).bloomAvailable ? 'rgba(251, 191, 36, 0.2)' : 'transparent',
-            border: `1px solid ${bloomEnabled && getGraphTheme(graphTheme).bloomAvailable ? 'rgba(251, 191, 36, 0.5)' : 'rgba(255,255,255,0.12)'}`,
-            borderRadius: 4,
-            padding: '2px 6px',
-            color: bloomEnabled && getGraphTheme(graphTheme).bloomAvailable ? '#fbbf24' : 'rgba(255,255,255,0.25)',
-            fontSize: 11,
-            cursor: getGraphTheme(graphTheme).bloomAvailable ? 'pointer' : 'not-allowed',
-            transition: 'all 0.15s ease',
-            flexShrink: 0,
-            opacity: getGraphTheme(graphTheme).bloomAvailable ? 1 : 0.4,
-          }}
-        >
-          ✦
         </button>
       </Tooltip>
 

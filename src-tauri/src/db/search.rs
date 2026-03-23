@@ -1,6 +1,13 @@
 use super::{get_connection, DbResult};
 use crate::db::entity_graph::parse_request_config;
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicBool, Ordering};
+
+static FTS5_AVAILABLE: AtomicBool = AtomicBool::new(false);
+
+pub fn is_fts5_available() -> bool {
+    FTS5_AVAILABLE.load(Ordering::Relaxed)
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchResult {
@@ -12,8 +19,7 @@ pub struct SearchResult {
     pub relevance_score: f64,
 }
 
-pub fn get_table_sql() -> &'static str {
-    "
+const FTS5_CREATE_SQL: &str = "
     CREATE VIRTUAL TABLE IF NOT EXISTS search_fts USING fts5(
         name,
         description_text,
@@ -26,7 +32,26 @@ pub fn get_table_sql() -> &'static str {
         project_id UNINDEXED,
         tokenize='porter unicode61'
     );
-    "
+";
+
+/// Attempt to create the FTS5 virtual table. If the module is not available
+/// (e.g. turso/libSQL without FTS5 compiled in), log a warning and continue.
+/// Search will fall back to LIKE-based queries.
+pub async fn try_create_fts_table(conn: &turso::Connection) -> DbResult<()> {
+    match conn.execute(FTS5_CREATE_SQL, ()).await {
+        Ok(_) => {
+            FTS5_AVAILABLE.store(true, Ordering::Relaxed);
+        }
+        Err(e) => {
+            let msg = e.to_string();
+            if msg.contains("no such module") {
+                log::warn!("FTS5 module not available — search will use LIKE fallback: {msg}");
+            } else {
+                return Err(Box::new(e));
+            }
+        }
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -170,6 +195,10 @@ async fn like_search(
 // ---------------------------------------------------------------------------
 
 pub async fn rebuild_search_index(project_id: &str) -> DbResult<()> {
+    if !is_fts5_available() {
+        return Ok(());
+    }
+
     // Phase 1: Load all source data (acquire lock, read, release)
     let (project, collections, requests, models, environments, env_vars_map, descriptions_map) = {
         let conn = get_connection()?.lock().await;
@@ -517,6 +546,10 @@ pub async fn update_search_entry(
     entity_id: &str,
     project_id: &str,
 ) -> DbResult<()> {
+    if !is_fts5_available() {
+        return Ok(());
+    }
+
     // Delete existing entry first
     delete_search_entry(entity_type, entity_id).await?;
 

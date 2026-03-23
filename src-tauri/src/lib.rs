@@ -100,7 +100,7 @@ pub fn run() {
             }
 
             // Rebuild search indexes, descriptions, and relations on startup
-            tokio::spawn(async {
+            tauri::async_runtime::spawn(async {
                 if let Ok(projects) = db::list_projects().await {
                     for project in &projects {
                         let _ = db::rebuild_project_descriptions(&project.id).await;

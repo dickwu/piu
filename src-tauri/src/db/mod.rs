@@ -48,7 +48,7 @@ pub async fn init_db(db_path: &Path) -> DbResult<()> {
     conn.execute("PRAGMA foreign_keys = ON;", ()).await?;
 
     conn.execute_batch(&format!(
-        "{}{}{}{}{}{}{}{}{}{}{}{}",
+        "{}{}{}{}{}{}{}{}{}{}{}",
         projects::get_table_sql(),
         collections::get_table_sql(),
         requests::get_table_sql(),
@@ -60,9 +60,12 @@ pub async fn init_db(db_path: &Path) -> DbResult<()> {
         specs::get_table_sql(),
         descriptions::get_table_sql(),
         relations::get_table_sql(),
-        search::get_table_sql(),
     ))
     .await?;
+
+    // FTS5 virtual table — try separately since the module may not be compiled
+    // into the bundled libSQL. Search falls back to LIKE queries if unavailable.
+    search::try_create_fts_table(&conn).await?;
 
     // Run migrations for existing databases
     run_migrations(&conn).await?;

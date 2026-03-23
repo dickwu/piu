@@ -32,7 +32,6 @@ Replace PIU's graph rendering engine from React Three Fiber (Three.js InstancedM
 ### Add
 - `sigma` (v3) — WebGL graph rendering with reducers
 - `@sigma/edge-curve` — Curved Bezier edge program
-- `@sigma/node-border` (optional) — Bordered node program for highlights
 
 ### Unchanged
 - `graphology`, `graphology-types` — Graph data structure
@@ -44,7 +43,7 @@ Replace PIU's graph rendering engine from React Three Fiber (Three.js InstancedM
 
 ## File Map
 
-### Deleted (6 files)
+### Deleted (5 files)
 | File | Reason |
 |------|--------|
 | `src/app/components/graph/GraphClusterMetaballs.tsx` | GLSL SDF shader replaced by community coloring in reducers |
@@ -52,27 +51,29 @@ Replace PIU's graph rendering engine from React Three Fiber (Three.js InstancedM
 | `src/app/components/graph/GraphNodes.tsx` | InstancedMesh sphere rendering replaced by Sigma NodeCircleProgram |
 | `src/app/components/graph/GraphEdges.tsx` | InstancedMesh cylinder rendering replaced by @sigma/edge-curve |
 | `src/app/components/graph/GraphMinimap.tsx` | Canvas 2D minimap coupled to R3F coordinates; rebuild later if needed |
-| `src/app/utils/graphColorUtils.ts` | dimColor/brightenColor inlined into reducer logic |
 
-### Created (2 files)
+### Created (3 files)
 | File | Purpose |
 |------|---------|
 | `src/app/hooks/useSigma.ts` | Core hook: Sigma initialization, layout lifecycle, reducers, camera control, events |
 | `src/app/utils/graphConstants.ts` | Color palettes, size hierarchy, edge styles, animation config (from GitNexus pattern) |
+| `src/app/components/graph/GraphClusterLabels.tsx` | React component rendering HTML overlay labels at cluster centroids; listens to Sigma camera events to reposition |
 
 ### Rewritten (2 files)
 | File | Change |
 |------|--------|
-| `src/app/components/graph/GraphCanvas.tsx` | R3F `<Canvas>` replaced with Sigma container div + overlay UI; wires graphStore to useSigma |
-| `src/app/stores/graphStore.ts` | Drop R3F-specific state (nodeData/edgeData arrays, animation frame refs, camera refs); add visibleEdgeTypes |
+| `src/app/components/graph/GraphCanvas.tsx` | R3F `<Canvas>` replaced with Sigma container div + overlay UI; wires graphStore to useSigma; renders `<GraphClusterLabels>` in overview mode; shows `<Spin>` during layout and error state on WebGL failure |
+| `src/app/stores/graphStore.ts` | Remove R3F-specific fields (see GraphStore Changes section); add `visibleEdgeTypes` |
 
-### Modified (4 files)
+### Modified (5 files)
 | File | Change |
 |------|--------|
-| `src/app/components/graph/GraphToolbar.tsx` | Rewire zoom/layout/reset controls to Sigma camera API |
+| `src/app/components/graph/GraphToolbar.tsx` | Rewire zoom/layout/reset controls to Sigma camera API via `SigmaControls` |
 | `src/app/components/graph/GraphTooltip.tsx` | Sigma enterNode/leaveNode events instead of R3F pointerOver/pointerOut |
-| `src/app/utils/graphDataTransform.ts` | Set Sigma-specific node attributes (size, color, x, y) during graphology build |
-| `src/app/utils/graphClustering.ts` | Output adds community color to node attributes for Sigma rendering |
+| `src/app/utils/graphDataTransform.ts` | Remove `z: 0` attribute from nodes; stop populating `fz` in `extractPositionsForSave` (keep field as `null` for backward compat); no other changes — `x`, `y`, `size`, `color` are already set as graphology attributes |
+| `src/app/utils/graphClustering.ts` | After cluster assignment, write `communityColor` attribute to each node in graphology. This runs after `buildGraphologyInstance()` and before `sigma.setGraph()` |
+| `src/app/utils/graphThemeConfig.ts` | Remove blob-specific fields (`blobFillAlpha`, `blobStrokeAlpha`, `bloomAvailable`). Keep `background`, `edgeColor`, `labelColor`, `clusterPalette` fields. Both `DARK_THEME` and `LIGHT_THEME` configs remain; Sigma reads `graphTheme` from store to determine dimming target and label colors |
+| `src/app/utils/graphColorUtils.ts` | Keep file. Update `dimColor` to use theme background from `graphThemeConfig` (dark: `#111320`, light: `#f3f4f6`). `brightenColor` stays unchanged. Both functions are imported by `useSigma` reducers |
 
 ### Unchanged (5+ files)
 | File | Reason |
@@ -94,24 +95,64 @@ useSigma(containerRef, graph, graphStore) → SigmaControls
 ```
 
 **Responsibilities:**
-1. **Sigma lifecycle** — Create instance on mount with `{ allowInvalidContainer: true, zIndex: true, hideEdgesOnMove: true }`. Set graph when available. Destroy on unmount.
-2. **Node reducer** — Called per-node per-frame. Priority chain:
-   - Hidden check (filtered by visibleEntityTypes)
-   - Active animation (pulse/ripple/glow with sine oscillation)
-   - Cluster focus mode (focused cluster visible, others hidden)
-   - Blast radius mode (red highlights + dimmed rest)
-   - Highlight mode (cyan highlights + dimmed rest)
-   - Selection mode (selected + neighbors bright, rest dimmed)
-3. **Edge reducer** — Called per-edge per-frame. Priority chain:
-   - Type visibility filter (visibleEdgeTypes)
-   - Cluster focus (intra-cluster visible, cross-cluster hidden)
-   - Highlight/blast radius (both endpoints highlighted = bright)
-   - Selection (connected edges bright, rest dimmed)
-4. **ForceAtlas2 lifecycle** — Start worker on graph set, stop after 15s timeout, run Noverlap post-pass, run cluster spread, cache positions via `invoke('save_graph_positions')`
-5. **Camera animation** — `focusNode(id)` animates to node at ratio 0.15 over 400ms. `focusCluster(id)` computes bounding box, animates to center. `resetView()` animated reset.
-6. **Event handlers** — clickNode (select or focus cluster), clickStage (deselect), enterNode (tooltip), leaveNode (hide tooltip)
 
-**Returns:** `{ zoomIn, zoomOut, resetView, focusNode, focusCluster, restartLayout, sigma }`
+1. **Sigma lifecycle** — Create instance on mount. Set graph when available. Destroy on unmount: terminate FA2 worker first (to stop position writes), then destroy Sigma instance. If WebGL context is unavailable, set `graphStore.graphError` to display an error overlay in GraphCanvas.
+
+2. **Node reducer** — Called per-node per-frame by Sigma. Priority chain (first match wins):
+   - **(a) Hidden check** — filtered by `visibleEntityTypes` or `visibleNodeIds`
+   - **(b) Active animation** — pulse/ripple/glow with sine oscillation on size/color
+   - **(c) Cluster focus mode** — focused cluster nodes visible, all others `hidden: true`
+   - **(d) Path highlight** — `pathNodeIds` set: path nodes get golden color `#f59e0b` + 1.6x size, non-path nodes dimmed
+   - **(e) Blast radius mode** — `blastRadiusNodeIds`: blast nodes red + 1.8x, `highlightedNodeIds` cyan + 1.4x, rest dimmed to 15% + 0.4x
+   - **(f) Highlight mode** — `highlightedNodeIds` only: highlighted nodes cyan + 1.6x, rest dimmed to 20% + 0.5x
+   - **(g) Selection mode** — selected node full color + 1.8x, neighbors full color + 1.3x, rest dimmed to 25% + 0.6x
+   - **(h) Default** — node renders at base color and size from graphology attributes
+
+   Dimming uses `dimColor(hex, amount, theme)` from `graphColorUtils.ts`, blending toward the current theme background.
+
+3. **Edge reducer** — Called per-edge per-frame. Priority chain:
+   - **(a) Type visibility filter** — `visibleEdgeTypes`
+   - **(b) Cluster focus** — intra-cluster edges visible, cross-cluster edges hidden
+   - **(c) Path highlight** — edges connecting consecutive path nodes: golden + 3x width
+   - **(d) Highlight/blast radius** — both endpoints highlighted: bright color + 3x; one endpoint: dim cyan + 1x; neither: very dim 0.2x
+   - **(e) Selection** — connected to selected: brightened color + 4x; unconnected: very dim 0.3x
+
+4. **ForceAtlas2 lifecycle** — Start worker on graph set, stop after 15s timeout, run Noverlap post-pass, run cluster spread, cache positions via `invoke('save_graph_positions')`. Cleanup: the `useEffect` cleanup function terminates the FA2 worker supervisor first, then destroys the Sigma instance. This prevents multiple concurrent layout workers during Next.js hot reload.
+
+5. **Camera animation** — `focusNode(id)` animates to node at ratio 0.15 over 400ms. `focusCluster(id)` computes bounding box, animates to center. `resetView()` animated reset.
+
+6. **Event handlers** — clickNode (select or focus cluster depending on mode), clickStage (deselect), enterNode (tooltip), leaveNode (hide tooltip).
+
+7. **Animation loop** — `requestAnimationFrame` loop calling `sigma.refresh()` while any animation is active. Stops when `animatedNodes` map is empty.
+
+**Returns:** `{ zoomIn, zoomOut, resetView, focusNode, focusCluster, restartLayout, sigmaRef }`
+
+The raw `sigma` instance is NOT exposed as a direct value. Instead, `useSigma` returns a `sigmaRef: RefObject<Sigma | null>` populated internally when Sigma initializes. This ref is the only access point — it is passed from `GraphCanvas` to `GraphClusterLabels` for `graphToViewport()` coordinate conversion. All other camera and rendering operations go through the named control functions.
+
+### Sigma Configuration
+
+```typescript
+const sigma = new Sigma(graph, container, {
+  allowInvalidContainer: true,
+  zIndex: true,
+  hideEdgesOnMove: true,
+  minCameraRatio: 0.002,
+  maxCameraRatio: 50,
+  defaultNodeType: 'circle',
+  defaultEdgeType: 'curve',
+  nodeProgramClasses: { circle: NodeCircleProgram },
+  edgeProgramClasses: { curve: EdgeCurveProgram },
+  nodeReducer,
+  edgeReducer,
+})
+```
+
+### Error Handling
+
+If Sigma fails to initialize (WebGL context unavailable, container ref null):
+- `useSigma` catches the error and sets `graphStore.graphError: string | null`
+- `GraphCanvas` renders an error overlay with the message (replaces the current `ERROR_OVERLAY_STYLE` pattern from R3F)
+- Layout and event handlers are no-ops when `sigma` is null
 
 ### Node Rendering
 
@@ -123,7 +164,7 @@ Sigma's default `NodeCircleProgram` (WebGL circles):
 | `request` | HTTP method color (GET `#34d399`, POST `#fbbf24`, PUT `#60a5fa`, DELETE `#f87171`, PATCH `#a78bfa`) | `5` |
 | `model` | `#4a9eff` (blue) | `5 + fieldCount * 0.3` |
 
-In overview mode, node colors are overridden by community color (12-color cycling palette).
+In overview mode, node colors are overridden by community color (12-color cycling palette from `graphThemeConfig`).
 
 ### Edge Rendering
 
@@ -134,14 +175,18 @@ In overview mode, node colors are overridden by community color (12-color cyclin
 
 ### Dimming
 
-`dimColor(hex, amount)` blends toward `#0a0a0f` (PIU dark background) by `(1 - amount)`. Inlined in reducers as a pure function (no separate utility file).
+`dimColor(hex, amount, theme)` from `graphColorUtils.ts`:
+- Dark theme: blends toward `#111320`
+- Light theme: blends toward `#f3f4f6`
+- Imported by `useSigma` reducers. Theme determined by `graphStore.graphTheme`.
 
 ### Cluster Navigation
 
 **Overview mode** (`clusterMode === 'overview'`):
 - Node reducer overrides color to community color, scales size 0.8x
-- HTML overlay labels at cluster centroid via `sigma.graphToViewport()`
-- Click any node triggers `setFocusedClusterId` + camera animate to cluster bounding box
+- `GraphClusterLabels` component renders positioned HTML divs at each cluster centroid
+- Labels repositioned on Sigma `afterRender` event via `sigma.graphToViewport(centroidX, centroidY)`
+- Click any node triggers `setFocusedClusterId(node.clusterId)` + camera animate to cluster bbox
 
 **Focus mode** (`clusterMode === 'focus'`):
 - Node reducer: focused cluster nodes at full color/size, others `hidden: true`
@@ -150,6 +195,17 @@ In overview mode, node colors are overridden by community color (12-color cyclin
 
 **Off mode** (`clusterMode === 'off'`):
 - Standard selection/highlight behavior, no community color overrides
+
+### GraphClusterLabels Component
+
+New component: `src/app/components/graph/GraphClusterLabels.tsx`
+
+Renders when `clusterMode === 'overview'`. Receives `sigmaRef` from `GraphCanvas`.
+
+- Reads `clusters` map from `graphStore`
+- On Sigma `afterRender` event, converts each cluster centroid from graph coordinates to viewport pixels via `sigma.graphToViewport()`
+- Renders absolutely positioned `<div>` labels with cluster name, node count, and community color
+- Labels hidden when off-screen or when camera ratio exceeds threshold (too far out)
 
 ### Animation System
 
@@ -161,16 +217,16 @@ Driven by `requestAnimationFrame` loop calling `sigma.refresh()`:
 | `ripple` | `#ef4444` (red) | 3000ms | 1.3x + 1.2x sine oscillation | Blast radius |
 | `glow` | `#a855f7` (purple) | 4000ms | 1.4x + 0.6x sine oscillation | Query highlights |
 
-Auto-cleanup: animations are removed from `animatedNodes` map after their duration expires.
+Auto-cleanup: animations are removed from `animatedNodes` map after their duration expires. The `requestAnimationFrame` loop only runs while `animatedNodes.size > 0`.
 
 ### GraphStore Changes
 
-**Removed state:**
-- `nodeData: GraphNodeData[]` — Sigma reads directly from graphology
-- `edgeData: GraphEdgeData[]` — Sigma reads directly from graphology
-- `setNodeData` / `setEdgeData` actions
-- Animation frame refs (Sigma owns the render loop)
-- Camera position/zoom refs (Sigma owns camera)
+**Removed fields:**
+- `nodeIndexToId: string[]` / `setNodeIndexToId` — R3F InstancedMesh hit-testing index; Sigma handles hit-testing internally
+- `fitViewRequested` / `requestFitView` / `clearFitView` — replaced by direct `SigmaControls.resetView()` calls
+- `preFocusZoom` / `preFocusPosition` / `setPreFocusState` — Sigma camera state is internal; focus/unfocus handled by `useSigma` saving/restoring camera state in a ref
+- `bloomEnabled` / `setBloomEnabled` — bloom is dropped
+- `focusOverrideNodeIds` / `setFocusOverrideNodeIds` — merged into `highlightedNodeIds` (same visual effect)
 
 **Kept state (unchanged):**
 - `graph: Graph | null`
@@ -178,16 +234,21 @@ Auto-cleanup: animations are removed from `animatedNodes` map after their durati
 - `hoveredNodeId: string | null`
 - `highlightedNodeIds: Set<string> | null`
 - `blastRadiusNodeIds: Set<string> | null`
+- `pathNodeIds: Set<string> | null`
 - `animatedNodes: Map<string, Animation>`
 - `clusterMode: 'off' | 'overview' | 'focus'`
 - `focusedClusterId: string | null`
 - `clusters: Map<string, ClusterInfo>`
+- `communities: CommunityInfo[]`
 - `visibleEntityTypes: Set<string>`
+- `visibleNodeIds: Set<string> | null`
 - `searchQuery: string`
 - `selectionHistory: string[]`
+- `graphTheme: 'dark' | 'light'`
 
 **New state:**
 - `visibleEdgeTypes: Set<string>` — Edge type filter (currently implicit, now explicit)
+- `graphError: string | null` — Sigma initialization error message
 
 ## Data Flow
 
@@ -196,16 +257,19 @@ Rust backend (zero changes)
     |  invoke('build_project_graph')
     v
 graphDataTransform.ts — buildGraphologyInstance()
-    |  Adds x, y, size, color, label, entityType, communityColor attributes
+    |  Sets x, y, size, color, label, entityType on each node
+    |  (x, y, size, color ALREADY set in current code; only change: remove z attribute)
+    v
+graphClustering.ts — assignClusters(graph)
+    |  Runs Louvain + URL-prefix split + cluster spread
+    |  Writes communityColor attribute to each node in graphology
     v
 graphStore.setGraph(graph)
-    |
+    |  graph now has all attributes Sigma needs
     v
-useSigma hook
-    |  sigma.setGraph(graph)
-    |  ForceAtlas2 worker starts
-    |  Positions update in graphology → Sigma re-renders automatically
-    |  nodeReducer / edgeReducer read graphStore → apply visual overrides
+useSigma hook — sigma.setGraph(graph)
+    |  ForceAtlas2 worker starts → positions update in graphology → Sigma re-renders
+    |  nodeReducer / edgeReducer read graphStore state → apply visual overrides
     v
 Sigma WebGL canvas
     |  Events: clickNode, enterNode, clickStage
@@ -213,6 +277,19 @@ Sigma WebGL canvas
 graphStore actions (setSelectedNodeId, setHoveredNodeId, etc.)
     |  Store update → sigma.refresh() → reducers re-evaluate → canvas re-renders
 ```
+
+**Key sequencing:** `communityColor` is written to graphology BEFORE `sigma.setGraph()`. This ensures the node reducer can read community colors from the first frame. If clustering runs asynchronously (e.g., for very large graphs), the reducer falls back to the node's base entity type color until `communityColor` is available, then `sigma.refresh()` is called after clustering completes.
+
+## Theme Support
+
+Both dark and light themes remain fully supported:
+
+- `graphThemeConfig.ts` provides `DARK_THEME` and `LIGHT_THEME` objects
+- Blob-specific fields (`blobFillAlpha`, `blobStrokeAlpha`, `bloomAvailable`) are removed
+- Remaining fields: `background`, `edgeColor`, `edgeOpacity`, `labelColor`, `labelSize`, `clusterPalette` (24 colors)
+- Sigma container background set via CSS to `theme.background`
+- `dimColor()` reads the active theme to determine the blend target color
+- `T` keyboard shortcut toggles `graphStore.graphTheme`, triggering `sigma.refresh()` which re-evaluates all reducers with the new theme
 
 ## Keyboard Shortcuts (Unchanged)
 

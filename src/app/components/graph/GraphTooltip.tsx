@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type RefObject } from 'react';
 import type { CSSProperties } from 'react';
+import type Sigma from 'sigma';
 import { useGraphStore } from '../../stores/graphStore';
 import { findClusterForNode, type ClusterInfo } from '../../utils/graphClustering';
 import type Graph from 'graphology';
@@ -70,7 +71,15 @@ const tooltipStyle: CSSProperties = {
 };
 
 // ---------------------------------------------------------------------------
-// Mouse position tracker (container-relative)
+// Props
+// ---------------------------------------------------------------------------
+
+interface GraphTooltipProps {
+  sigmaRef: RefObject<Sigma | null>;
+}
+
+// ---------------------------------------------------------------------------
+// Mouse position tracker
 // ---------------------------------------------------------------------------
 
 interface MousePos {
@@ -128,7 +137,7 @@ function getClusterSummary(
 // Component
 // ---------------------------------------------------------------------------
 
-export default function GraphTooltip() {
+export default function GraphTooltip({ sigmaRef }: GraphTooltipProps) {
   const hoveredNodeId = useGraphStore((s) => s.hoveredNodeId);
   const graph = useGraphStore((s) => s.graph);
   const clusterMode = useGraphStore((s) => s.clusterMode);
@@ -139,7 +148,7 @@ export default function GraphTooltip() {
 
   const showTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Track mouse position globally so tooltip follows the pointer
+  // Track mouse position globally as fallback positioning
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
       setMousePos({ clientX: e.clientX, clientY: e.clientY });
@@ -176,13 +185,43 @@ export default function GraphTooltip() {
     return null;
   }
 
-  // Clamp tooltip position to avoid going offscreen
+  // Position tooltip using Sigma viewport coordinates when available,
+  // falling back to mouse position. Sigma coords are more accurate since
+  // they track the actual node position rather than the cursor.
   const viewportW = window.innerWidth;
   const viewportH = window.innerHeight;
   const tooltipW = 280;
   const tooltipH = 160; // rough estimate
-  const rawLeft = mousePos.clientX + TOOLTIP_OFFSET_X;
-  const rawTop = mousePos.clientY + TOOLTIP_OFFSET_Y;
+
+  let rawLeft: number;
+  let rawTop: number;
+
+  const sigma = sigmaRef.current;
+  if (sigma) {
+    try {
+      const nodeAttrs = graph.getNodeAttributes(hoveredNodeId);
+      const nx = nodeAttrs.x as number | undefined;
+      const ny = nodeAttrs.y as number | undefined;
+      if (nx !== undefined && ny !== undefined) {
+        const viewportPos = sigma.graphToViewport({ x: nx, y: ny });
+        // Convert from Sigma container-relative to page-relative
+        const container = sigma.getContainer();
+        const rect = container.getBoundingClientRect();
+        rawLeft = rect.left + viewportPos.x + TOOLTIP_OFFSET_X;
+        rawTop = rect.top + viewportPos.y + TOOLTIP_OFFSET_Y;
+      } else {
+        rawLeft = mousePos.clientX + TOOLTIP_OFFSET_X;
+        rawTop = mousePos.clientY + TOOLTIP_OFFSET_Y;
+      }
+    } catch {
+      rawLeft = mousePos.clientX + TOOLTIP_OFFSET_X;
+      rawTop = mousePos.clientY + TOOLTIP_OFFSET_Y;
+    }
+  } else {
+    rawLeft = mousePos.clientX + TOOLTIP_OFFSET_X;
+    rawTop = mousePos.clientY + TOOLTIP_OFFSET_Y;
+  }
+
   const left = Math.min(rawLeft, viewportW - tooltipW - 8);
   const top = Math.min(rawTop, viewportH - tooltipH - 8);
 

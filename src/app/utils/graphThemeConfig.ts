@@ -8,10 +8,6 @@ export interface GraphThemeConfig {
   labelColor: string;
   labelShadow: string;
   clusterLabelOpacity: number;
-  blobFillAlpha: number;
-  blobStrokeAlpha: number;
-  blobStrokeWidth: number;
-  bloomAvailable: boolean;
   clusterPalette: string[];
 }
 
@@ -39,10 +35,6 @@ export const DARK_THEME: GraphThemeConfig = {
   labelColor: 'rgba(255,255,255,0.85)',
   labelShadow: '0 1px 4px rgba(0,0,0,0.8)',
   clusterLabelOpacity: 0.8,
-  blobFillAlpha: 0.12,
-  blobStrokeAlpha: 0.50,
-  blobStrokeWidth: 2.0,
-  bloomAvailable: true,
   clusterPalette: DARK_CLUSTER_PALETTE,
 };
 
@@ -54,10 +46,6 @@ export const LIGHT_THEME: GraphThemeConfig = {
   labelColor: '#374151',
   labelShadow: '0 1px 2px rgba(0,0,0,0.1)',
   clusterLabelOpacity: 0.8,
-  blobFillAlpha: 0.25,
-  blobStrokeAlpha: 0.45,
-  blobStrokeWidth: 2.0,
-  bloomAvailable: false,
   clusterPalette: LIGHT_CLUSTER_PALETTE,
 };
 

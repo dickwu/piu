@@ -214,11 +214,19 @@ What it does:
 ## Releasing
 
 ```bash
-./publish.sh          # auto-increment patch (0.1.0 → 0.1.1)
-./publish.sh 0.2.0    # specific version
+# Full release pipeline — version bump, CI watch, AI release notes
+auto-push
+
+# Specific version
+auto-push --var release_version=0.2.0
+
+# Skip CI wait and release notes
+auto-push --skip ci_wait --skip ci_watch --skip changelog --skip notes --skip publish_notes
 ```
 
-The script bumps versions in `Cargo.toml`, `tauri.conf.json`, and `package.json`, creates a git tag, and pushes. The `v*` tag triggers the GitHub Actions release workflow which builds for macOS (arm64 + x64), Linux (deb + rpm), and Windows (MSI + NSIS), then publishes a signed GitHub release with an updater `latest.json`.
+Powered by [auto-push](https://github.com/dickwu/auto-push). The `.auto-push.json` pipeline runs `publish.sh` (cargo fmt, clippy, version bump, tag, push), waits for CI, then generates and publishes release notes with AI.
+
+The `v*` tag triggers the GitHub Actions release workflow which builds for macOS (arm64 + x64), Linux (deb + rpm), and Windows (MSI + NSIS), publishes a signed GitHub release with updater JSON, and auto-updates the Homebrew cask.
 
 ## CI / CD
 

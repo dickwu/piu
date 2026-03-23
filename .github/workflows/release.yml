@@ -78,8 +78,21 @@ jobs:
           includeUpdaterJson: true
           args: ${{ matrix.args }}
 
-  update-homebrew-cask:
+  publish-release:
     needs: publish-tauri
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: gh release edit "$TAG" --repo "$REPO" --draft=false
+
+  update-homebrew-cask:
+    needs: publish-release
     runs-on: macos-latest
     permissions:
       contents: read
@@ -89,12 +102,21 @@ jobs:
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
       - name: Download DMGs and compute SHA256
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          curl -sL -o arm64.dmg "https://github.com/dickwu/piu/releases/download/v${VERSION}/Piu_${VERSION}_aarch64.dmg"
-          curl -sL -o x64.dmg "https://github.com/dickwu/piu/releases/download/v${VERSION}/Piu_${VERSION}_x64.dmg"
-          echo "SHA_ARM64=$(shasum -a 256 arm64.dmg | cut -d' ' -f1)" >> "$GITHUB_ENV"
-          echo "SHA_X64=$(shasum -a 256 x64.dmg | cut -d' ' -f1)" >> "$GITHUB_ENV"
+          gh release download "v${VERSION}" --repo "$REPO" --pattern "Piu_${VERSION}_aarch64.dmg" --output arm64.dmg
+          gh release download "v${VERSION}" --repo "$REPO" --pattern "Piu_${VERSION}_x64.dmg" --output x64.dmg
+          SHA_ARM64=$(shasum -a 256 arm64.dmg | cut -d' ' -f1)
+          SHA_X64=$(shasum -a 256 x64.dmg | cut -d' ' -f1)
+          if [ "$SHA_ARM64" = "$SHA_X64" ]; then
+            echo "::error::ARM64 and x64 DMGs have identical SHA256 — download likely failed"
+            exit 1
+          fi
+          echo "SHA_ARM64=$SHA_ARM64" >> "$GITHUB_ENV"
+          echo "SHA_X64=$SHA_X64" >> "$GITHUB_ENV"
 
       - name: Update Homebrew cask in tap repo
         env:

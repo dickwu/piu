@@ -1,0 +1,72 @@
+{
+  "vars": {
+    "release_version": "",
+    "repo": "dickwu/piu"
+  },
+  "pipeline": [
+    {
+      "name": "preflight",
+      "description": "Verify no uncommitted changes before release",
+      "run": "test -z \"$(git status --porcelain)\" || (echo 'Uncommitted changes found — commit them first' && exit 1)"
+    },
+    {
+      "name": "publish",
+      "description": "Version bump, tag, and push via publish.sh",
+      "run": "./publish.sh {{ release_version }}",
+      "interactive": true,
+      "confirm": "Run publish.sh? This bumps the version, tags, and pushes.",
+      "on_error": "echo 'publish.sh failed — check clippy output above'"
+    },
+    {
+      "name": "get_version",
+      "description": "Capture the new version tag",
+      "run": "git describe --tags --abbrev=0",
+      "capture": "version"
+    },
+    {
+      "name": "get_prev",
+      "description": "Capture the previous version tag",
+      "run": "git tag --sort=-v:refname | sed -n '2p'",
+      "capture": "prev_version"
+    },
+    {
+      "name": "ci_wait",
+      "description": "Wait for GitHub Actions to register runs",
+      "run": "sleep 8 && gh run list --repo {{ repo }} --limit 4"
+    },
+    {
+      "name": "ci_watch",
+      "description": "Watch release workflow to completion (7–15 min)",
+      "run": "RELEASE_RUN=$(gh run list --repo {{ repo }} --workflow release.yml --limit 1 --json databaseId --jq '.[0].databaseId') && gh run watch --repo {{ repo }} $RELEASE_RUN --exit-status",
+      "interactive": true,
+      "confirm": "Watch release CI to completion?",
+      "on_error": "echo 'Release CI failed' && gh run list --repo {{ repo }} --workflow release.yml --limit 1"
+    },
+    {
+      "name": "changelog",
+      "description": "Collect commits since last release",
+      "run": "git log --oneline {{ prev_version }}..{{ version }} --no-merges",
+      "capture": "changelog"
+    },
+    {
+      "name": "notes",
+      "description": "Generate release notes with AI",
+      "command": "claude",
+      "args": [
+        "-p",
+        "Generate concise GitHub release notes from these commits between {{ prev_version }} and {{ version }}:\n\n{{ changelog }}\n\nRules:\n- Categorize: New Features (feat:), Bug Fixes (fix:), Improvements (refactor/perf), Maintenance (chore/ci/docs)\n- Omit empty sections\n- One-line bullets, no commit hashes\n- End with: **Full Changelog**: https://github.com/dickwu/piu/compare/{{ prev_version }}...{{ version }}",
+        "--output-format", "text",
+        "--no-session-persistence",
+        "--tools", ""
+      ],
+      "capture": "release_notes"
+    },
+    {
+      "name": "publish_notes",
+      "description": "Update the GitHub release with generated notes",
+      "command": "gh",
+      "args": ["release", "edit", "{{ version }}", "--repo", "{{ repo }}", "--notes", "{{ release_notes }}"],
+      "confirm": "Publish release notes for {{ version }}?"
+    }
+  ]
+}

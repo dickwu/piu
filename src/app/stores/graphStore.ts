@@ -46,9 +46,6 @@ interface GraphStore {
   selectedNode: SelectedNode | null;
   setSelectedNode: (node: SelectedNode | null) => void;
 
-  nodeIndexToId: string[];
-  setNodeIndexToId: (mapping: string[]) => void;
-
   // --- Phase 2: Filters ---
   filters: FilterState;
   setFilters: (filters: FilterState) => void;
@@ -87,15 +84,6 @@ interface GraphStore {
   communities: CommunityInfo[];
   setCommunities: (communities: CommunityInfo[]) => void;
 
-  // --- Phase 3: Visual settings ---
-  bloomEnabled: boolean;
-  setBloomEnabled: (enabled: boolean) => void;
-
-  // --- Phase 3: Camera control ---
-  fitViewRequested: boolean;
-  requestFitView: () => void;
-  clearFitView: () => void;
-
   // --- Phase 4: Cluster fusion ---
   clusterMode: 'overview' | 'focus' | 'off';
   setClusterMode: (mode: 'overview' | 'focus' | 'off') => void;
@@ -105,13 +93,6 @@ interface GraphStore {
 
   focusedClusterId: string | null;
   setFocusedClusterId: (id: string | null) => void;
-
-  focusOverrideNodeIds: Set<string> | null;
-  setFocusOverrideNodeIds: (ids: Set<string> | null) => void;
-
-  preFocusZoom: number;
-  preFocusPosition: { x: number; y: number };
-  setPreFocusState: (zoom: number, position: { x: number; y: number }) => void;
 
   // --- Phase 5: Theme ---
   graphTheme: 'dark' | 'light';
@@ -127,6 +108,13 @@ interface GraphStore {
 
   blastRadiusNodeIds: Set<string> | null;
   setBlastRadiusNodeIds: (ids: Set<string> | null) => void;
+
+  // --- Sigma state ---
+  graphError: string | null;
+  setGraphError: (error: string | null) => void;
+
+  visibleEdgeTypes: Set<string>;
+  setVisibleEdgeTypes: (types: Set<string>) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -143,9 +131,6 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
 
   selectedNode: null,
   setSelectedNode: (node) => set({ selectedNode: node }),
-
-  nodeIndexToId: [],
-  setNodeIndexToId: (mapping) => set({ nodeIndexToId: mapping }),
 
   // Phase 2: Filters
   filters: { ...DEFAULT_FILTERS },
@@ -204,15 +189,6 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
   communities: [],
   setCommunities: (communities) => set({ communities }),
 
-  // Phase 3: Visual settings
-  bloomEnabled: false,
-  setBloomEnabled: (enabled) => set({ bloomEnabled: enabled }),
-
-  // Phase 3: Camera control
-  fitViewRequested: false,
-  requestFitView: () => set({ fitViewRequested: true }),
-  clearFitView: () => set({ fitViewRequested: false }),
-
   // Phase 4: Cluster fusion
   clusterMode: 'off',
   setClusterMode: (mode) => set({ clusterMode: mode }),
@@ -222,13 +198,6 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
 
   focusedClusterId: null,
   setFocusedClusterId: (id) => set({ focusedClusterId: id }),
-
-  focusOverrideNodeIds: null,
-  setFocusOverrideNodeIds: (ids) => set({ focusOverrideNodeIds: ids }),
-
-  preFocusZoom: 1.5,
-  preFocusPosition: { x: 0, y: 0 },
-  setPreFocusState: (zoom, position) => set({ preFocusZoom: zoom, preFocusPosition: position }),
 
   // Phase 5: Theme
   graphTheme: 'dark',
@@ -262,4 +231,11 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
 
   blastRadiusNodeIds: null,
   setBlastRadiusNodeIds: (ids) => set({ blastRadiusNodeIds: ids }),
+
+  // Sigma state
+  graphError: null,
+  setGraphError: (error) => set({ graphError: error }),
+
+  visibleEdgeTypes: new Set(['col-subcol', 'col-request', 'req-reqModel', 'req-resModel', 'model-inherits', 'model-mixin', 'model-fieldRef']),
+  setVisibleEdgeTypes: (types) => set({ visibleEdgeTypes: types }),
 }));

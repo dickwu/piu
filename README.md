@@ -29,6 +29,7 @@ Built with **Tauri 2.0** (Rust backend) + **React 19** + **Next.js** + **Ant Des
 - 🔍 **Frontend Sync Skill** — A Claude Code skill that scans a frontend repo for HTTP API calls and cross-references them against a PIU project to find mismatches, missing endpoints, and type contract violations
 - 🧠 **LLM Search & Knowledge Graph** — FTS5 full-text search across all entity types with BM25 ranking. Auto-generated natural-language descriptions make every entity self-describing. MCP tools: `search_entities`, `find_related_entities`, `get_entity_detail`, `get_api_surface`, `get_project_summary`
 - 🔗 **Entity Relations & Backlinks** — Pre-computed relationship graph with bidirectional traversal (Obsidian-style backlinks). Ask "what uses this model?" and get endpoints, collections, and inheritance chains in one call
+- 🕸️ **Interactive API Graph** — Sigma.js v3 WebGL graph visualization of project entities (collections, requests, models) and their relationships (7 edge types). Louvain community detection with URL-prefix clustering. Overview/focus cluster navigation, ForceAtlas2 force-directed layout, curved Bezier edges, selection highlighting, path tracing (Shift+click), blast radius analysis, pulse/ripple/glow animations, dark/light theme, and keyboard shortcuts
 
 ## Tech Stack
 
@@ -39,6 +40,7 @@ Built with **Tauri 2.0** (Rust backend) + **React 19** + **Next.js** + **Ant Des
 | Database | Turso SQLite (local, embedded) |
 | State | Zustand 5 |
 | UI | Ant Design 6 + Tailwind CSS 4 |
+| Graph | Sigma.js 3 + Graphology + ForceAtlas2 |
 | HTTP | reqwest 0.13 (Rust-side execution) |
 | Package manager | bun |
 
@@ -95,7 +97,8 @@ piu/
 │   └── piu-frontend-sync.md    # Validate frontend API calls against PIU
 ├── src/                        # React/Next.js frontend
 │   └── app/
-│       ├── components/         # UI components (editors, viewers, modals, sidebar)
+│       ├── components/         # UI components (editors, viewers, modals, sidebar, graph)
+│       ├── hooks/              # React hooks (useSigma graph renderer)
 │       ├── stores/             # Zustand state stores (6 stores)
 │       └── types/              # TypeScript types (mirrors Rust structs)
 └── src-tauri/                  # Rust backend

@@ -48,8 +48,31 @@ export interface RustProjectGraphData {
 // Build a graphology Graph from Rust JSON
 // ---------------------------------------------------------------------------
 
+// Target half-extent: positions will be normalized to roughly [-TARGET, +TARGET]
+// so the default camera (zoom 1.5, origin 0,0) can see the entire graph.
+const POSITION_TARGET_EXTENT = 300;
+
 export function buildGraphologyInstance(data: RustProjectGraphData): Graph {
   const graph = new Graph({ multi: false, type: 'directed', allowSelfLoops: false });
+
+  // Compute bounding box of cached positions (if any) for normalization
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  let posCount = 0;
+  for (const node of data.nodes) {
+    if (node.fx != null && node.fy != null) {
+      if (node.fx < minX) minX = node.fx;
+      if (node.fx > maxX) maxX = node.fx;
+      if (node.fy < minY) minY = node.fy;
+      if (node.fy > maxY) maxY = node.fy;
+      posCount++;
+    }
+  }
+
+  const needsNormalize = posCount > 0;
+  const cx = needsNormalize ? (minX + maxX) / 2 : 0;
+  const cy = needsNormalize ? (minY + maxY) / 2 : 0;
+  const extent = Math.max(maxX - minX, maxY - minY, 1);
+  const scale = extent > POSITION_TARGET_EXTENT * 2 ? (POSITION_TARGET_EXTENT * 2) / extent : 1;
 
   for (const node of data.nodes) {
     let properties: Record<string, unknown> = {};
@@ -59,6 +82,12 @@ export function buildGraphologyInstance(data: RustProjectGraphData): Graph {
       // fallback to empty
     }
 
+    // Center and scale positions so the graph fits the default camera view
+    const rawX = node.fx ?? undefined;
+    const rawY = node.fy ?? undefined;
+    const x = rawX !== undefined && needsNormalize ? (rawX - cx) * scale : rawX;
+    const y = rawY !== undefined && needsNormalize ? (rawY - cy) * scale : rawY;
+
     graph.addNode(node.id, {
       entity_type: node.entity_type,
       entity_id: node.entity_id,
@@ -66,9 +95,8 @@ export function buildGraphologyInstance(data: RustProjectGraphData): Graph {
       properties,
       size: Math.max(node.size, NODE_SIZE_FLOOR),
       color: node.color,
-      x: node.fx ?? undefined,
-      y: node.fy ?? undefined,
-      z: 0,
+      x,
+      y,
     });
   }
 
@@ -89,6 +117,20 @@ export function buildGraphologyInstance(data: RustProjectGraphData): Graph {
   }
 
   return graph;
+}
+
+/**
+ * Sigma requires x/y on every node. For fresh graphs (no cached positions),
+ * seed random coordinates so FA2 has a starting point.
+ */
+export function seedRandomPositions(graph: Graph): void {
+  const spread = Math.sqrt(graph.order) * 40
+  graph.forEachNode((node, attrs) => {
+    if (typeof attrs.x !== 'number' || typeof attrs.y !== 'number') {
+      graph.setNodeAttribute(node, 'x', (Math.random() - 0.5) * spread)
+      graph.setNodeAttribute(node, 'y', (Math.random() - 0.5) * spread)
+    }
+  })
 }
 
 // ---------------------------------------------------------------------------
@@ -126,7 +168,7 @@ export function extractPositionsForSave(graph: Graph): PositionForSave[] {
         id: node,
         fx: attrs.x,
         fy: attrs.y,
-        fz: typeof attrs.z === 'number' ? attrs.z : 0,
+        fz: 0,
       });
     }
   });

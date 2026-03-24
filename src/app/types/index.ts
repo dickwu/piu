@@ -91,8 +91,63 @@ export interface EnvVariable {
   key: string;
   value: string;
   enabled: boolean;
+  match_paths: string; // JSON array string, e.g. '["*"]'
+  target_location: string; // header, url-param, body, url-path, auth-*
+  expires_at: number | null;
+  priority: number;
   created_at: number;
   updated_at: number;
+}
+
+export interface EnvHook {
+  id: string;
+  environment_id: string;
+  source_request_id: string;
+  response_location: string; // 'body' | 'header'
+  selector: string;
+  value_template: string;
+  expires_in: number | null;
+  array_strategy: string; // 'pick' | 'first' | 'last'
+  enabled: boolean;
+  last_executed_at: number | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface EnvHookTarget {
+  hook_id: string;
+  variable_id: string;
+}
+
+export type TargetLocation =
+  | 'header'
+  | 'url-param'
+  | 'body'
+  | 'url-path'
+  | 'auth-bearer'
+  | 'auth-basic-user'
+  | 'auth-basic-pass'
+  | 'auth-apikey-name'
+  | 'auth-apikey-value';
+
+export const TARGET_LOCATIONS: { value: TargetLocation; label: string }[] = [
+  { value: 'header', label: 'Header' },
+  { value: 'url-param', label: 'URL Param' },
+  { value: 'url-path', label: 'URL Path' },
+  { value: 'body', label: 'Body (JSON)' },
+  { value: 'auth-bearer', label: 'Auth: Bearer' },
+  { value: 'auth-basic-user', label: 'Auth: Basic User' },
+  { value: 'auth-basic-pass', label: 'Auth: Basic Pass' },
+  { value: 'auth-apikey-name', label: 'Auth: API Key Name' },
+  { value: 'auth-apikey-value', label: 'Auth: API Key Value' },
+];
+
+export interface HookArrayPickEvent {
+  pick_id: string;
+  hook_id: string;
+  items: unknown[];
+  field_path: string;
+  target_variable_ids: string[];
 }
 
 export interface HttpResponse {

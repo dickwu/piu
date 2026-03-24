@@ -183,6 +183,9 @@ pub fn run() {
             // Search & discovery commands
             commands::search_commands::search_entities,
             commands::search_commands::find_related_entities,
+            // Hook picker commands
+            commands::resolve_hook_pick,
+            commands::cancel_hook_pick,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

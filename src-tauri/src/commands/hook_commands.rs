@@ -101,3 +101,36 @@ pub async fn update_env_hook(input: UpdateEnvHookInput) -> Result<db::EnvHook, S
 pub async fn delete_env_hook(id: String) -> Result<(), String> {
     db::delete_hook(&id).await.map_err(|e| e.to_string())
 }
+
+// --- Array Picker Commands ---
+
+#[derive(Deserialize)]
+pub struct ResolveHookPickInput {
+    pub pick_id: String,
+    pub selected_index: usize,
+}
+
+#[tauri::command]
+pub async fn resolve_hook_pick(input: ResolveHookPickInput) -> Result<String, String> {
+    let (pick, item) = crate::http::picker::resolve_pick(&input.pick_id, input.selected_index)
+        .ok_or("Pick not found or index out of bounds")?;
+
+    let value = match &item {
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Number(n) => n.to_string(),
+        serde_json::Value::Bool(b) => b.to_string(),
+        other => serde_json::to_string(other).unwrap_or_default(),
+    };
+
+    for var_id in &pick.target_variable_ids {
+        let _ = crate::db::update_env_variable(var_id, Some(&value), None, None, None, None, None)
+            .await;
+    }
+
+    Ok(value)
+}
+
+#[tauri::command]
+pub async fn cancel_hook_pick(pick_id: String) -> Result<bool, String> {
+    Ok(crate::http::picker::cancel_pick(&pick_id))
+}

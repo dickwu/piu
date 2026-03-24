@@ -57,9 +57,7 @@ const HOOK_SELECT: &str =
 const HOOK_SELECT_ALIASED: &str =
     "h.id, h.environment_id, h.source_request_id, h.response_location, h.selector, h.value_template, h.expires_in, h.array_strategy, h.enabled, h.last_executed_at, h.created_at, h.updated_at";
 
-fn hook_from_row(
-    row: &turso::Row,
-) -> Result<EnvHook, Box<dyn std::error::Error + Send + Sync>> {
+fn hook_from_row(row: &turso::Row) -> Result<EnvHook, Box<dyn std::error::Error + Send + Sync>> {
     Ok(EnvHook {
         id: row.get(0)?,
         environment_id: row.get(1)?,

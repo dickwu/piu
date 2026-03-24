@@ -147,9 +147,7 @@ pub struct UpdateEnvVariableInput {
 }
 
 #[tauri::command]
-pub async fn update_env_variable(
-    input: UpdateEnvVariableInput,
-) -> Result<db::EnvVariable, String> {
+pub async fn update_env_variable(input: UpdateEnvVariableInput) -> Result<db::EnvVariable, String> {
     db::update_env_variable(
         &input.id,
         input.value.as_deref(),

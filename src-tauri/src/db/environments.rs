@@ -425,3 +425,4 @@ pub async fn list_env_variables(environment_id: &str) -> DbResult<Vec<EnvVariabl
 
     Ok(variables)
 }
+

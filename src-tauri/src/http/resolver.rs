@@ -13,11 +13,7 @@ use crate::db::EnvVariable;
 /// then sorted by `priority` descending (ties broken by `updated_at` descending).
 /// Only the first match for each `(target_location, key)` pair is applied,
 /// ensuring higher-priority variables win conflicts.
-pub fn resolve_and_inject(
-    config: &mut RequestConfig,
-    variables: &[EnvVariable],
-    api_path: &str,
-) {
+pub fn resolve_and_inject(config: &mut RequestConfig, variables: &[EnvVariable], api_path: &str) {
     let mut candidates: Vec<&EnvVariable> = variables
         .iter()
         .filter(|v| v.enabled)
@@ -216,14 +212,8 @@ mod tests {
             key: overrides.key.unwrap_or("testKey").to_string(),
             value: overrides.value.unwrap_or("testValue").to_string(),
             enabled: overrides.enabled.unwrap_or(true),
-            match_paths: overrides
-                .match_paths
-                .unwrap_or(r#"["*"]"#)
-                .to_string(),
-            target_location: overrides
-                .target_location
-                .unwrap_or("url-path")
-                .to_string(),
+            match_paths: overrides.match_paths.unwrap_or(r#"["*"]"#).to_string(),
+            target_location: overrides.target_location.unwrap_or("url-path").to_string(),
             expires_at: None,
             priority: overrides.priority.unwrap_or(0),
             created_at: 1000,

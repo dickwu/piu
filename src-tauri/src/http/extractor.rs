@@ -155,10 +155,7 @@ mod tests {
         let result = extract_from_body(body, "data[*].id");
         assert_eq!(
             result,
-            ExtractionResult::Array(vec![
-                serde_json::json!(1),
-                serde_json::json!(2),
-            ])
+            ExtractionResult::Array(vec![serde_json::json!(1), serde_json::json!(2),])
         );
     }
 

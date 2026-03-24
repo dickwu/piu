@@ -1,6 +1,8 @@
 use super::executor;
+use super::glob_match;
 use super::types::{ExecutionProgress, KeyValuePair, RequestConfig};
 use crate::db;
+use crate::db::EnvVariable;
 use tauri::Emitter;
 
 /// Orchestrate a full request execution from just a request ID.
@@ -111,12 +113,14 @@ pub async fn orchestrate_request(
                     // 5a. Load full EnvVariable structs and resolve via targeted injection
                     if let Ok(variables) = db::list_env_variables(&env.id).await {
                         super::resolver::resolve_and_inject(&mut config, &variables, &api_path);
+                        emit_expired_variable_warnings(app, &variables, &api_path);
                     }
                 } else {
                     // No host — api_path is the config url itself
                     let api_path = config.url.trim_start_matches('/').to_string();
                     if let Ok(variables) = db::list_env_variables(&env.id).await {
                         super::resolver::resolve_and_inject(&mut config, &variables, &api_path);
+                        emit_expired_variable_warnings(app, &variables, &api_path);
                     }
                 }
             } else {
@@ -124,6 +128,7 @@ pub async fn orchestrate_request(
                 let api_path = config.url.trim_start_matches('/').to_string();
                 if let Ok(variables) = db::list_env_variables(&env.id).await {
                     super::resolver::resolve_and_inject(&mut config, &variables, &api_path);
+                    emit_expired_variable_warnings(app, &variables, &api_path);
                 }
             }
         }
@@ -176,4 +181,35 @@ pub async fn orchestrate_request(
     }
 
     Ok(())
+}
+
+/// Emit a `variable-expired` event for each enabled, path-matched variable
+/// whose `expires_at` timestamp is in the past.
+///
+/// This is the detection-only phase of auto-refresh. The resolver has already
+/// injected the (stale) value. Full auto-refresh -- executing the source
+/// request through the single-flight gate -- will be wired in a future task.
+fn emit_expired_variable_warnings(
+    app: &tauri::AppHandle,
+    variables: &[EnvVariable],
+    api_path: &str,
+) {
+    let now = chrono::Utc::now().timestamp_millis();
+
+    for var in variables {
+        let is_expired = var.enabled
+            && glob_match::matches_path(&var.match_paths, api_path)
+            && var.expires_at.is_some_and(|exp| exp <= now);
+
+        if is_expired {
+            let _ = app.emit(
+                "variable-expired",
+                serde_json::json!({
+                    "variable_id": var.id,
+                    "key": var.key,
+                    "match_paths": var.match_paths,
+                }),
+            );
+        }
+    }
 }

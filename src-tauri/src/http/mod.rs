@@ -2,6 +2,7 @@ pub mod executor;
 pub mod extractor;
 pub mod glob_match;
 pub mod orchestrator;
+pub mod refresh;
 pub mod resolver;
 pub mod types;
 

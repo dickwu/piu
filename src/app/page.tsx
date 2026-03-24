@@ -14,6 +14,7 @@ import { useResponseStore } from './stores/responseStore';
 import { useModelStore } from './stores/modelStore';
 import { useRequestEditorStore } from './stores/requestStore';
 import { ApiDocsPanel } from './components/api-docs/ApiDocsPanel';
+import { ArrayPickerModal } from './components/ArrayPickerModal';
 import { useSpecStore } from './stores/specStore';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { defaultRequestConfig, type DataChangedEvent } from '@/app/types';
@@ -213,6 +214,7 @@ export default function Home() {
       </div>
 
       <RequestDetailModal />
+      <ArrayPickerModal />
 
       <footer className="app-footer">
         <StatusBar />

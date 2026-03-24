@@ -54,7 +54,7 @@ export function ProjectSettingsModal({
   const [varEditorEnvId, setVarEditorEnvId] = useState<string | null>(null);
   const [editingHost, setEditingHost] = useState('');
   const [editingVars, setEditingVars] = useState<
-    { id: string; key: string; value: string; enabled: boolean }[]
+    { id: string; key: string; value: string; enabled: boolean; match_paths: string; target_location: string; expires_at: number | null; priority: number }[]
   >([]);
 
   const [envFormOpen, setEnvFormOpen] = useState(false);
@@ -152,6 +152,10 @@ export function ProjectSettingsModal({
             key: v.key,
             value: v.value,
             enabled: v.enabled,
+            match_paths: v.match_paths ?? '["*"]',
+            target_location: v.target_location ?? 'header',
+            expires_at: v.expires_at,
+            priority: v.priority ?? 0,
           })),
         );
         const env = environments.find((e) => e.id === envId);
@@ -185,7 +189,16 @@ export function ProjectSettingsModal({
   const addVariable = useCallback(() => {
     setEditingVars((prev) => [
       ...prev,
-      { id: crypto.randomUUID(), key: '', value: '', enabled: true },
+      {
+        id: crypto.randomUUID(),
+        key: '',
+        value: '',
+        enabled: true,
+        match_paths: '["*"]',
+        target_location: 'header',
+        expires_at: null,
+        priority: 0,
+      },
     ]);
   }, []);
 

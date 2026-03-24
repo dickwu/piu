@@ -4,12 +4,16 @@ import {
   App,
   Drawer,
   Input,
+  InputNumber,
   Button,
   Space,
   Switch,
   Table,
   Modal,
   Collapse,
+  Tabs,
+  Select,
+  Tag,
 } from 'antd';
 import {
   SaveOutlined,
@@ -17,15 +21,57 @@ import {
   DeleteOutlined,
   EditOutlined,
   SettingOutlined,
+  EyeOutlined,
+  EyeInvisibleOutlined,
 } from '@ant-design/icons';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useProjectStore } from '../stores/projectStore';
 import { useEnvironmentStore } from '../stores/environmentStore';
+import { TARGET_LOCATIONS } from '../types';
+import type { TargetLocation } from '../types';
+import { MatchPathsInput } from './MatchPathsInput';
+import { HooksEditor } from './HooksEditor';
+
+interface EditingVariable {
+  id: string;
+  key: string;
+  value: string;
+  enabled: boolean;
+  match_paths: string;
+  target_location: string;
+  expires_at: number | null;
+  priority: number;
+}
 
 interface ProjectSettingsDrawerProps {
   projectId: string | null;
   open: boolean;
   onClose: () => void;
+}
+
+const TARGET_LOCATION_COLORS: Record<string, string> = {
+  header: 'blue',
+  'url-param': 'cyan',
+  'url-path': 'geekblue',
+  body: 'green',
+  'auth-bearer': 'orange',
+  'auth-basic-user': 'gold',
+  'auth-basic-pass': 'gold',
+  'auth-apikey-name': 'volcano',
+  'auth-apikey-value': 'volcano',
+};
+
+function formatExpiry(expiresAt: number | null): {
+  text: string;
+  color: string | undefined;
+} {
+  if (!expiresAt) return { text: 'never', color: undefined };
+  const now = Date.now() / 1000;
+  const diff = expiresAt - now;
+  if (diff <= 0) return { text: 'expired', color: '#ff4d4f' };
+  if (diff < 3600) return { text: `${Math.ceil(diff / 60)}m left`, color: '#fa8c16' };
+  if (diff < 86400) return { text: `${Math.ceil(diff / 3600)}h left`, color: undefined };
+  return { text: `${Math.ceil(diff / 86400)}d left`, color: undefined };
 }
 
 export function ProjectSettingsDrawer({
@@ -58,9 +104,9 @@ export function ProjectSettingsDrawer({
   const [showRenameModal, setShowRenameModal] = useState(false);
   const [varEditorEnvId, setVarEditorEnvId] = useState<string | null>(null);
   const [editingHost, setEditingHost] = useState('');
-  const [editingVars, setEditingVars] = useState<
-    { id: string; key: string; value: string; enabled: boolean }[]
-  >([]);
+  const [editingVars, setEditingVars] = useState<EditingVariable[]>([]);
+  const [activeVarTab, setActiveVarTab] = useState('variables');
+  const [visibleValues, setVisibleValues] = useState<Set<string>>(new Set());
 
   const createEnvError =
     newEnvName.trim() && hasEnvironmentName(newEnvName)
@@ -166,11 +212,17 @@ export function ProjectSettingsDrawer({
             key: v.key,
             value: v.value,
             enabled: v.enabled,
+            match_paths: v.match_paths ?? '["*"]',
+            target_location: v.target_location ?? 'header',
+            expires_at: v.expires_at,
+            priority: v.priority ?? 0,
           })),
         );
         const env = environments.find((e) => e.id === envId);
         setEditingHost(env?.host ?? '');
         setVarEditorEnvId(envId);
+        setActiveVarTab('variables');
+        setVisibleValues(new Set());
       } catch (error) {
         message.error('Failed to load variables');
       }
@@ -199,12 +251,21 @@ export function ProjectSettingsDrawer({
   const addVariable = useCallback(() => {
     setEditingVars((prev) => [
       ...prev,
-      { id: crypto.randomUUID(), key: '', value: '', enabled: true },
+      {
+        id: crypto.randomUUID(),
+        key: '',
+        value: '',
+        enabled: true,
+        match_paths: '["*"]',
+        target_location: 'header',
+        expires_at: null,
+        priority: 0,
+      },
     ]);
   }, []);
 
   const updateVariable = useCallback(
-    (index: number, field: string, value: string | boolean) => {
+    (index: number, field: string, value: string | boolean | number | null) => {
       setEditingVars((prev) =>
         prev.map((v, i) => (i === index ? { ...v, [field]: value } : v)),
       );
@@ -216,7 +277,161 @@ export function ProjectSettingsDrawer({
     setEditingVars((prev) => prev.filter((_, i) => i !== index));
   }, []);
 
+  const toggleValueVisibility = useCallback((varId: string) => {
+    setVisibleValues((prev) => {
+      const next = new Set(prev);
+      if (next.has(varId)) {
+        next.delete(varId);
+      } else {
+        next.add(varId);
+      }
+      return next;
+    });
+  }, []);
+
+  const targetLocationOptions = useMemo(
+    () =>
+      TARGET_LOCATIONS.map((t) => ({
+        value: t.value,
+        label: (
+          <Tag
+            color={TARGET_LOCATION_COLORS[t.value] ?? 'default'}
+            style={{ fontSize: 10, margin: 0, lineHeight: '16px', padding: '0 4px' }}
+          >
+            {t.label}
+          </Tag>
+        ),
+      })),
+    [],
+  );
+
   const varEditorEnv = environments.find((e) => e.id === varEditorEnvId);
+
+  const variableColumns = useMemo(
+    () => [
+      {
+        title: '',
+        dataIndex: 'enabled',
+        width: 44,
+        render: (val: boolean, _: EditingVariable, idx: number) => (
+          <Switch
+            size="small"
+            checked={val}
+            onChange={(v) => updateVariable(idx, 'enabled', v)}
+          />
+        ),
+      },
+      {
+        title: 'Match',
+        dataIndex: 'match_paths',
+        width: 160,
+        render: (val: string, _: EditingVariable, idx: number) => (
+          <MatchPathsInput
+            value={val}
+            onChange={(v) => updateVariable(idx, 'match_paths', v)}
+          />
+        ),
+      },
+      {
+        title: 'Target',
+        dataIndex: 'target_location',
+        width: 130,
+        render: (val: string, _: EditingVariable, idx: number) => (
+          <Select
+            size="small"
+            value={val as TargetLocation}
+            onChange={(v) => updateVariable(idx, 'target_location', v)}
+            options={targetLocationOptions}
+            style={{ width: '100%' }}
+            popupMatchSelectWidth={false}
+          />
+        ),
+      },
+      {
+        title: 'Key',
+        dataIndex: 'key',
+        width: 130,
+        render: (val: string, _: EditingVariable, idx: number) => (
+          <Input
+            size="small"
+            value={val}
+            onChange={(e) => updateVariable(idx, 'key', e.target.value)}
+            placeholder="Variable name"
+            style={{ fontFamily: 'var(--font-code)', fontSize: 11 }}
+          />
+        ),
+      },
+      {
+        title: 'Value',
+        dataIndex: 'value',
+        width: 160,
+        render: (val: string, record: EditingVariable, idx: number) => {
+          const isVisible = visibleValues.has(record.id);
+          return (
+            <Space.Compact size="small" style={{ width: '100%' }}>
+              <Input
+                size="small"
+                value={val}
+                onChange={(e) => updateVariable(idx, 'value', e.target.value)}
+                placeholder="Value"
+                type={isVisible ? 'text' : 'password'}
+                style={{ fontFamily: 'var(--font-code)', fontSize: 11 }}
+              />
+              <Button
+                size="small"
+                type="text"
+                icon={isVisible ? <EyeInvisibleOutlined /> : <EyeOutlined />}
+                onClick={() => toggleValueVisibility(record.id)}
+                style={{ width: 28, minWidth: 28 }}
+              />
+            </Space.Compact>
+          );
+        },
+      },
+      {
+        title: 'Pri',
+        dataIndex: 'priority',
+        width: 60,
+        render: (val: number, _: EditingVariable, idx: number) => (
+          <InputNumber
+            size="small"
+            value={val}
+            onChange={(v) => updateVariable(idx, 'priority', v ?? 0)}
+            min={-99}
+            max={99}
+            style={{ width: '100%' }}
+          />
+        ),
+      },
+      {
+        title: 'Expires',
+        dataIndex: 'expires_at',
+        width: 70,
+        render: (val: number | null) => {
+          const { text, color } = formatExpiry(val);
+          return (
+            <span style={{ fontSize: 10, color: color ?? 'var(--text-tertiary)' }}>
+              {text}
+            </span>
+          );
+        },
+      },
+      {
+        title: '',
+        width: 40,
+        render: (_: unknown, __: EditingVariable, idx: number) => (
+          <Button
+            size="small"
+            type="text"
+            danger
+            icon={<DeleteOutlined />}
+            onClick={() => removeVariable(idx)}
+          />
+        ),
+      },
+    ],
+    [updateVariable, removeVariable, targetLocationOptions, visibleValues, toggleValueVisibility],
+  );
 
   return (
     <>
@@ -380,11 +595,12 @@ export function ProjectSettingsDrawer({
 
       {/* Variable Editor Modal */}
       <Modal
-        title={`${varEditorEnv?.name ?? 'Environment'} — Variables`}
+        title={`${varEditorEnv?.name ?? 'Environment'} — Settings`}
         open={varEditorEnvId !== null}
         onOk={handleSaveVars}
         onCancel={() => setVarEditorEnvId(null)}
-        width={700}
+        width={960}
+        okText="Save"
       >
         <div className="mb-3">
           <label
@@ -401,72 +617,46 @@ export function ProjectSettingsDrawer({
             onChange={(e) => setEditingHost(e.target.value)}
           />
         </div>
-        <Table
-          dataSource={editingVars}
-          rowKey="id"
-          pagination={false}
+
+        <Tabs
+          activeKey={activeVarTab}
+          onChange={setActiveVarTab}
           size="small"
-          columns={[
+          items={[
             {
-              title: 'Enabled',
-              dataIndex: 'enabled',
-              width: 70,
-              render: (val: boolean, _: unknown, idx: number) => (
-                <Switch
-                  size="small"
-                  checked={val}
-                  onChange={(v) => updateVariable(idx, 'enabled', v)}
-                />
+              key: 'variables',
+              label: `Variables (${editingVars.length})`,
+              children: (
+                <>
+                  <Table
+                    dataSource={editingVars}
+                    rowKey="id"
+                    pagination={false}
+                    size="small"
+                    columns={variableColumns}
+                    scroll={{ x: 820 }}
+                  />
+                  <Button
+                    size="small"
+                    type="dashed"
+                    onClick={addVariable}
+                    style={{ marginTop: 8 }}
+                    block
+                  >
+                    Add Variable
+                  </Button>
+                </>
               ),
             },
             {
-              title: 'Key',
-              dataIndex: 'key',
-              render: (val: string, _: unknown, idx: number) => (
-                <Input
-                  size="small"
-                  value={val}
-                  onChange={(e) => updateVariable(idx, 'key', e.target.value)}
-                  placeholder="Variable name"
-                />
-              ),
-            },
-            {
-              title: 'Value',
-              dataIndex: 'value',
-              render: (val: string, _: unknown, idx: number) => (
-                <Input
-                  size="small"
-                  value={val}
-                  onChange={(e) => updateVariable(idx, 'value', e.target.value)}
-                  placeholder="Variable value"
-                />
-              ),
-            },
-            {
-              title: '',
-              width: 60,
-              render: (_: unknown, __: unknown, idx: number) => (
-                <Button
-                  size="small"
-                  danger
-                  onClick={() => removeVariable(idx)}
-                >
-                  Del
-                </Button>
-              ),
+              key: 'hooks',
+              label: 'Hooks',
+              children: varEditorEnvId ? (
+                <HooksEditor environmentId={varEditorEnvId} />
+              ) : null,
             },
           ]}
         />
-        <Button
-          size="small"
-          type="dashed"
-          onClick={addVariable}
-          style={{ marginTop: 8 }}
-          block
-        >
-          Add Variable
-        </Button>
       </Modal>
 
       {/* Rename Modal */}

@@ -24,9 +24,17 @@ interface EnvironmentStore {
   setActiveEnvironment: (id: string, projectId: string) => Promise<void>;
   setVariables: (
     environmentId: string,
-    variables: { id: string; key: string; value: string; enabled: boolean }[],
+    variables: {
+      id: string;
+      key: string;
+      value: string;
+      enabled: boolean;
+      match_paths: string;
+      target_location: string;
+      expires_at: number | null;
+      priority: number;
+    }[],
   ) => Promise<void>;
-  getResolvedVariables: () => Record<string, string>;
   hasEnvironmentName: (name: string, excludeId?: string) => boolean;
 }
 
@@ -109,20 +117,6 @@ export const useEnvironmentStore = create<EnvironmentStore>((set, get) => ({
       input: { environment_id: environmentId, variables },
     });
     await get().loadVariables(environmentId);
-  },
-
-  getResolvedVariables: () => {
-    const { activeEnvironment, variables } = get();
-    if (!activeEnvironment) return {};
-
-    const envVars = variables.get(activeEnvironment.id) ?? [];
-    const resolved: Record<string, string> = {};
-    for (const v of envVars) {
-      if (v.enabled) {
-        resolved[v.key] = v.value;
-      }
-    }
-    return resolved;
   },
 
   hasEnvironmentName: (name: string, excludeId?: string) => {

@@ -27,6 +27,8 @@ chrono = "0.4"
 uuid = { version = "1", features = ["v4"] }
 log = "0.4"
 urlencoding = "2"
+serde_json_path = "0.7"
+globset = "0.4"
 rmcp = { version = "0.16", features = ["server", "transport-streamable-http-server"] }
 schemars = "1.0"
 anyhow = "1.0"

@@ -16,6 +16,7 @@ pub mod descriptions;
 pub mod entity_graph;
 pub mod environments;
 pub mod graph;
+pub mod hooks;
 pub mod models;
 pub mod projects;
 pub mod relations;
@@ -27,6 +28,7 @@ pub mod specs;
 pub use changelog::ChangelogEntry;
 pub use collections::Collection;
 pub use environments::{EnvVariable, EnvVariableTuple, Environment};
+pub use hooks::{EnvHook, EnvHookTarget};
 pub use models::DataModel;
 pub use projects::Project;
 pub use requests::ApiRequest;
@@ -48,11 +50,12 @@ pub async fn init_db(db_path: &Path) -> DbResult<()> {
     conn.execute("PRAGMA foreign_keys = ON;", ()).await?;
 
     conn.execute_batch(&format!(
-        "{}{}{}{}{}{}{}{}{}{}{}",
+        "{}{}{}{}{}{}{}{}{}{}{}{}",
         projects::get_table_sql(),
         collections::get_table_sql(),
         requests::get_table_sql(),
         environments::get_table_sql(),
+        hooks::get_table_sql(),
         changelog::get_table_sql(),
         app_state::get_table_sql(),
         models::get_table_sql(),
@@ -370,3 +373,9 @@ pub use relations::{find_backlinks, find_related_entities, rebuild_entity_relati
 
 // Re-export search functions
 pub use search::{rebuild_search_index, search_entities, SearchResult};
+
+// Re-export hook functions
+pub use hooks::{
+    create_hook, delete_hook, find_hook_for_variable, list_hook_targets, list_hooks, update_hook,
+    update_hook_last_executed,
+};

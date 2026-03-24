@@ -1,6 +1,5 @@
 use crate::{db, http};
 use serde::Deserialize;
-use std::collections::HashMap;
 use tauri::Emitter;
 
 #[derive(Debug, Deserialize)]
@@ -31,7 +30,12 @@ pub struct UpdateRequestInput {
 #[derive(Debug, Deserialize)]
 pub struct ExecuteRequestInput {
     pub config: String,
-    pub env_variables: Option<HashMap<String, String>>,
+    /// Deprecated: env_variables is no longer used by the executor.
+    /// Variable resolution is handled by the orchestrator via `execute_request_by_id`.
+    /// This field is kept for backward compatibility with existing frontend callers.
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub env_variables: Option<serde_json::Value>,
 }
 
 #[tauri::command]
@@ -110,8 +114,10 @@ pub async fn execute_request(input: ExecuteRequestInput) -> Result<http::HttpRes
     let config: http::types::RequestConfig = serde_json::from_str(&input.config)
         .map_err(|e| format!("Invalid request config: {}", e))?;
 
-    let env_variables = input.env_variables.unwrap_or_default();
-    http::executor::execute(&config, &env_variables).await
+    // NOTE: env_variables is ignored — variable resolution now happens in the
+    // orchestrator via resolver::resolve_and_inject. This legacy command executes
+    // the config as-is. Use execute_request_by_id for full orchestration.
+    http::executor::execute(&config).await
 }
 
 #[tauri::command]

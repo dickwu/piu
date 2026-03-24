@@ -2530,14 +2530,14 @@ impl PiuMcp {
             config.headers = merged;
         }
 
-        // Resolve environment
+        // Resolve environment (host + targeted variables)
         // Prefer project_id from collection; fall back to request.project_id for root requests
         let project_id = collection
             .as_ref()
             .and_then(|c| c.project_id.as_deref())
             .or(req.project_id.as_deref());
-        let mut env_variables = HashMap::new();
         let mut env_name: Option<String> = None;
+        let mut variables_applied: usize = 0;
 
         if let Some(pid) = project_id {
             if let Ok(Some(env)) = db::get_active_environment(pid).await {
@@ -2552,14 +2552,29 @@ impl PiuMcp {
                         } else {
                             format!("/{}", config.url)
                         };
+
+                        let api_path = format!("{}{}", host.trim_start_matches('/'), path)
+                            .trim_start_matches('/')
+                            .to_string();
+
                         config.url = format!("{}{}", host, path);
-                    }
-                }
-                if let Ok(vars) = db::list_env_variables(&env.id).await {
-                    for v in vars {
-                        if v.enabled {
-                            env_variables.insert(v.key, v.value);
+
+                        if let Ok(variables) = db::list_env_variables(&env.id).await {
+                            variables_applied = variables.len();
+                            http::resolver::resolve_and_inject(&mut config, &variables, &api_path);
                         }
+                    } else {
+                        let api_path = config.url.trim_start_matches('/').to_string();
+                        if let Ok(variables) = db::list_env_variables(&env.id).await {
+                            variables_applied = variables.len();
+                            http::resolver::resolve_and_inject(&mut config, &variables, &api_path);
+                        }
+                    }
+                } else {
+                    let api_path = config.url.trim_start_matches('/').to_string();
+                    if let Ok(variables) = db::list_env_variables(&env.id).await {
+                        variables_applied = variables.len();
+                        http::resolver::resolve_and_inject(&mut config, &variables, &api_path);
                     }
                 }
             }
@@ -2568,9 +2583,7 @@ impl PiuMcp {
         let resolved_url = config.url.clone();
 
         // Execute
-        let response = http::executor::execute(&config, &env_variables)
-            .await
-            .map_err(mcp_err)?;
+        let response = http::executor::execute(&config).await.map_err(mcp_err)?;
 
         text_result(&serde_json::json!({
             "status": response.status,
@@ -2583,7 +2596,7 @@ impl PiuMcp {
                 "resolved_url": resolved_url,
                 "method": config.method,
                 "environment": env_name,
-                "variables_interpolated": env_variables.keys().collect::<Vec<_>>(),
+                "variables_evaluated": variables_applied,
             },
         }))
     }

@@ -2,28 +2,19 @@ use super::types::{HttpResponse, RequestConfig, ResponseTiming};
 use std::collections::HashMap;
 use std::time::Instant;
 
-/// Interpolate {{variable}} placeholders with environment values
-fn interpolate(text: &str, variables: &HashMap<String, String>) -> String {
-    let mut result = text.to_string();
-    for (key, value) in variables {
-        let placeholder = format!("{{{{{}}}}}", key);
-        result = result.replace(&placeholder, value);
-    }
-    result
-}
-
-/// Execute an HTTP request with the given config and environment variables
-pub async fn execute(
-    config: &RequestConfig,
-    env_variables: &HashMap<String, String>,
-) -> Result<HttpResponse, String> {
+/// Execute an HTTP request with the given config.
+///
+/// All variable resolution (targeted injection, `{{var}}` path replacement,
+/// header/param injection, auth, body) is expected to have been performed
+/// by `resolver::resolve_and_inject` *before* this function is called.
+pub async fn execute(config: &RequestConfig) -> Result<HttpResponse, String> {
     let client = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::limited(10))
         .build()
         .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
 
-    // Interpolate URL
-    let mut url = interpolate(&config.url, env_variables);
+    // URL is already resolved by the resolver/orchestrator
+    let mut url = config.url.clone();
 
     // Append query parameters
     let enabled_params: Vec<_> = config
@@ -39,8 +30,8 @@ pub async fn execute(
             .map(|p| {
                 format!(
                     "{}={}",
-                    urlencoding::encode(&interpolate(&p.key, env_variables)),
-                    urlencoding::encode(&interpolate(&p.value, env_variables))
+                    urlencoding::encode(&p.key),
+                    urlencoding::encode(&p.value)
                 )
             })
             .collect();
@@ -61,20 +52,17 @@ pub async fn execute(
         }
     };
 
-    // Apply headers
+    // Apply headers (already resolved by the resolver)
     for header in &config.headers {
         if header.enabled && !header.key.is_empty() {
-            let key = interpolate(&header.key, env_variables);
-            let value = interpolate(&header.value, env_variables);
-            request = request.header(&key, &value);
+            request = request.header(&header.key, &header.value);
         }
     }
 
-    // Apply authentication
+    // Apply authentication (values already resolved by the resolver)
     match config.auth.auth_type.as_str() {
         "bearer" => {
             if let Some(ref token) = config.auth.token {
-                let token = interpolate(token, env_variables);
                 request = request.header("Authorization", format!("Bearer {}", token));
             }
         }
@@ -82,41 +70,34 @@ pub async fn execute(
             if let (Some(ref username), Some(ref password)) =
                 (&config.auth.username, &config.auth.password)
             {
-                let username = interpolate(username, env_variables);
-                let password = interpolate(password, env_variables);
-                request = request.basic_auth(&username, Some(&password));
+                request = request.basic_auth(username, Some(password));
             }
         }
         "api_key" => {
             if let (Some(ref header_name), Some(ref header_value)) =
                 (&config.auth.header_name, &config.auth.header_value)
             {
-                let name = interpolate(header_name, env_variables);
-                let value = interpolate(header_value, env_variables);
-                request = request.header(&name, &value);
+                request = request.header(header_name.as_str(), header_value.as_str());
             }
         }
         _ => {} // "none" or unknown
     }
 
-    // Apply body for methods that support it
-    if matches!(method.as_str(), "POST" | "PUT" | "PATCH") {
-        let body_content = interpolate(&config.body.content, env_variables);
-        if !body_content.is_empty() {
-            match config.body.body_type.as_str() {
-                "json" => {
-                    request = request
-                        .header("Content-Type", "application/json")
-                        .body(body_content);
-                }
-                "text" => {
-                    request = request
-                        .header("Content-Type", "text/plain")
-                        .body(body_content);
-                }
-                _ => {
-                    request = request.body(body_content);
-                }
+    // Apply body for methods that support it (content already resolved by the resolver)
+    if matches!(method.as_str(), "POST" | "PUT" | "PATCH") && !config.body.content.is_empty() {
+        match config.body.body_type.as_str() {
+            "json" => {
+                request = request
+                    .header("Content-Type", "application/json")
+                    .body(config.body.content.clone());
+            }
+            "text" => {
+                request = request
+                    .header("Content-Type", "text/plain")
+                    .body(config.body.content.clone());
+            }
+            _ => {
+                request = request.body(config.body.content.clone());
             }
         }
     }

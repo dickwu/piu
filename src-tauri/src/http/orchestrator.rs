@@ -1,7 +1,6 @@
 use super::executor;
 use super::types::{ExecutionProgress, KeyValuePair, RequestConfig};
 use crate::db;
-use std::collections::HashMap;
 use tauri::Emitter;
 
 /// Orchestrate a full request execution from just a request ID.
@@ -81,13 +80,12 @@ pub async fn orchestrate_request(
         config.headers = merged;
     }
 
-    // 4. Resolve environment (host + variables)
+    // 4. Resolve environment (host only) and targeted variables
     // Prefer project_id from collection; fall back to request.project_id for root requests
     let project_id = collection
         .as_ref()
         .and_then(|c| c.project_id.as_deref())
         .or(request.project_id.as_deref());
-    let mut env_variables = HashMap::new();
 
     if let Some(pid) = project_id {
         if let Ok(Some(env)) = db::get_active_environment(pid).await {
@@ -102,16 +100,30 @@ pub async fn orchestrate_request(
                     } else {
                         format!("/{}", config.url)
                     };
-                    config.url = format!("{}{}", host, path);
-                }
-            }
 
-            // Load variables
-            if let Ok(vars) = db::list_env_variables(&env.id).await {
-                for v in vars {
-                    if v.enabled {
-                        env_variables.insert(v.key, v.value);
+                    // 5. Capture api_path BEFORE prepending host (used for glob matching)
+                    let api_path = format!("{}{}", host.trim_start_matches('/'), path)
+                        .trim_start_matches('/')
+                        .to_string();
+
+                    config.url = format!("{}{}", host, path);
+
+                    // 5a. Load full EnvVariable structs and resolve via targeted injection
+                    if let Ok(variables) = db::list_env_variables(&env.id).await {
+                        super::resolver::resolve_and_inject(&mut config, &variables, &api_path);
                     }
+                } else {
+                    // No host — api_path is the config url itself
+                    let api_path = config.url.trim_start_matches('/').to_string();
+                    if let Ok(variables) = db::list_env_variables(&env.id).await {
+                        super::resolver::resolve_and_inject(&mut config, &variables, &api_path);
+                    }
+                }
+            } else {
+                // No host set — api_path is the config url itself
+                let api_path = config.url.trim_start_matches('/').to_string();
+                if let Ok(variables) = db::list_env_variables(&env.id).await {
+                    super::resolver::resolve_and_inject(&mut config, &variables, &api_path);
                 }
             }
         }
@@ -134,8 +146,15 @@ pub async fn orchestrate_request(
         },
     );
 
-    // 5. Execute
-    match executor::execute(&config, &env_variables).await {
+    // 6. Execute
+    let result = executor::execute(&config).await;
+
+    // 7. Post-response hook processing
+    // TODO(Task 9/10): Full hook execution — extract values from response,
+    // update target variables, and trigger dependent re-execution.
+    // For now, this is a placeholder that will be wired in Tasks 9-10.
+
+    match result {
         Ok(response) => {
             let _ = app.emit(
                 "request-progress",

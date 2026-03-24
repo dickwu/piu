@@ -4,10 +4,14 @@ import {
   App,
   Modal,
   Input,
+  InputNumber,
   Button,
   Space,
   Switch,
   Table,
+  Select,
+  Tag,
+  Tabs,
 } from 'antd';
 import {
   SaveOutlined,
@@ -20,7 +24,10 @@ import { useState, useEffect, useCallback } from 'react';
 import { useProjectStore } from '../stores/projectStore';
 import { useEnvironmentStore } from '../stores/environmentStore';
 import type { Environment } from '../types';
+import { TARGET_LOCATIONS } from '../types';
 import { EnvironmentFormModal } from './EnvironmentFormModal';
+import { MatchPathsInput } from './MatchPathsInput';
+import { HooksEditor } from './HooksEditor';
 
 interface ProjectSettingsModalProps {
   projectId: string | null;
@@ -369,7 +376,8 @@ export function ProjectSettingsModal({
         open={varEditorEnvId !== null}
         onOk={handleSaveVars}
         onCancel={() => setVarEditorEnvId(null)}
-        width={700}
+        width={960}
+        destroyOnHidden
       >
         <div className="mb-3">
           <label
@@ -386,72 +394,132 @@ export function ProjectSettingsModal({
             onChange={(e) => setEditingHost(e.target.value)}
           />
         </div>
-        <Table
-          dataSource={editingVars}
-          rowKey="id"
-          pagination={false}
-          size="small"
-          columns={[
+        <Tabs
+          items={[
             {
-              title: 'Enabled',
-              dataIndex: 'enabled',
-              width: 70,
-              render: (val: boolean, _: unknown, idx: number) => (
-                <Switch
-                  size="small"
-                  checked={val}
-                  onChange={(v) => updateVariable(idx, 'enabled', v)}
-                />
+              key: 'variables',
+              label: 'Variables',
+              children: (
+                <>
+                  <Table
+                    dataSource={editingVars}
+                    rowKey="id"
+                    pagination={false}
+                    size="small"
+                    scroll={{ x: 860 }}
+                    columns={[
+                      {
+                        title: 'On',
+                        dataIndex: 'enabled',
+                        width: 50,
+                        render: (val: boolean, _: unknown, idx: number) => (
+                          <Switch
+                            size="small"
+                            checked={val}
+                            onChange={(v) => updateVariable(idx, 'enabled', v)}
+                          />
+                        ),
+                      },
+                      {
+                        title: 'Match Paths',
+                        dataIndex: 'match_paths',
+                        width: 180,
+                        render: (val: string, _: unknown, idx: number) => (
+                          <MatchPathsInput
+                            value={val}
+                            onChange={(v) => updateVariable(idx, 'match_paths', v)}
+                          />
+                        ),
+                      },
+                      {
+                        title: 'Target',
+                        dataIndex: 'target_location',
+                        width: 130,
+                        render: (val: string, _: unknown, idx: number) => (
+                          <Select
+                            size="small"
+                            value={val}
+                            onChange={(v) => updateVariable(idx, 'target_location', v)}
+                            options={TARGET_LOCATIONS}
+                            style={{ width: '100%' }}
+                            popupMatchSelectWidth={false}
+                          />
+                        ),
+                      },
+                      {
+                        title: 'Key',
+                        dataIndex: 'key',
+                        width: 140,
+                        render: (val: string, _: unknown, idx: number) => (
+                          <Input
+                            size="small"
+                            value={val}
+                            onChange={(e) => updateVariable(idx, 'key', e.target.value)}
+                            placeholder="Field name"
+                          />
+                        ),
+                      },
+                      {
+                        title: 'Value',
+                        dataIndex: 'value',
+                        render: (val: string, _: unknown, idx: number) => (
+                          <Input
+                            size="small"
+                            value={val}
+                            onChange={(e) => updateVariable(idx, 'value', e.target.value)}
+                            placeholder="Value"
+                          />
+                        ),
+                      },
+                      {
+                        title: 'Pri',
+                        dataIndex: 'priority',
+                        width: 60,
+                        render: (val: number, _: unknown, idx: number) => (
+                          <InputNumber
+                            size="small"
+                            value={val}
+                            onChange={(v) => updateVariable(idx, 'priority', String(v ?? 0))}
+                            style={{ width: '100%' }}
+                          />
+                        ),
+                      },
+                      {
+                        title: '',
+                        width: 50,
+                        render: (_: unknown, __: unknown, idx: number) => (
+                          <Button
+                            size="small"
+                            danger
+                            onClick={() => removeVariable(idx)}
+                          >
+                            Del
+                          </Button>
+                        ),
+                      },
+                    ]}
+                  />
+                  <Button
+                    size="small"
+                    type="dashed"
+                    onClick={addVariable}
+                    style={{ marginTop: 8 }}
+                    block
+                  >
+                    Add Variable
+                  </Button>
+                </>
               ),
             },
             {
-              title: 'Key',
-              dataIndex: 'key',
-              render: (val: string, _: unknown, idx: number) => (
-                <Input
-                  size="small"
-                  value={val}
-                  onChange={(e) => updateVariable(idx, 'key', e.target.value)}
-                  placeholder="Variable name"
-                />
-              ),
-            },
-            {
-              title: 'Value',
-              dataIndex: 'value',
-              render: (val: string, _: unknown, idx: number) => (
-                <Input
-                  size="small"
-                  value={val}
-                  onChange={(e) => updateVariable(idx, 'value', e.target.value)}
-                  placeholder="Variable value"
-                />
-              ),
-            },
-            {
-              title: '',
-              width: 60,
-              render: (_: unknown, __: unknown, idx: number) => (
-                <Button
-                  size="small"
-                  danger
-                  onClick={() => removeVariable(idx)}
-                >
-                  Del
-                </Button>
-              ),
+              key: 'hooks',
+              label: 'Hooks',
+              children: varEditorEnvId ? (
+                <HooksEditor environmentId={varEditorEnvId} />
+              ) : null,
             },
           ]}
         />
-        <Button
-          size="small"
-          type="dashed"
-          onClick={addVariable}
-          style={{ marginTop: 8 }}
-          block
-        >
-          Add Variable
-        </Button>
       </Modal>
 
       <EnvironmentFormModal

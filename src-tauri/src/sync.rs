@@ -1219,13 +1219,17 @@ async fn upsert_env_variable(var: &db::EnvVariable) -> Result<bool, String> {
     }
 
     conn.execute(
-        "INSERT INTO env_variables (id, environment_id, key, value, enabled, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+        "INSERT INTO env_variables (id, environment_id, key, value, enabled, match_paths, target_location, expires_at, priority, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
          ON CONFLICT(id) DO UPDATE SET
             environment_id = excluded.environment_id,
             key = excluded.key,
             value = excluded.value,
             enabled = excluded.enabled,
+            match_paths = excluded.match_paths,
+            target_location = excluded.target_location,
+            expires_at = excluded.expires_at,
+            priority = excluded.priority,
             updated_at = excluded.updated_at
          WHERE excluded.updated_at > env_variables.updated_at",
         turso::params![
@@ -1234,6 +1238,10 @@ async fn upsert_env_variable(var: &db::EnvVariable) -> Result<bool, String> {
             var.key.clone(),
             var.value.clone(),
             var.enabled,
+            var.match_paths.clone(),
+            var.target_location.clone(),
+            var.expires_at,
+            var.priority,
             var.created_at,
             var.updated_at
         ],

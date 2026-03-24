@@ -1,6 +1,18 @@
 use super::{get_connection, DbResult};
 use serde::{Deserialize, Serialize};
 
+/// (id, key, value, enabled, match_paths, target_location, expires_at, priority)
+pub type EnvVariableTuple = (
+    String,
+    String,
+    String,
+    bool,
+    String,
+    String,
+    Option<i64>,
+    i64,
+);
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Environment {
     pub id: String,
@@ -21,6 +33,10 @@ pub struct EnvVariable {
     pub key: String,
     pub value: String,
     pub enabled: bool,
+    pub match_paths: String,
+    pub target_location: String,
+    pub expires_at: Option<i64>,
+    pub priority: i64,
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -46,6 +62,10 @@ pub fn get_table_sql() -> &'static str {
         key TEXT NOT NULL,
         value TEXT NOT NULL,
         enabled INTEGER NOT NULL DEFAULT 1,
+        match_paths TEXT NOT NULL DEFAULT '[\"*\"]',
+        target_location TEXT NOT NULL DEFAULT 'url-path',
+        expires_at INTEGER,
+        priority INTEGER NOT NULL DEFAULT 0,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
     );
@@ -276,7 +296,7 @@ pub async fn get_active_environment(project_id: &str) -> DbResult<Option<Environ
 
 pub async fn set_env_variables(
     environment_id: &str,
-    variables: Vec<(String, String, String, bool)>, // (id, key, value, enabled)
+    variables: Vec<EnvVariableTuple>,
 ) -> DbResult<()> {
     let conn = get_connection()?.lock().await;
     let now = chrono::Utc::now().timestamp_millis();
@@ -287,11 +307,23 @@ pub async fn set_env_variables(
     )
     .await?;
 
-    for (id, key, value, enabled) in &variables {
+    for (id, key, value, enabled, match_paths, target_location, expires_at, priority) in &variables
+    {
         conn.execute(
-            "INSERT INTO env_variables (id, environment_id, key, value, enabled, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)",
-            turso::params![id.clone(), environment_id, key.clone(), value.clone(), *enabled, now],
+            "INSERT INTO env_variables (id, environment_id, key, value, enabled, match_paths, target_location, expires_at, priority, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10)",
+            turso::params![
+                id.clone(),
+                environment_id,
+                key.clone(),
+                value.clone(),
+                *enabled,
+                match_paths.clone(),
+                target_location.clone(),
+                *expires_at,
+                *priority,
+                now
+            ],
         )
         .await?;
     }
@@ -299,26 +331,96 @@ pub async fn set_env_variables(
     Ok(())
 }
 
+pub async fn update_env_variable(
+    id: &str,
+    value: Option<&str>,
+    match_paths: Option<&str>,
+    target_location: Option<&str>,
+    expires_at: Option<Option<i64>>,
+    priority: Option<i64>,
+    enabled: Option<bool>,
+) -> DbResult<EnvVariable> {
+    let conn = get_connection()?.lock().await;
+
+    // Read current row
+    let mut rows = conn
+        .query(
+            "SELECT id, environment_id, key, value, enabled, match_paths, target_location, expires_at, priority, created_at, updated_at FROM env_variables WHERE id = ?1",
+            turso::params![id],
+        )
+        .await?;
+
+    let row = rows
+        .next()
+        .await?
+        .ok_or_else(|| format!("EnvVariable {} not found", id))?;
+
+    let current = env_variable_from_row(&row)?;
+    drop(rows);
+
+    // Apply overrides
+    let new_value = value.unwrap_or(&current.value);
+    let new_match_paths = match_paths.unwrap_or(&current.match_paths);
+    let new_target_location = target_location.unwrap_or(&current.target_location);
+    let new_expires_at = match expires_at {
+        Some(v) => v,
+        None => current.expires_at,
+    };
+    let new_priority = priority.unwrap_or(current.priority);
+    let new_enabled = enabled.unwrap_or(current.enabled);
+    let now = chrono::Utc::now().timestamp_millis();
+
+    conn.execute(
+        "UPDATE env_variables SET value = ?1, match_paths = ?2, target_location = ?3, expires_at = ?4, priority = ?5, enabled = ?6, updated_at = ?7 WHERE id = ?8",
+        turso::params![new_value, new_match_paths, new_target_location, new_expires_at, new_priority, new_enabled, now, id],
+    )
+    .await?;
+
+    Ok(EnvVariable {
+        id: current.id,
+        environment_id: current.environment_id,
+        key: current.key,
+        value: new_value.to_string(),
+        enabled: new_enabled,
+        match_paths: new_match_paths.to_string(),
+        target_location: new_target_location.to_string(),
+        expires_at: new_expires_at,
+        priority: new_priority,
+        created_at: current.created_at,
+        updated_at: now,
+    })
+}
+
+fn env_variable_from_row(
+    row: &turso::Row,
+) -> Result<EnvVariable, Box<dyn std::error::Error + Send + Sync>> {
+    Ok(EnvVariable {
+        id: row.get(0)?,
+        environment_id: row.get(1)?,
+        key: row.get(2)?,
+        value: row.get(3)?,
+        enabled: row.get(4)?,
+        match_paths: row.get(5)?,
+        target_location: row.get(6)?,
+        expires_at: row.get(7)?,
+        priority: row.get(8)?,
+        created_at: row.get(9)?,
+        updated_at: row.get(10)?,
+    })
+}
+
 pub async fn list_env_variables(environment_id: &str) -> DbResult<Vec<EnvVariable>> {
     let conn = get_connection()?.lock().await;
     let mut rows = conn
         .query(
-            "SELECT id, environment_id, key, value, enabled, created_at, updated_at FROM env_variables WHERE environment_id = ?1 ORDER BY key",
+            "SELECT id, environment_id, key, value, enabled, match_paths, target_location, expires_at, priority, created_at, updated_at FROM env_variables WHERE environment_id = ?1 ORDER BY priority DESC, key",
             turso::params![environment_id],
         )
         .await?;
 
     let mut variables = Vec::new();
     while let Some(row) = rows.next().await? {
-        variables.push(EnvVariable {
-            id: row.get(0)?,
-            environment_id: row.get(1)?,
-            key: row.get(2)?,
-            value: row.get(3)?,
-            enabled: row.get(4)?,
-            created_at: row.get(5)?,
-            updated_at: row.get(6)?,
-        });
+        variables.push(env_variable_from_row(&row)?);
     }
 
     Ok(variables)

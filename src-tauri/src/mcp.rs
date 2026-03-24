@@ -232,6 +232,29 @@ struct EnvVarInput {
     value: String,
     #[schemars(description = "Whether this variable is enabled")]
     enabled: bool,
+    #[schemars(
+        description = "JSON array of path globs this variable applies to, e.g. [\"*\"] for all"
+    )]
+    #[serde(default = "env_var_default_match_paths")]
+    match_paths: String,
+    #[schemars(
+        description = "Where to inject: header, url-param, body, url-path, auth-bearer, etc."
+    )]
+    #[serde(default = "env_var_default_target_location")]
+    target_location: String,
+    #[schemars(description = "Expiration as epoch ms, null = never expires")]
+    expires_at: Option<i64>,
+    #[schemars(description = "Priority — higher wins in conflicts (default 0)")]
+    #[serde(default)]
+    priority: i64,
+}
+
+fn env_var_default_match_paths() -> String {
+    r#"["*"]"#.to_string()
+}
+
+fn env_var_default_target_location() -> String {
+    "url-path".to_string()
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -1431,7 +1454,7 @@ impl PiuMcp {
             .find(|e| e.id == p.environment_id)
             .and_then(|e| e.project_id.as_deref())
             .map(|s| s.to_string());
-        let variables: Vec<(String, String, String, bool)> = p
+        let variables: Vec<db::EnvVariableTuple> = p
             .variables
             .iter()
             .map(|v| {
@@ -1440,6 +1463,10 @@ impl PiuMcp {
                     v.key.clone(),
                     v.value.clone(),
                     v.enabled,
+                    v.match_paths.clone(),
+                    v.target_location.clone(),
+                    v.expires_at,
+                    v.priority,
                 )
             })
             .collect();

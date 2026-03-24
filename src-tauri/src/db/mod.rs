@@ -26,7 +26,7 @@ pub mod specs;
 // Re-export types
 pub use changelog::ChangelogEntry;
 pub use collections::Collection;
-pub use environments::{EnvVariable, Environment};
+pub use environments::{EnvVariable, EnvVariableTuple, Environment};
 pub use models::DataModel;
 pub use projects::Project;
 pub use requests::ApiRequest;
@@ -94,6 +94,11 @@ async fn run_migrations(conn: &Connection) -> DbResult<()> {
         "ALTER TABLE projects ADD COLUMN backend_type TEXT DEFAULT NULL",
         "ALTER TABLE collections ADD COLUMN source_commit_id TEXT DEFAULT NULL",
         "ALTER TABLE api_requests ADD COLUMN source_commit_id TEXT DEFAULT NULL",
+        // Migration: env_variables targeted variable columns
+        "ALTER TABLE env_variables ADD COLUMN match_paths TEXT NOT NULL DEFAULT '[\"*\"]'",
+        "ALTER TABLE env_variables ADD COLUMN target_location TEXT NOT NULL DEFAULT 'url-path'",
+        "ALTER TABLE env_variables ADD COLUMN expires_at INTEGER",
+        "ALTER TABLE env_variables ADD COLUMN priority INTEGER NOT NULL DEFAULT 0",
     ];
     for sql in &alter_migrations {
         if let Err(e) = conn.execute(sql, ()).await {
@@ -329,7 +334,8 @@ pub use requests::{
 // Re-export environment functions
 pub use environments::{
     create_environment, delete_environment, get_active_environment, list_env_variables,
-    list_environments, set_active_environment, set_env_variables, update_environment,
+    list_environments, set_active_environment, set_env_variables, update_env_variable,
+    update_environment,
 };
 
 // Re-export changelog functions

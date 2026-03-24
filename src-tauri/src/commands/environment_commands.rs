@@ -25,6 +25,21 @@ pub struct EnvVariableInput {
     pub key: String,
     pub value: String,
     pub enabled: bool,
+    #[serde(default = "default_match_paths")]
+    pub match_paths: String,
+    #[serde(default = "default_target_location")]
+    pub target_location: String,
+    pub expires_at: Option<i64>,
+    #[serde(default)]
+    pub priority: i64,
+}
+
+fn default_match_paths() -> String {
+    r#"["*"]"#.to_string()
+}
+
+fn default_target_location() -> String {
+    "url-path".to_string()
 }
 
 #[derive(Debug, Deserialize)]
@@ -88,10 +103,21 @@ pub async fn get_active_environment(project_id: String) -> Result<Option<db::Env
 
 #[tauri::command]
 pub async fn set_env_variables(input: SetEnvVariablesInput) -> Result<(), String> {
-    let variables: Vec<(String, String, String, bool)> = input
+    let variables: Vec<db::EnvVariableTuple> = input
         .variables
         .into_iter()
-        .map(|v| (v.id, v.key, v.value, v.enabled))
+        .map(|v| {
+            (
+                v.id,
+                v.key,
+                v.value,
+                v.enabled,
+                v.match_paths,
+                v.target_location,
+                v.expires_at,
+                v.priority,
+            )
+        })
         .collect();
 
     db::set_env_variables(&input.environment_id, variables)

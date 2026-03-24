@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "piu-mcp": {
+      "source": "dickwu/piu",
+      "sourceType": "github",
+      "computedHash": "9635ce84fc33db11404cac6df079934579369e78190d9a486b843ddc77e92d83"
+    }
+  }
+}

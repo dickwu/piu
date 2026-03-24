@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { Segmented } from 'antd';
+import { useCallback, useEffect, useState } from 'react';
+import { App, Segmented } from 'antd';
 import { ProjectList } from './components/ProjectList';
 import { Sidebar } from './components/Sidebar';
 import { GraphCenterPanel } from './components/GraphCenterPanel';
@@ -25,9 +25,13 @@ export default function Home() {
   const loadActiveEnvironment = useEnvironmentStore((s) => s.loadActiveEnvironment);
   const { loadProjects, getActiveProject, activeProjectId } = useProjectStore();
   const initListener = useResponseStore((s) => s.initListener);
+  const initFeedbackListeners = useResponseStore(
+    (s) => s.initFeedbackListeners,
+  );
   const loadModels = useModelStore((s) => s.loadModels);
   const [viewMode, setViewMode] = useState<'graph' | 'docs'>('graph');
   const fetchSpec = useSpecStore((s) => s.fetchSpec);
+  const { message: messageApi } = App.useApp();
 
   // Initialize Tauri event listener for request progress
   useEffect(() => {
@@ -39,6 +43,37 @@ export default function Home() {
       unlisten?.();
     };
   }, [initListener]);
+
+  // Stable callback refs for feedback listeners (avoid re-subscribing on every render)
+  const handleHookCaptured = useCallback(
+    (event: { target_count: number }) => {
+      messageApi.success(
+        `Hook captured: ${event.target_count} variable${event.target_count === 1 ? '' : 's'} updated`,
+      );
+    },
+    [messageApi],
+  );
+
+  const handleVariableExpired = useCallback(
+    (event: { key: string }) => {
+      messageApi.warning(`Variable expired: {{${event.key}}}`);
+    },
+    [messageApi],
+  );
+
+  // Initialize feedback event listeners (hook-captured, variable-expired)
+  useEffect(() => {
+    let unlisten: UnlistenFn | undefined;
+    initFeedbackListeners({
+      onHookCaptured: handleHookCaptured,
+      onVariableExpired: handleVariableExpired,
+    }).then((fn) => {
+      unlisten = fn;
+    });
+    return () => {
+      unlisten?.();
+    };
+  }, [initFeedbackListeners, handleHookCaptured, handleVariableExpired]);
 
   // Listen for MCP data changes and refresh relevant stores
   useEffect(() => {

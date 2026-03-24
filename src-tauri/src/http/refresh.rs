@@ -143,7 +143,11 @@ mod tests {
         complete_refresh("env-5", "var-5").await;
         handle.await.unwrap();
 
-        assert_eq!(counter.load(Ordering::SeqCst), 1, "Waiter should have woken");
+        assert_eq!(
+            counter.load(Ordering::SeqCst),
+            1,
+            "Waiter should have woken"
+        );
     }
 
     #[tokio::test]

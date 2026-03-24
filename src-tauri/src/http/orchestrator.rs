@@ -1,6 +1,7 @@
 use super::executor;
+use super::extractor::{self, ExtractionResult};
 use super::glob_match;
-use super::types::{ExecutionProgress, KeyValuePair, RequestConfig};
+use super::types::{ExecutionProgress, HttpResponse, KeyValuePair, RequestConfig};
 use crate::db;
 use crate::db::EnvVariable;
 use tauri::Emitter;
@@ -155,9 +156,10 @@ pub async fn orchestrate_request(
     let result = executor::execute(&config).await;
 
     // 7. Post-response hook processing
-    // TODO(Task 9/10): Full hook execution — extract values from response,
-    // update target variables, and trigger dependent re-execution.
-    // For now, this is a placeholder that will be wired in Tasks 9-10.
+    // If the source request has hooks, extract values and update target variables.
+    if let Ok(ref response) = result {
+        process_hooks(app, request_id, response).await;
+    }
 
     match result {
         Ok(response) => {
@@ -181,6 +183,118 @@ pub async fn orchestrate_request(
     }
 
     Ok(())
+}
+
+/// Process post-response hooks: for each enabled hook whose `source_request_id`
+/// matches the request that just executed, extract a value from the response
+/// and update the target variables. Emits a `hook-captured` event on success.
+async fn process_hooks(app: &tauri::AppHandle, request_id: &str, response: &HttpResponse) {
+    // Find all enabled hooks that trigger on this request
+    let hooks = match list_hooks_for_source_request(request_id).await {
+        Ok(h) => h,
+        Err(_) => return,
+    };
+
+    for hook in &hooks {
+        // Extract value from response based on response_location + selector
+        let extraction = match hook.response_location.as_str() {
+            "body" => extractor::extract_from_body(&response.body, &hook.selector),
+            "header" => extractor::extract_from_header(&response.headers, &hook.selector),
+            _ => continue,
+        };
+
+        let captured_value = match extraction {
+            ExtractionResult::Scalar(v) => extractor::apply_template(&hook.value_template, &v),
+            // Array results require user interaction via the picker — skip for now.
+            // The frontend picker flow handles this separately.
+            ExtractionResult::Array(_) => continue,
+            ExtractionResult::NotFound
+            | ExtractionResult::InvalidJson
+            | ExtractionResult::NonScalar => continue,
+        };
+
+        // Load target variable IDs for this hook
+        let target_ids = match db::list_hook_targets(&hook.id).await {
+            Ok(t) => t,
+            Err(_) => continue,
+        };
+
+        if target_ids.is_empty() {
+            continue;
+        }
+
+        // Compute expires_at from hook.expires_in
+        let expires_at = hook
+            .expires_in
+            .map(|ms| chrono::Utc::now().timestamp_millis() + ms);
+
+        // Update each target variable
+        let mut updated_count: usize = 0;
+        for target in &target_ids {
+            if db::update_env_variable(
+                &target.variable_id,
+                Some(&captured_value),
+                None,
+                None,
+                Some(expires_at),
+                None,
+                None,
+            )
+            .await
+            .is_ok()
+            {
+                updated_count += 1;
+            }
+        }
+
+        // Mark hook as executed
+        let _ = db::update_hook_last_executed(&hook.id).await;
+
+        // Emit hook-captured event
+        let _ = app.emit(
+            "hook-captured",
+            serde_json::json!({
+                "hook_id": hook.id,
+                "source_request_id": hook.source_request_id,
+                "captured_value": captured_value,
+                "target_count": updated_count,
+            }),
+        );
+    }
+}
+
+/// Query hooks whose source_request_id matches the given request and are enabled.
+async fn list_hooks_for_source_request(
+    request_id: &str,
+) -> Result<Vec<db::EnvHook>, Box<dyn std::error::Error + Send + Sync>> {
+    let conn = db::get_connection()?.lock().await;
+
+    let mut rows = conn
+        .query(
+            "SELECT id, environment_id, source_request_id, response_location, selector, value_template, expires_in, array_strategy, enabled, last_executed_at, created_at, updated_at FROM env_hooks WHERE source_request_id = ?1 AND enabled = 1",
+            turso::params![request_id],
+        )
+        .await?;
+
+    let mut hooks = Vec::new();
+    while let Some(row) = rows.next().await? {
+        hooks.push(db::EnvHook {
+            id: row.get(0)?,
+            environment_id: row.get(1)?,
+            source_request_id: row.get(2)?,
+            response_location: row.get(3)?,
+            selector: row.get(4)?,
+            value_template: row.get(5)?,
+            expires_in: row.get(6)?,
+            array_strategy: row.get(7)?,
+            enabled: row.get(8)?,
+            last_executed_at: row.get(9)?,
+            created_at: row.get(10)?,
+            updated_at: row.get(11)?,
+        });
+    }
+
+    Ok(hooks)
 }
 
 /// Emit a `variable-expired` event for each enabled, path-matched variable

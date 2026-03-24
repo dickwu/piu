@@ -136,7 +136,199 @@ async fn run_migrations(conn: &Connection) -> DbResult<()> {
     )
     .await?;
 
+    // Data migration: classify existing env_variables target_location based on
+    // where their {{key}} pattern actually appears in request configs.
+    migrate_variable_target_locations(conn).await?;
+
     Ok(())
+}
+
+/// One-time data migration: scan request configs to classify where each
+/// env_variable's `{{key}}` is actually used, then update `target_location`
+/// from the default `url-path` to a more specific location.
+///
+/// Only runs for variables that still have the initial defaults
+/// (`match_paths = '["*"]'` AND `target_location = 'url-path'`).
+async fn migrate_variable_target_locations(conn: &Connection) -> DbResult<()> {
+    // Check if migration is needed: any variables with default match_paths + target_location
+    let mut rows = conn
+        .query(
+            "SELECT COUNT(*) FROM env_variables WHERE match_paths = '[\"*\"]' AND target_location = 'url-path'",
+            (),
+        )
+        .await?;
+    let count: i64 = if let Some(row) = rows.next().await? {
+        row.get(0)?
+    } else {
+        0
+    };
+    drop(rows);
+
+    if count == 0 {
+        return Ok(());
+    }
+
+    // Load all request configs (we only need the JSON config column)
+    let mut config_rows = conn.query("SELECT config FROM api_requests", ()).await?;
+    let mut all_configs: Vec<String> = Vec::new();
+    while let Some(row) = config_rows.next().await? {
+        let config: String = row.get(0)?;
+        all_configs.push(config);
+    }
+    drop(config_rows);
+
+    // Load candidate variables
+    let mut var_rows = conn
+        .query(
+            "SELECT id, key FROM env_variables WHERE match_paths = '[\"*\"]' AND target_location = 'url-path'",
+            (),
+        )
+        .await?;
+    let mut candidates: Vec<(String, String)> = Vec::new();
+    while let Some(row) = var_rows.next().await? {
+        let id: String = row.get(0)?;
+        let key: String = row.get(1)?;
+        candidates.push((id, key));
+    }
+    drop(var_rows);
+
+    // For each candidate variable, scan all configs to classify its location
+    for (var_id, var_key) in &candidates {
+        let pattern = format!("{{{{{}}}}}", var_key); // produces {{key}}
+        let location = classify_variable_location(&pattern, &all_configs);
+
+        if location != "url-path" {
+            conn.execute(
+                "UPDATE env_variables SET target_location = ?1 WHERE id = ?2",
+                turso::params![location, var_id.clone()],
+            )
+            .await?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Scan all request config JSON strings to determine where a `{{key}}` pattern
+/// is used. Returns one of: `header`, `auth-bearer`, `auth-basic-username`,
+/// `auth-basic-password`, `auth-custom`, `url-param`, `body`, `url-path`.
+///
+/// If the pattern appears in multiple distinct locations, returns `url-path`
+/// as the safe default (the simplest migration strategy).
+fn classify_variable_location(pattern: &str, configs: &[String]) -> String {
+    let mut found_in_header = false;
+    let mut found_in_auth = false;
+    let mut found_in_param = false;
+    let mut found_in_body = false;
+    let mut found_in_url = false;
+    let mut auth_type = String::new();
+
+    for config_json in configs {
+        // Parse just enough structure to classify. If parsing fails, skip.
+        let parsed: serde_json::Value = match serde_json::from_str(config_json) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+
+        // Check URL
+        if let Some(url) = parsed.get("url").and_then(|v| v.as_str()) {
+            if url.contains(pattern) {
+                found_in_url = true;
+            }
+        }
+
+        // Check headers
+        if let Some(headers) = parsed.get("headers").and_then(|v| v.as_array()) {
+            for h in headers {
+                let val = h.get("value").and_then(|v| v.as_str()).unwrap_or("");
+                if val.contains(pattern) {
+                    found_in_header = true;
+                }
+            }
+        }
+
+        // Check params
+        if let Some(params) = parsed.get("params").and_then(|v| v.as_array()) {
+            for p in params {
+                let val = p.get("value").and_then(|v| v.as_str()).unwrap_or("");
+                if val.contains(pattern) {
+                    found_in_param = true;
+                }
+            }
+        }
+
+        // Check body
+        if let Some(body) = parsed.get("body") {
+            let content = body.get("content").and_then(|v| v.as_str()).unwrap_or("");
+            if content.contains(pattern) {
+                found_in_body = true;
+            }
+        }
+
+        // Check auth fields
+        if let Some(auth) = parsed.get("auth") {
+            let at = auth.get("type").and_then(|v| v.as_str()).unwrap_or("none");
+            let token = auth.get("token").and_then(|v| v.as_str()).unwrap_or("");
+            let username = auth.get("username").and_then(|v| v.as_str()).unwrap_or("");
+            let password = auth.get("password").and_then(|v| v.as_str()).unwrap_or("");
+            let header_name = auth
+                .get("header_name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let header_value = auth
+                .get("header_value")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+
+            if token.contains(pattern)
+                || username.contains(pattern)
+                || password.contains(pattern)
+                || header_name.contains(pattern)
+                || header_value.contains(pattern)
+            {
+                found_in_auth = true;
+                auth_type = at.to_string();
+            }
+        }
+    }
+
+    // Count distinct location categories
+    let location_count = [
+        found_in_header,
+        found_in_auth,
+        found_in_param,
+        found_in_body,
+        found_in_url,
+    ]
+    .iter()
+    .filter(|&&b| b)
+    .count();
+
+    // If found in multiple distinct locations, keep url-path as safe default
+    if location_count > 1 {
+        return "url-path".to_string();
+    }
+
+    if found_in_auth {
+        return match auth_type.as_str() {
+            "bearer" => "auth-bearer".to_string(),
+            "basic" => "auth-basic-username".to_string(),
+            "custom" => "auth-custom".to_string(),
+            _ => "auth-bearer".to_string(),
+        };
+    }
+    if found_in_header {
+        return "header".to_string();
+    }
+    if found_in_param {
+        return "url-param".to_string();
+    }
+    if found_in_body {
+        return "body".to_string();
+    }
+
+    // Not found anywhere or only in URL — keep url-path
+    "url-path".to_string()
 }
 
 async fn migrate_orphans_to_default_project(conn: &Connection) -> DbResult<()> {

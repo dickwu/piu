@@ -7,6 +7,25 @@ import type {
   ExecutionProgress,
 } from '@/app/types';
 
+interface HookCapturedEvent {
+  hook_id: string;
+  source_request_id: string;
+  captured_value: string;
+  target_count: number;
+}
+
+interface VariableExpiredEvent {
+  variable_id: string;
+  key: string;
+  match_paths: string;
+}
+
+/** Callback signatures for execution feedback toasts. */
+export interface FeedbackCallbacks {
+  onHookCaptured: (event: HookCapturedEvent) => void;
+  onVariableExpired: (event: VariableExpiredEvent) => void;
+}
+
 interface ResponseStore {
   response: HttpResponse | null;
   loading: boolean;
@@ -18,6 +37,9 @@ interface ResponseStore {
   executeRequest: (requestId: string) => Promise<void>;
   clear: () => void;
   initListener: () => Promise<UnlistenFn>;
+  initFeedbackListeners: (
+    callbacks: FeedbackCallbacks,
+  ) => Promise<UnlistenFn>;
 }
 
 export const useResponseStore = create<ResponseStore>((set, get) => ({
@@ -93,5 +115,26 @@ export const useResponseStore = create<ResponseStore>((set, get) => ({
         }
       },
     );
+  },
+
+  initFeedbackListeners: async (callbacks: FeedbackCallbacks) => {
+    const unlistenHook = await listen<HookCapturedEvent>(
+      'hook-captured',
+      (event) => {
+        callbacks.onHookCaptured(event.payload);
+      },
+    );
+
+    const unlistenExpired = await listen<VariableExpiredEvent>(
+      'variable-expired',
+      (event) => {
+        callbacks.onVariableExpired(event.payload);
+      },
+    );
+
+    return () => {
+      unlistenHook();
+      unlistenExpired();
+    };
   },
 }));

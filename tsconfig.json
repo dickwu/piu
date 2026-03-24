@@ -39,6 +39,9 @@
   ],
   "exclude": [
     "node_modules",
-    "scripts"
+    "scripts",
+    "skills",
+    ".agents",
+    "src-tauri"
   ]
 }

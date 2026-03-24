@@ -1,6 +1,15 @@
 use crate::db;
 use serde::Deserialize;
 
+fn deserialize_optional_nullable_i64<'de, D>(
+    deserializer: D,
+) -> Result<Option<Option<i64>>, D::Error>
+where
+    D: serde::de::Deserializer<'de>,
+{
+    Ok(Some(Option::deserialize(deserializer)?))
+}
+
 #[derive(Debug, Deserialize)]
 pub struct CreateEnvironmentInput {
     pub name: String,
@@ -123,6 +132,35 @@ pub async fn set_env_variables(input: SetEnvVariablesInput) -> Result<(), String
     db::set_env_variables(&input.environment_id, variables)
         .await
         .map_err(|e| e.to_string())
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateEnvVariableInput {
+    pub id: String,
+    pub value: Option<String>,
+    pub match_paths: Option<String>,
+    pub target_location: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_nullable_i64")]
+    pub expires_at: Option<Option<i64>>,
+    pub priority: Option<i64>,
+    pub enabled: Option<bool>,
+}
+
+#[tauri::command]
+pub async fn update_env_variable(
+    input: UpdateEnvVariableInput,
+) -> Result<db::EnvVariable, String> {
+    db::update_env_variable(
+        &input.id,
+        input.value.as_deref(),
+        input.match_paths.as_deref(),
+        input.target_location.as_deref(),
+        input.expires_at,
+        input.priority,
+        input.enabled,
+    )
+    .await
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

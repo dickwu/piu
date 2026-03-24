@@ -147,6 +147,13 @@ pub fn run() {
             // Environment variable commands
             commands::set_env_variables,
             commands::list_env_variables,
+            commands::update_env_variable,
+            // Environment hook commands
+            commands::create_env_hook,
+            commands::list_env_hooks,
+            commands::list_env_hook_targets,
+            commands::update_env_hook,
+            commands::delete_env_hook,
             // Changelog commands
             commands::get_changelog,
             // Model commands

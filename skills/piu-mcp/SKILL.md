@@ -20,8 +20,10 @@ PIU exposes 46 MCP tools via Streamable HTTP at `http://127.0.0.1:3333/mcp`. The
 
 ## CLI
 
+This skill bundles `scripts/piu.ts` (relative to this SKILL.md). Run it with Bun:
+
 ```bash
-bun skills/scripts/piu.ts <command> [args...]
+bun scripts/piu.ts <command> [args...]
 ```
 
 All commands that take structured input accept a JSON string argument. All output is JSON.
@@ -29,27 +31,27 @@ All commands that take structured input accept a JSON string argument. All outpu
 ## Projects (6 tools)
 
 ```bash
-bun skills/scripts/piu.ts list-projects
-bun skills/scripts/piu.ts get-project <project_id>
-bun skills/scripts/piu.ts create-project '{"name":"my-api","description":"My API","source_repo_url":"https://github.com/org/repo","backend_type":"express"}'
-bun skills/scripts/piu.ts update-project '{"project_id":"...","name":"New Name","source_commit_id":"abc123"}'
-bun skills/scripts/piu.ts delete-project <project_id>
+bun scripts/piu.ts list-projects
+bun scripts/piu.ts get-project <project_id>
+bun scripts/piu.ts create-project '{"name":"my-api","description":"My API","source_repo_url":"https://github.com/org/repo","backend_type":"express"}'
+bun scripts/piu.ts update-project '{"project_id":"...","name":"New Name","source_commit_id":"abc123"}'
+bun scripts/piu.ts delete-project <project_id>
 ```
 
 The `overview` and `tree` workflow commands provide formatted summaries:
 ```bash
-bun skills/scripts/piu.ts overview <project_id>   # Compact summary
-bun skills/scripts/piu.ts tree <project_id>        # Full tree with envs, collections, methods
+bun scripts/piu.ts overview <project_id>   # Compact summary
+bun scripts/piu.ts tree <project_id>        # Full tree with envs, collections, methods
 ```
 
 ## Collections (5 tools)
 
 ```bash
-bun skills/scripts/piu.ts list-collections <project_id>
-bun skills/scripts/piu.ts get-collection <collection_id>
-bun skills/scripts/piu.ts create-collection '{"project_id":"...","name":"Users","path_prefix":"/users","description":"User management"}'
-bun skills/scripts/piu.ts update-collection '{"collection_id":"...","name":"Auth","path_prefix":"/auth"}'
-bun skills/scripts/piu.ts delete-collection <collection_id>
+bun scripts/piu.ts list-collections <project_id>
+bun scripts/piu.ts get-collection <collection_id>
+bun scripts/piu.ts create-collection '{"project_id":"...","name":"Users","path_prefix":"/users","description":"User management"}'
+bun scripts/piu.ts update-collection '{"collection_id":"...","name":"Auth","path_prefix":"/auth"}'
+bun scripts/piu.ts delete-collection <collection_id>
 ```
 
 Collections support nesting via `parent_id` and shared headers via `shared_headers` (JSON string).
@@ -57,13 +59,13 @@ Collections support nesting via `parent_id` and shared headers via `shared_heade
 ## Requests (6 tools + search)
 
 ```bash
-bun skills/scripts/piu.ts list-requests <collection_id>
-bun skills/scripts/piu.ts get-request <request_id>
-bun skills/scripts/piu.ts create-request '{"collection_id":"...","name":"Login","config":{"method":"POST","url":"/login","headers":[],"params":[],"body":{"type":"json","content":"{\"username\":\"admin\"}"},"auth":{"type":"none"},"description":"Authenticate user"}}'
-bun skills/scripts/piu.ts update-request '{"request_id":"...","config":{"method":"POST","url":"/login","body":{"type":"json","content":"{}"}}}'
-bun skills/scripts/piu.ts delete-request <request_id>
-bun skills/scripts/piu.ts duplicate-request <request_id>
-bun skills/scripts/piu.ts search <project_id> <query> [method]
+bun scripts/piu.ts list-requests <collection_id>
+bun scripts/piu.ts get-request <request_id>
+bun scripts/piu.ts create-request '{"collection_id":"...","name":"Login","config":{"method":"POST","url":"/login","headers":[],"params":[],"body":{"type":"json","content":"{\"username\":\"admin\"}"},"auth":{"type":"none"},"description":"Authenticate user"}}'
+bun scripts/piu.ts update-request '{"request_id":"...","config":{"method":"POST","url":"/login","body":{"type":"json","content":"{}"}}}'
+bun scripts/piu.ts delete-request <request_id>
+bun scripts/piu.ts duplicate-request <request_id>
+bun scripts/piu.ts search <project_id> <query> [method]
 ```
 
 ### Request config shape
@@ -85,14 +87,14 @@ URL resolution: `env.host + collection.path_prefix + request.url`
 ## Environments (7 tools)
 
 ```bash
-bun skills/scripts/piu.ts list-envs <project_id>
-bun skills/scripts/piu.ts get-env <environment_id>
-bun skills/scripts/piu.ts create-env '{"project_id":"...","name":"Development","host":"http://localhost:3000"}'
-bun skills/scripts/piu.ts update-env '{"environment_id":"...","name":"Staging","host":"https://staging.api.com"}'
-bun skills/scripts/piu.ts delete-env <environment_id>
-bun skills/scripts/piu.ts activate-env '{"environment_id":"...","project_id":"..."}'
-bun skills/scripts/piu.ts get-vars <environment_id>
-bun skills/scripts/piu.ts set-vars '{"environment_id":"...","variables":[{"key":"token","value":"abc","enabled":true}]}'
+bun scripts/piu.ts list-envs <project_id>
+bun scripts/piu.ts get-env <environment_id>
+bun scripts/piu.ts create-env '{"project_id":"...","name":"Development","host":"http://localhost:3000"}'
+bun scripts/piu.ts update-env '{"environment_id":"...","name":"Staging","host":"https://staging.api.com"}'
+bun scripts/piu.ts delete-env <environment_id>
+bun scripts/piu.ts activate-env '{"environment_id":"...","project_id":"..."}'
+bun scripts/piu.ts get-vars <environment_id>
+bun scripts/piu.ts set-vars '{"environment_id":"...","variables":[{"key":"token","value":"abc","enabled":true}]}'
 ```
 
 Activate an environment before executing requests — it sets the host URL for URL resolution.
@@ -102,14 +104,14 @@ Activate an environment before executing requests — it sets the host URL for U
 Models define typed schemas for request/response bodies. They support single-parent inheritance and multi-mixin composition.
 
 ```bash
-bun skills/scripts/piu.ts list-models <project_id>
-bun skills/scripts/piu.ts get-model <model_id>
-bun skills/scripts/piu.ts create-model '{"project_id":"...","name":"LoginRequest","description":"Auth payload","fields":[{"name":"username","field_type":"string","required":true,"example":"admin"},{"name":"password","field_type":"string","required":true}]}'
-bun skills/scripts/piu.ts update-model '{"model_id":"...","name":"NewName","fields":[...]}'
-bun skills/scripts/piu.ts delete-model <model_id>
-bun skills/scripts/piu.ts generate-body <model_id>
-bun skills/scripts/piu.ts validate '{"model_id":"...","response_body":"{\"code\":0,\"data\":{}}"}'
-bun skills/scripts/piu.ts resolve-fields <model_id>
+bun scripts/piu.ts list-models <project_id>
+bun scripts/piu.ts get-model <model_id>
+bun scripts/piu.ts create-model '{"project_id":"...","name":"LoginRequest","description":"Auth payload","fields":[{"name":"username","field_type":"string","required":true,"example":"admin"},{"name":"password","field_type":"string","required":true}]}'
+bun scripts/piu.ts update-model '{"model_id":"...","name":"NewName","fields":[...]}'
+bun scripts/piu.ts delete-model <model_id>
+bun scripts/piu.ts generate-body <model_id>
+bun scripts/piu.ts validate '{"model_id":"...","response_body":"{\"code\":0,\"data\":{}}"}'
+bun scripts/piu.ts resolve-fields <model_id>
 ```
 
 Field types: `string`, `integer`, `number`, `boolean`, `array`, `object`, `file`
@@ -118,10 +120,10 @@ Field types: `string`, `integer`, `number`, `boolean`, `array`, `object`, `file`
 
 ```bash
 # Create base model, then child with parent_model_id
-bun skills/scripts/piu.ts create-model '{"project_id":"...","name":"PaginatedResponse","parent_model_id":"BASE_MODEL_ID","fields":[{"name":"items","field_type":"array"}]}'
+bun scripts/piu.ts create-model '{"project_id":"...","name":"PaginatedResponse","parent_model_id":"BASE_MODEL_ID","fields":[{"name":"items","field_type":"array"}]}'
 
 # Or use mixins for composition
-bun skills/scripts/piu.ts create-model '{"project_id":"...","name":"UserList","mixin_model_ids":["PAGINATION_ID","SEARCH_ID"],"fields":[...]}'
+bun scripts/piu.ts create-model '{"project_id":"...","name":"UserList","mixin_model_ids":["PAGINATION_ID","SEARCH_ID"],"fields":[...]}'
 ```
 
 `resolve-fields` returns all fields including inherited and mixin fields in linearized order.
@@ -129,12 +131,12 @@ bun skills/scripts/piu.ts create-model '{"project_id":"...","name":"UserList","m
 ## Model Relations (6 tools)
 
 ```bash
-bun skills/scripts/piu.ts model-graph <project_id>      # All model relationships (JSON)
-bun skills/scripts/piu.ts model-hierarchy <model_id>     # Ancestry chain for one model
-bun skills/scripts/piu.ts model-mermaid <project_id>     # Mermaid class diagram
-bun skills/scripts/piu.ts link-model '{"request_id":"...","model_type":"request","model_id":"..."}'
-bun skills/scripts/piu.ts unlink-model '{"request_id":"...","model_type":"response"}'
-bun skills/scripts/piu.ts request-models <request_id>    # Get linked request + response models
+bun scripts/piu.ts model-graph <project_id>      # All model relationships (JSON)
+bun scripts/piu.ts model-hierarchy <model_id>     # Ancestry chain for one model
+bun scripts/piu.ts model-mermaid <project_id>     # Mermaid class diagram
+bun scripts/piu.ts link-model '{"request_id":"...","model_type":"request","model_id":"..."}'
+bun scripts/piu.ts unlink-model '{"request_id":"...","model_type":"response"}'
+bun scripts/piu.ts request-models <request_id>    # Get linked request + response models
 ```
 
 `model_type` is either `"request"` or `"response"`.
@@ -142,7 +144,7 @@ bun skills/scripts/piu.ts request-models <request_id>    # Get linked request + 
 ## Execution (1 tool)
 
 ```bash
-bun skills/scripts/piu.ts execute <request_id>
+bun scripts/piu.ts execute <request_id>
 ```
 
 Resolves URL (`env.host + collection.prefix + request.url`), interpolates `{{variables}}`, injects auth, sends HTTP via reqwest, and returns status, headers, body, timing.
@@ -150,7 +152,7 @@ Resolves URL (`env.host + collection.prefix + request.url`), interpolates `{{var
 ### Batch verification
 
 ```bash
-bun skills/scripts/piu.ts verify <project_id>    # Execute all GET requests, report pass/fail
+bun scripts/piu.ts verify <project_id>    # Execute all GET requests, report pass/fail
 ```
 
 ## Search & Discovery (5 tools)
@@ -159,19 +161,19 @@ Full-text search across all entity types with BM25 ranking and entity relationsh
 
 ```bash
 # FTS5 search across all entities
-bun skills/scripts/piu.ts search-entities '{"query":"users","project_id":"...","entity_type":"request","limit":20}'
+bun scripts/piu.ts search-entities '{"query":"users","project_id":"...","entity_type":"request","limit":20}'
 
 # Find related entities (Obsidian-style backlinks)
-bun skills/scripts/piu.ts find-related <entity_type> <entity_id> [max_depth]
+bun scripts/piu.ts find-related <entity_type> <entity_id> [max_depth]
 
 # Detailed view of any entity
-bun skills/scripts/piu.ts entity-detail <entity_type> <entity_id>
+bun scripts/piu.ts entity-detail <entity_type> <entity_id>
 
 # Complete API surface for a project (all methods + paths)
-bun skills/scripts/piu.ts api-surface <project_id>
+bun scripts/piu.ts api-surface <project_id>
 
 # Natural-language project summary
-bun skills/scripts/piu.ts summary <project_id>
+bun scripts/piu.ts summary <project_id>
 ```
 
 Entity types: `project`, `collection`, `request`, `model`, `environment`
@@ -179,9 +181,9 @@ Entity types: `project`, `collection`, `request`, `model`, `environment`
 ## Sync & Changelog (2 tools)
 
 ```bash
-bun skills/scripts/piu.ts sync-status <project_id>     # Pretty-print with staleness indicators
-bun skills/scripts/piu.ts changelog '{"entity_type":"request","entity_id":"...","limit":20}'
-bun skills/scripts/piu.ts diff-sync <project_id> <repo_path>  # Compare repo HEAD vs PIU commit
+bun scripts/piu.ts sync-status <project_id>     # Pretty-print with staleness indicators
+bun scripts/piu.ts changelog '{"entity_type":"request","entity_id":"...","limit":20}'
+bun scripts/piu.ts diff-sync <project_id> <repo_path>  # Compare repo HEAD vs PIU commit
 ```
 
 Every entity tracks `source_commit_id`. `sync-status` flags entities whose commit differs from the project-level commit.
@@ -189,8 +191,8 @@ Every entity tracks `source_commit_id`. `sync-status` flags entities whose commi
 ## OpenAPI (2 tools)
 
 ```bash
-bun skills/scripts/piu.ts generate-spec <project_id>   # Generate OpenAPI 3.1 spec from project data
-bun skills/scripts/piu.ts get-spec <project_id>         # Retrieve previously generated spec
+bun scripts/piu.ts generate-spec <project_id>   # Generate OpenAPI 3.1 spec from project data
+bun scripts/piu.ts get-spec <project_id>         # Retrieve previously generated spec
 ```
 
 ## Batch Operations (5 tools)
@@ -199,23 +201,23 @@ All batch commands read JSON from stdin.
 
 ```bash
 # Batch create requests
-cat routes.json | bun skills/scripts/piu.ts batch-requests
+cat routes.json | bun scripts/piu.ts batch-requests
 # Input: [{"collection_id":"...","name":"List Users","method":"GET","url":"/list"}]
 
 # Batch create collections
-cat cols.json | bun skills/scripts/piu.ts batch-collections
+cat cols.json | bun scripts/piu.ts batch-collections
 # Input: [{"project_id":"...","name":"Users","path_prefix":"/users"}]
 
 # Batch update request configs
-cat updates.json | bun skills/scripts/piu.ts batch-update-bodies
+cat updates.json | bun scripts/piu.ts batch-update-bodies
 # Input: [{"request_id":"...","name":"Login","config":{...}}]
 
 # Batch create models
-cat models.json | bun skills/scripts/piu.ts batch-models
+cat models.json | bun scripts/piu.ts batch-models
 # Input: {"project_id":"...","models":[{"name":"LoginRequest","fields":[...]}]}
 
 # Batch link models to requests
-cat links.json | bun skills/scripts/piu.ts batch-links
+cat links.json | bun scripts/piu.ts batch-links
 # Input: [{"request_id":"...","model_type":"request","model_id":"..."}]
 ```
 
@@ -224,8 +226,8 @@ cat links.json | bun skills/scripts/piu.ts batch-links
 For any MCP tool not covered by a named command:
 
 ```bash
-bun skills/scripts/piu.ts tool <tool_name> '<json_args>'
-bun skills/scripts/piu.ts tool search_entities '{"query":"auth","entity_type":"request"}'
+bun scripts/piu.ts tool <tool_name> '<json_args>'
+bun scripts/piu.ts tool search_entities '{"query":"auth","entity_type":"request"}'
 ```
 
 ## All 46 MCP Tools

@@ -18,8 +18,10 @@ Scans a frontend repository for HTTP API calls and cross-references them against
 
 ## CLI Scripts
 
+This skill bundles `scripts/piu.ts` (relative to this SKILL.md):
+
 ```bash
-bun skills/scripts/piu.ts <command> [args...]     # MCP client (46 tools)
+bun scripts/piu.ts <command> [args...]     # MCP client (46 tools)
 ```
 
 For full tool reference, see the **piu-mcp** skill.
@@ -35,7 +37,7 @@ For previously audited projects, check if the frontend repo changed:
 ```bash
 # The PIU project description stores the last audited commit:
 # "Frontend audit: <commit_sha> @ <timestamp> from <repo_url>"
-bun skills/scripts/piu.ts get-project PROJECT_ID
+bun scripts/piu.ts get-project PROJECT_ID
 ```
 
 ```bash
@@ -109,16 +111,16 @@ Skip: `**/*.test.*`, `**/*.spec.*`, `**/__tests__/**`, `**/__mocks__/**`
 
 ```bash
 # Full project tree with all requests
-bun skills/scripts/piu.ts tree PROJECT_ID
+bun scripts/piu.ts tree PROJECT_ID
 
 # Search for specific endpoints
-bun skills/scripts/piu.ts search PROJECT_ID "/users" POST
+bun scripts/piu.ts search PROJECT_ID "/users" POST
 
 # Or use the knowledge graph for semantic search
-bun skills/scripts/piu.ts search-entities '{"query":"user authentication","project_id":"PROJECT_ID","entity_type":"request"}'
+bun scripts/piu.ts search-entities '{"query":"user authentication","project_id":"PROJECT_ID","entity_type":"request"}'
 
 # API surface summary
-bun skills/scripts/piu.ts api-surface PROJECT_ID
+bun scripts/piu.ts api-surface PROJECT_ID
 ```
 
 Match each frontend call against PIU requests by:
@@ -138,8 +140,8 @@ For matched endpoints with TypeScript interfaces, compare types:
 
 **PIU Data Models** (from MCP):
 ```bash
-bun skills/scripts/piu.ts request-models REQUEST_ID
-bun skills/scripts/piu.ts resolve-fields MODEL_ID
+bun scripts/piu.ts request-models REQUEST_ID
+bun scripts/piu.ts resolve-fields MODEL_ID
 ```
 
 Compare field-by-field:
@@ -154,13 +156,13 @@ If the backend is running, validate actual responses:
 
 ```bash
 # Execute a request
-bun skills/scripts/piu.ts execute REQUEST_ID
+bun scripts/piu.ts execute REQUEST_ID
 
 # Validate response against linked model
-bun skills/scripts/piu.ts validate '{"model_id":"RESPONSE_MODEL_ID","response_body":"{...}"}'
+bun scripts/piu.ts validate '{"model_id":"RESPONSE_MODEL_ID","response_body":"{...}"}'
 
 # Batch verify all GET endpoints
-bun skills/scripts/piu.ts verify PROJECT_ID
+bun scripts/piu.ts verify PROJECT_ID
 ```
 
 ## Step 5: Report
@@ -211,23 +213,23 @@ When the user requests auto-fix, create missing PIU entities:
 
 ```bash
 # Create missing requests
-bun skills/scripts/piu.ts create-request '{"collection_id":"...","name":"Bulk Create Users","config":{"method":"POST","url":"/bulk","headers":[],"params":[],"body":{"type":"json","content":""},"auth":{"type":"none"},"description":"..."}}'
+bun scripts/piu.ts create-request '{"collection_id":"...","name":"Bulk Create Users","config":{"method":"POST","url":"/bulk","headers":[],"params":[],"body":{"type":"json","content":""},"auth":{"type":"none"},"description":"..."}}'
 
 # Create models from TypeScript interfaces
-bun skills/scripts/piu.ts create-model '{"project_id":"...","name":"BulkCreateRequest","fields":[{"name":"users","field_type":"array","required":true}]}'
+bun scripts/piu.ts create-model '{"project_id":"...","name":"BulkCreateRequest","fields":[{"name":"users","field_type":"array","required":true}]}'
 
 # Link model to request
-bun skills/scripts/piu.ts link-model '{"request_id":"...","model_type":"request","model_id":"..."}'
+bun scripts/piu.ts link-model '{"request_id":"...","model_type":"request","model_id":"..."}'
 
 # Use entity relations to find what's connected
-bun skills/scripts/piu.ts find-related request REQUEST_ID
+bun scripts/piu.ts find-related request REQUEST_ID
 ```
 
 ## Update Audit Marker
 
 After audit, store the frontend commit in PIU project description:
 ```bash
-bun skills/scripts/piu.ts update-project '{"project_id":"PROJECT_ID","description":"...\nFrontend audit: <COMMIT> @ <TIMESTAMP> from <REPO_URL>"}'
+bun scripts/piu.ts update-project '{"project_id":"PROJECT_ID","description":"...\nFrontend audit: <COMMIT> @ <TIMESTAMP> from <REPO_URL>"}'
 ```
 
 ## Notes

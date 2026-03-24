@@ -17,11 +17,11 @@ Analyzes a backend repository, discovers API routes, and creates PIU entities (p
 
 ## CLI Scripts
 
-All commands use the Bun runtime:
+This skill bundles `scripts/piu.ts` and `scripts/detect.ts` (relative to this SKILL.md):
 
 ```bash
-bun skills/scripts/piu.ts <command> [args...]     # MCP client (46 tools)
-bun skills/scripts/detect.ts /path/to/repo         # Framework detection → JSON
+bun scripts/piu.ts <command> [args...]     # MCP client (46 tools)
+bun scripts/detect.ts /path/to/repo        # Framework detection → JSON
 ```
 
 For full tool reference, see the **piu-mcp** skill.
@@ -32,10 +32,10 @@ For previously imported projects, check if the repo has changed:
 
 ```bash
 # Check if project exists
-bun skills/scripts/piu.ts list-projects
+bun scripts/piu.ts list-projects
 
 # Compare commits
-bun skills/scripts/piu.ts diff-sync PROJECT_ID /path/to/repo
+bun scripts/piu.ts diff-sync PROJECT_ID /path/to/repo
 ```
 
 | Scenario | Action |
@@ -47,9 +47,9 @@ bun skills/scripts/piu.ts diff-sync PROJECT_ID /path/to/repo
 
 For incremental sync, get the current PIU state and compare:
 ```bash
-bun skills/scripts/piu.ts tree PROJECT_ID
+bun scripts/piu.ts tree PROJECT_ID
 # Then re-extract changed routes and create/update/flag as needed
-bun skills/scripts/piu.ts update-project '{"project_id":"...","source_commit_id":"NEW_COMMIT"}'
+bun scripts/piu.ts update-project '{"project_id":"...","source_commit_id":"NEW_COMMIT"}'
 ```
 
 ## Step 1: Clone & Detect Framework
@@ -64,7 +64,7 @@ REPO="$TMPDIR/repo"
 REPO=/path/to/repo
 
 COMMIT=$(git -C "$REPO" rev-parse HEAD)
-DETECT=$(bun skills/scripts/detect.ts "$REPO")
+DETECT=$(bun scripts/detect.ts "$REPO")
 # Returns: {"framework":"express","port":3000,"router_files":["routes/api.js"]}
 ```
 
@@ -93,16 +93,16 @@ For each route: extract HTTP method, URL path, handler name, group/prefix.
 ### 3a. Project + Environment
 
 ```bash
-bun skills/scripts/piu.ts create-project '{"name":"PROJECT_NAME","description":"Imported from <url>","source_repo_url":"<url>","source_commit_id":"COMMIT","backend_type":"FRAMEWORK"}'
+bun scripts/piu.ts create-project '{"name":"PROJECT_NAME","description":"Imported from <url>","source_repo_url":"<url>","source_commit_id":"COMMIT","backend_type":"FRAMEWORK"}'
 # → returns {"id": "PROJECT_ID", ...}
 
-bun skills/scripts/piu.ts create-env '{"project_id":"PROJECT_ID","name":"Development","host":"http://localhost:PORT"}'
+bun scripts/piu.ts create-env '{"project_id":"PROJECT_ID","name":"Development","host":"http://localhost:PORT"}'
 ```
 
 ### 3b. Collections (batch)
 
 ```bash
-cat <<'EOF' | bun skills/scripts/piu.ts batch-collections
+cat <<'EOF' | bun scripts/piu.ts batch-collections
 [
   {"project_id":"PROJECT_ID","name":"Users","path_prefix":"/users","description":"User management","source_commit_id":"COMMIT"},
   {"project_id":"PROJECT_ID","name":"Auth","path_prefix":"/auth","description":"Authentication","source_commit_id":"COMMIT"}
@@ -115,7 +115,7 @@ EOF
 For large imports, write one JSON file per collection:
 
 ```bash
-cat /tmp/piu-routes/users.json | bun skills/scripts/piu.ts batch-requests
+cat /tmp/piu-routes/users.json | bun scripts/piu.ts batch-requests
 ```
 
 Format: `[{"collection_id":"...","name":"List Users","method":"GET","url":"/list","description":"..."}]`
@@ -125,8 +125,8 @@ For 500+ routes, use parallel subagents each processing a subset.
 ### 3d. Environment Setup
 
 ```bash
-bun skills/scripts/piu.ts set-vars '{"environment_id":"ENV_ID","variables":[{"key":"token","value":"your-auth-token","enabled":true}]}'
-bun skills/scripts/piu.ts activate-env '{"environment_id":"ENV_ID","project_id":"PROJECT_ID"}'
+bun scripts/piu.ts set-vars '{"environment_id":"ENV_ID","variables":[{"key":"token","value":"your-auth-token","enabled":true}]}'
+bun scripts/piu.ts activate-env '{"environment_id":"ENV_ID","project_id":"PROJECT_ID"}'
 ```
 
 ## Step 4: Model Extraction
@@ -138,7 +138,7 @@ After creating requests, extract data models from controller schemas.
 Create reusable models first:
 
 ```bash
-cat <<'EOF' | bun skills/scripts/piu.ts batch-models
+cat <<'EOF' | bun scripts/piu.ts batch-models
 {
   "project_id": "PROJECT_ID",
   "models": [
@@ -165,7 +165,7 @@ For each collection, read controller source and extract request/response schemas
 ### Link models to requests
 
 ```bash
-cat <<'EOF' | bun skills/scripts/piu.ts batch-links
+cat <<'EOF' | bun scripts/piu.ts batch-links
 [
   {"request_id":"REQ_ID","model_type":"request","model_id":"MODEL_ID"},
   {"request_id":"REQ_ID","model_type":"response","model_id":"RESP_MODEL_ID"}
@@ -207,35 +207,35 @@ Returns `{code: 0, data: {token: "...", expires_in: 3600}}`.
 
 Use `batch-update-bodies` to apply descriptions:
 ```bash
-cat updates.json | bun skills/scripts/piu.ts batch-update-bodies
+cat updates.json | bun scripts/piu.ts batch-update-bodies
 ```
 
 ## Step 6: Verification
 
 ```bash
 # Project overview
-bun skills/scripts/piu.ts overview PROJECT_ID
+bun scripts/piu.ts overview PROJECT_ID
 
 # Full tree
-bun skills/scripts/piu.ts tree PROJECT_ID
+bun scripts/piu.ts tree PROJECT_ID
 
 # Execute all GET endpoints (requires running backend + active env)
-bun skills/scripts/piu.ts verify PROJECT_ID
+bun scripts/piu.ts verify PROJECT_ID
 
 # Model visualization
-bun skills/scripts/piu.ts model-mermaid PROJECT_ID
+bun scripts/piu.ts model-mermaid PROJECT_ID
 
 # Sync status
-bun skills/scripts/piu.ts sync-status PROJECT_ID
+bun scripts/piu.ts sync-status PROJECT_ID
 
 # Changelog audit
-bun skills/scripts/piu.ts changelog '{"entity_type":"project","entity_id":"PROJECT_ID","limit":20}'
+bun scripts/piu.ts changelog '{"entity_type":"project","entity_id":"PROJECT_ID","limit":20}'
 
 # Search for specific endpoints
-bun skills/scripts/piu.ts search PROJECT_ID "/login" POST
+bun scripts/piu.ts search PROJECT_ID "/login" POST
 
 # API surface summary
-bun skills/scripts/piu.ts api-surface PROJECT_ID
+bun scripts/piu.ts api-surface PROJECT_ID
 ```
 
 ## Step 7: Cleanup & Report

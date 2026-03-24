@@ -95,8 +95,7 @@ piu/
 ├── skills/                     # Claude Code skills (installable via skills.sh)
 │   ├── piu-mcp/SKILL.md        # Full MCP toolkit (46 tools)
 │   ├── piu-backend-sync/SKILL.md   # Import backend routes into PIU
-│   ├── piu-frontend-sync/SKILL.md  # Validate frontend API calls against PIU
-│   └── scripts/                # Bun CLI tools (piu.ts, detect.ts)
+│   └── piu-frontend-sync/SKILL.md  # Validate frontend API calls against PIU
 ├── src/                        # React/Next.js frontend
 │   └── app/
 │       ├── components/         # UI components (editors, viewers, modals, sidebar, graph)
@@ -196,10 +195,10 @@ Once installed, Claude Code auto-activates them based on trigger keywords.
 Full reference for all 46 MCP tools. Covers projects, collections, requests, environments, data models, execution, search & discovery, sync tracking, and OpenAPI generation. Includes a Bun CLI wrapper:
 
 ```bash
-bun skills/scripts/piu.ts tree <project_id>       # Full project tree
-bun skills/scripts/piu.ts search <project_id> users  # Search requests
-bun skills/scripts/piu.ts execute <request_id>     # Send HTTP request
-bun skills/scripts/piu.ts api-surface <project_id> # All endpoints summary
+bun scripts/piu.ts tree <project_id>       # Full project tree
+bun scripts/piu.ts search <project_id> users  # Search requests
+bun scripts/piu.ts execute <request_id>     # Send HTTP request
+bun scripts/piu.ts api-surface <project_id> # All endpoints summary
 ```
 
 #### Backend sync (`skills/piu-backend-sync/`)

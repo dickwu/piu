@@ -50,6 +50,11 @@ export default function Home() {
       messageApi.success(
         `Hook captured: ${event.target_count} variable${event.target_count === 1 ? '' : 's'} updated`,
       );
+      // Reload variables so UI reflects the hook-updated values
+      const env = useEnvironmentStore.getState().activeEnvironment;
+      if (env) {
+        useEnvironmentStore.getState().loadVariables(env.id);
+      }
     },
     [messageApi],
   );

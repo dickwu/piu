@@ -16,16 +16,19 @@ import {
   Spin,
   Empty,
 } from 'antd';
-import { PlusOutlined, DeleteOutlined, ThunderboltOutlined } from '@ant-design/icons';
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { PlusOutlined, DeleteOutlined, EditOutlined, ReloadOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { useHookStore } from '../stores/hookStore';
 import { useCollectionStore } from '../stores/collectionStore';
 import { useEnvironmentStore } from '../stores/environmentStore';
 import { parseConfig } from '../types';
-import type { EnvHook, EnvHookTarget, ApiRequest, EnvVariable } from '../types';
+import type { EnvHook, EnvHookTarget, ApiRequest, EnvVariable, ExecutionProgress } from '../types';
 
 interface HooksEditorProps {
   environmentId: string;
+  onVariablesRefreshed?: () => void;
 }
 
 const TTL_UNITS = [
@@ -52,6 +55,14 @@ function formatTtl(expiresIn: number | null): string {
   if (expiresIn < 60_000) return `${expiresIn / 1000}s`;
   if (expiresIn < 3_600_000) return `${expiresIn / 60_000}m`;
   return `${expiresIn / 3_600_000}h`;
+}
+
+function parseTtlToUnitValue(expiresIn: number | null): { value: number | undefined; unit: number } {
+  if (!expiresIn) return { value: undefined, unit: 1000 };
+  if (expiresIn >= 3_600_000 && expiresIn % 3_600_000 === 0) return { value: expiresIn / 3_600_000, unit: 3_600_000 };
+  if (expiresIn >= 60_000 && expiresIn % 60_000 === 0) return { value: expiresIn / 60_000, unit: 60_000 };
+  if (expiresIn >= 1000 && expiresIn % 1000 === 0) return { value: expiresIn / 1000, unit: 1000 };
+  return { value: expiresIn, unit: 1 };
 }
 
 function buildRequestOptions(
@@ -92,7 +103,7 @@ function findRequestName(
   return requestId.slice(0, 8);
 }
 
-export function HooksEditor({ environmentId }: HooksEditorProps) {
+export function HooksEditor({ environmentId, onVariablesRefreshed }: HooksEditorProps) {
   const { message, modal } = App.useApp();
   const { hooks, loading, loadHooks, createHook, updateHook, deleteHook, loadHookTargets } =
     useHookStore();
@@ -100,16 +111,20 @@ export function HooksEditor({ environmentId }: HooksEditorProps) {
   const collections = useCollectionStore((s) => s.collections);
   const requestsMap = useCollectionStore((s) => s.requests);
   const variables = useEnvironmentStore((s) => s.variables);
+  const loadVariables = useEnvironmentStore((s) => s.loadVariables);
 
   const envVariables: EnvVariable[] = useMemo(
     () => variables.get(environmentId) ?? [],
     [variables, environmentId],
   );
 
-  const [addModalOpen, setAddModalOpen] = useState(false);
+  const [formOpen, setFormOpen] = useState(false);
+  const [editingHook, setEditingHook] = useState<EnvHook | null>(null);
   const [hookTargets, setHookTargets] = useState<Map<string, string[]>>(new Map());
+  const [refreshingHooks, setRefreshingHooks] = useState<Set<string>>(new Set());
   const [form] = Form.useForm();
   const [ttlUnit, setTtlUnit] = useState(1000);
+  const cleanupRef = useRef<Map<string, () => void>>(new Map());
 
   useEffect(() => {
     loadHooks(environmentId);
@@ -149,6 +164,14 @@ export function HooksEditor({ environmentId }: HooksEditorProps) {
     [envVariables],
   );
 
+  const variableNameMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const v of envVariables) {
+      map.set(v.id, v.key || '(unnamed)');
+    }
+    return map;
+  }, [envVariables]);
+
   const handleToggleEnabled = useCallback(
     async (hook: EnvHook, enabled: boolean) => {
       try {
@@ -179,34 +202,172 @@ export function HooksEditor({ environmentId }: HooksEditorProps) {
     [deleteHook, message, modal],
   );
 
-  const handleAddHook = useCallback(async () => {
+  const handleOpenAdd = useCallback(() => {
+    setEditingHook(null);
+    form.resetFields();
+    setTtlUnit(1000);
+    setFormOpen(true);
+  }, [form]);
+
+  const handleOpenEdit = useCallback(
+    async (hook: EnvHook) => {
+      setEditingHook(hook);
+      const { value: ttlVal, unit } = parseTtlToUnitValue(hook.expires_in);
+      setTtlUnit(unit);
+
+      let targetIds: string[] = [];
+      try {
+        const targets: EnvHookTarget[] = await loadHookTargets(hook.id);
+        targetIds = targets.map((t) => t.variable_id);
+      } catch {
+        /* ignored */
+      }
+
+      form.setFieldsValue({
+        source_request_id: hook.source_request_id,
+        response_location: hook.response_location,
+        selector: hook.selector,
+        target_variable_ids: targetIds,
+        value_template: hook.value_template,
+        ttl_value: ttlVal,
+        array_strategy: hook.array_strategy,
+      });
+
+      setFormOpen(true);
+    },
+    [form, loadHookTargets],
+  );
+
+  const handleSubmitHook = useCallback(async () => {
     try {
       const values = await form.validateFields();
       const ttlMs = values.ttl_value ? values.ttl_value * ttlUnit : null;
 
-      await createHook({
-        environment_id: environmentId,
-        source_request_id: values.source_request_id,
-        response_location: values.response_location,
-        selector: values.selector,
-        target_variable_ids: values.target_variable_ids ?? [],
-        value_template: values.value_template || '{{value}}',
-        expires_in: ttlMs,
-        array_strategy: values.array_strategy ?? 'first',
-      });
+      if (editingHook) {
+        await updateHook({
+          id: editingHook.id,
+          source_request_id: values.source_request_id,
+          response_location: values.response_location,
+          selector: values.selector,
+          target_variable_ids: values.target_variable_ids ?? [],
+          value_template: values.value_template || '{{value}}',
+          expires_in: ttlMs,
+          array_strategy: values.array_strategy ?? 'first',
+        });
+        message.success('Hook updated');
+      } else {
+        await createHook({
+          environment_id: environmentId,
+          source_request_id: values.source_request_id,
+          response_location: values.response_location,
+          selector: values.selector,
+          target_variable_ids: values.target_variable_ids ?? [],
+          value_template: values.value_template || '{{value}}',
+          expires_in: ttlMs,
+          array_strategy: values.array_strategy ?? 'first',
+        });
+        message.success('Hook created');
+      }
 
       form.resetFields();
-      setAddModalOpen(false);
-      message.success('Hook created');
+      setFormOpen(false);
+      setEditingHook(null);
     } catch {
       // form validation failed, errors shown inline
     }
-  }, [form, ttlUnit, environmentId, createHook, message]);
+  }, [form, ttlUnit, editingHook, environmentId, createHook, updateHook, message]);
 
-  const handleCloseAddModal = useCallback(() => {
+  const handleCloseForm = useCallback(() => {
     form.resetFields();
-    setAddModalOpen(false);
+    setFormOpen(false);
+    setEditingHook(null);
   }, [form]);
+
+  const handleRefreshHook = useCallback(
+    async (hook: EnvHook) => {
+      setRefreshingHooks((prev) => new Set([...prev, hook.id]));
+
+      const executionId = crypto.randomUUID();
+      let capturedInfo: { value: string; count: number } | null = null;
+
+      const cleanup = () => {
+        unlistenHook();
+        unlistenProgress();
+        clearTimeout(timeout);
+        cleanupRef.current.delete(hook.id);
+        setRefreshingHooks((prev) => {
+          const next = new Set(prev);
+          next.delete(hook.id);
+          return next;
+        });
+      };
+
+      const unlistenHook = await listen<{
+        hook_id: string;
+        captured_value: string;
+        target_count: number;
+      }>('hook-captured', (event) => {
+        if (event.payload.hook_id === hook.id) {
+          capturedInfo = {
+            value: event.payload.captured_value,
+            count: event.payload.target_count,
+          };
+        }
+      });
+
+      const unlistenProgress = await listen<ExecutionProgress>(
+        'request-progress',
+        (event) => {
+          if (event.payload.execution_id !== executionId) return;
+
+          if (event.payload.phase === 'error') {
+            cleanup();
+            message.error(event.payload.error ?? 'Request failed');
+          } else if (event.payload.phase === 'complete') {
+            cleanup();
+            loadHooks(environmentId);
+            loadVariables(environmentId).then(() => onVariablesRefreshed?.());
+            if (capturedInfo) {
+              const preview =
+                capturedInfo.value.length > 40
+                  ? capturedInfo.value.slice(0, 40) + '...'
+                  : capturedInfo.value;
+              message.success(
+                `Captured "${preview}" → ${capturedInfo.count} variable(s)`,
+              );
+            } else {
+              message.warning('Request completed but hook did not capture a value');
+            }
+          }
+        },
+      );
+
+      const timeout = setTimeout(() => {
+        cleanup();
+        message.warning('Hook refresh timed out');
+      }, 30_000);
+
+      cleanupRef.current.set(hook.id, cleanup);
+
+      try {
+        await invoke('execute_request_by_id', {
+          requestId: hook.source_request_id,
+          executionId,
+        });
+      } catch {
+        cleanup();
+        message.error('Failed to execute request');
+      }
+    },
+    [environmentId, loadHooks, loadVariables, message, onVariablesRefreshed],
+  );
+
+  // Cleanup listeners on unmount
+  useEffect(() => {
+    return () => {
+      for (const fn of cleanupRef.current.values()) fn();
+    };
+  }, []);
 
   const columns = [
     {
@@ -277,6 +438,31 @@ export function HooksEditor({ environmentId }: HooksEditorProps) {
       ),
     },
     {
+      title: 'Targets',
+      width: 120,
+      render: (_: unknown, record: EnvHook) => {
+        const targetIds = hookTargets.get(record.id) ?? [];
+        if (targetIds.length === 0) {
+          return (
+            <span style={{ color: 'var(--text-tertiary)', fontSize: 10 }}>—</span>
+          );
+        }
+        return (
+          <Flex wrap gap={2}>
+            {targetIds.map((id) => (
+              <Tag
+                key={id}
+                color="green"
+                style={{ fontSize: 9, margin: 0, lineHeight: '14px', padding: '0 3px' }}
+              >
+                {variableNameMap.get(id) ?? id.slice(0, 8)}
+              </Tag>
+            ))}
+          </Flex>
+        );
+      },
+    },
+    {
       title: 'Last Run',
       dataIndex: 'last_executed_at',
       width: 80,
@@ -288,15 +474,32 @@ export function HooksEditor({ environmentId }: HooksEditorProps) {
     },
     {
       title: '',
-      width: 40,
+      width: 100,
       render: (_: unknown, record: EnvHook) => (
-        <Button
-          size="small"
-          type="text"
-          danger
-          icon={<DeleteOutlined />}
-          onClick={() => handleDelete(record.id)}
-        />
+        <Flex gap={0}>
+          <Button
+            size="small"
+            type="text"
+            icon={<ReloadOutlined spin={refreshingHooks.has(record.id)} />}
+            loading={refreshingHooks.has(record.id)}
+            onClick={() => handleRefreshHook(record)}
+            disabled={!record.enabled}
+            title="Execute source request and capture value"
+          />
+          <Button
+            size="small"
+            type="text"
+            icon={<EditOutlined />}
+            onClick={() => handleOpenEdit(record)}
+          />
+          <Button
+            size="small"
+            type="text"
+            danger
+            icon={<DeleteOutlined />}
+            onClick={() => handleDelete(record.id)}
+          />
+        </Flex>
       ),
     },
   ];
@@ -324,7 +527,7 @@ export function HooksEditor({ environmentId }: HooksEditorProps) {
           <Button
             type="dashed"
             icon={<PlusOutlined />}
-            onClick={() => setAddModalOpen(true)}
+            onClick={handleOpenAdd}
           >
             Add Hook
           </Button>
@@ -343,7 +546,7 @@ export function HooksEditor({ environmentId }: HooksEditorProps) {
             size="small"
             type="dashed"
             icon={<PlusOutlined />}
-            onClick={() => setAddModalOpen(true)}
+            onClick={handleOpenAdd}
             block
           >
             Add Hook
@@ -355,17 +558,44 @@ export function HooksEditor({ environmentId }: HooksEditorProps) {
         title={
           <Flex align="center" gap={8}>
             <ThunderboltOutlined />
-            <span>Add Hook</span>
+            <span>{editingHook ? 'Edit Hook' : 'Add Hook'}</span>
           </Flex>
         }
-        open={addModalOpen}
-        onOk={handleAddHook}
-        onCancel={handleCloseAddModal}
+        open={formOpen}
+        onOk={handleSubmitHook}
+        onCancel={handleCloseForm}
         destroyOnHidden
         width={480}
-        okText="Create"
+        okText={editingHook ? 'Save' : 'Create'}
       >
         <Form form={form} layout="vertical" size="small" style={{ marginTop: 12 }}>
+          <div
+            style={{
+              background: 'var(--bg-elevated, rgba(255,255,255,0.04))',
+              border: '1px solid var(--border-secondary, rgba(255,255,255,0.06))',
+              borderRadius: 6,
+              padding: '8px 10px',
+              marginBottom: 12,
+              fontSize: 11,
+              color: 'var(--text-tertiary)',
+              lineHeight: 1.6,
+            }}
+          >
+            <strong style={{ color: 'var(--text-secondary)' }}>Example</strong>
+            <br />
+            <code style={{ fontFamily: 'var(--font-code)', fontSize: 10 }}>
+              GET /api/auth/login
+            </code>{' → '}
+            extract{' '}
+            <code style={{ fontFamily: 'var(--font-code)', fontSize: 10 }}>
+              $.data.access_token
+            </code>{' '}
+            from body → save to{' '}
+            <code style={{ fontFamily: 'var(--font-code)', fontSize: 10 }}>
+              {'{{auth_token}}'}
+            </code>
+          </div>
+
           <Form.Item
             name="source_request_id"
             label="Source Request"

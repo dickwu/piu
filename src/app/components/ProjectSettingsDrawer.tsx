@@ -277,6 +277,22 @@ export function ProjectSettingsDrawer({
     setEditingVars((prev) => prev.filter((_, i) => i !== index));
   }, []);
 
+  const handleHookVariablesRefreshed = useCallback(() => {
+    if (!varEditorEnvId) return;
+    const freshVars =
+      useEnvironmentStore.getState().variables.get(varEditorEnvId) ?? [];
+    const freshMap = new Map(freshVars.map((v) => [v.id, v]));
+    setEditingVars((prev) =>
+      prev.map((v) => {
+        const fresh = freshMap.get(v.id);
+        if (fresh) {
+          return { ...v, value: fresh.value, expires_at: fresh.expires_at };
+        }
+        return v;
+      }),
+    );
+  }, [varEditorEnvId]);
+
   const toggleValueVisibility = useCallback((varId: string) => {
     setVisibleValues((prev) => {
       const next = new Set(prev);
@@ -652,7 +668,10 @@ export function ProjectSettingsDrawer({
               key: 'hooks',
               label: 'Hooks',
               children: varEditorEnvId ? (
-                <HooksEditor environmentId={varEditorEnvId} />
+                <HooksEditor
+                  environmentId={varEditorEnvId}
+                  onVariablesRefreshed={handleHookVariablesRefreshed}
+                />
               ) : null,
             },
           ]}

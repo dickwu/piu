@@ -222,6 +222,22 @@ export function ProjectSettingsModal({
     setEditingVars((prev) => prev.filter((_, i) => i !== index));
   }, []);
 
+  const handleHookVariablesRefreshed = useCallback(() => {
+    if (!varEditorEnvId) return;
+    const freshVars =
+      useEnvironmentStore.getState().variables.get(varEditorEnvId) ?? [];
+    const freshMap = new Map(freshVars.map((v) => [v.id, v]));
+    setEditingVars((prev) =>
+      prev.map((v) => {
+        const fresh = freshMap.get(v.id);
+        if (fresh) {
+          return { ...v, value: fresh.value, expires_at: fresh.expires_at };
+        }
+        return v;
+      }),
+    );
+  }, [varEditorEnvId]);
+
   const varEditorEnv = environments.find((e) => e.id === varEditorEnvId);
 
   return (
@@ -515,7 +531,10 @@ export function ProjectSettingsModal({
               key: 'hooks',
               label: 'Hooks',
               children: varEditorEnvId ? (
-                <HooksEditor environmentId={varEditorEnvId} />
+                <HooksEditor
+                  environmentId={varEditorEnvId}
+                  onVariablesRefreshed={handleHookVariablesRefreshed}
+                />
               ) : null,
             },
           ]}

@@ -1,17 +1,33 @@
 'use client';
 
-import { Button, Tag, Flex, Spin } from 'antd';
+import { Button, Tag, Flex, Spin, Tabs } from 'antd';
 import { PlayCircleOutlined } from '@ant-design/icons';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import type { ExecutionProgress, HttpResponse } from '@/app/types';
+import type { ExecutionProgress, HttpResponse, RequestConfig, ApiRequest } from '@/app/types';
+import { parseConfig } from '@/app/types';
+import { ParamsEditor } from '../ParamsEditor';
+import { HeadersEditor } from '../HeadersEditor';
+import { BodyEditor } from '../BodyEditor';
+import { AuthEditor } from '../AuthEditor';
 
 interface Props {
   requestId: string | null;
   serverUrl: string;
   path: string;
+  method: string;
 }
+
+const METHOD_COLORS: Record<string, string> = {
+  GET: '#52c41a',
+  POST: '#1677ff',
+  PUT: '#fa8c16',
+  DELETE: '#ff4d4f',
+  PATCH: '#722ed1',
+  HEAD: '#22d3ee',
+  OPTIONS: '#a78bfa',
+};
 
 function statusColor(status: number): string {
   if (status < 300) return '#52c41a';
@@ -33,11 +49,33 @@ function formatBody(body: string): string {
   }
 }
 
-export function TryItPanel({ requestId, serverUrl, path }: Props) {
+export function TryItPanel({ requestId, serverUrl, path, method }: Props) {
   const [executing, setExecuting] = useState(false);
   const [response, setResponse] = useState<HttpResponse | null>(null);
   const [execError, setExecError] = useState<string | null>(null);
+  const [config, setConfig] = useState<RequestConfig | null>(null);
+  const [configLoading, setConfigLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState('body');
   const unlistenRef = useRef<UnlistenFn | null>(null);
+
+  useEffect(() => {
+    if (!requestId) {
+      setConfig(null);
+      return;
+    }
+
+    setConfigLoading(true);
+    invoke<ApiRequest | null>('get_request', { id: requestId })
+      .then((req) => {
+        setConfig(req ? parseConfig(req.config) : null);
+      })
+      .catch(() => {
+        setConfig(null);
+      })
+      .finally(() => {
+        setConfigLoading(false);
+      });
+  }, [requestId]);
 
   useEffect(() => {
     return () => {
@@ -45,8 +83,12 @@ export function TryItPanel({ requestId, serverUrl, path }: Props) {
     };
   }, []);
 
+  const updateConfig = useCallback((partial: Partial<RequestConfig>) => {
+    setConfig((prev) => (prev ? { ...prev, ...partial } : prev));
+  }, []);
+
   const handleExecute = useCallback(async () => {
-    if (!requestId) return;
+    if (!requestId || !config) return;
 
     unlistenRef.current?.();
     setExecuting(true);
@@ -56,6 +98,11 @@ export function TryItPanel({ requestId, serverUrl, path }: Props) {
     const executionId = crypto.randomUUID();
 
     try {
+      // Save edited config before executing
+      await invoke('update_request', {
+        input: { id: requestId, config: JSON.stringify(config) },
+      });
+
       const unlisten = await listen<ExecutionProgress>(
         'request-progress',
         (event) => {
@@ -75,15 +122,12 @@ export function TryItPanel({ requestId, serverUrl, path }: Props) {
       );
       unlistenRef.current = unlisten;
 
-      await invoke('execute_request_by_id', {
-        request_id: requestId,
-        execution_id: executionId,
-      });
+      await invoke('execute_request_by_id', { requestId, executionId });
     } catch (err) {
       setExecError(err instanceof Error ? err.message : String(err));
       setExecuting(false);
     }
-  }, [requestId]);
+  }, [requestId, config]);
 
   if (!requestId) {
     return (
@@ -101,9 +145,31 @@ export function TryItPanel({ requestId, serverUrl, path }: Props) {
     );
   }
 
+  if (configLoading) {
+    return (
+      <Flex justify="center" style={{ padding: 20 }}>
+        <Spin size="small" />
+      </Flex>
+    );
+  }
+
   return (
     <div>
-      <Flex align="center" gap={8} style={{ marginBottom: 12 }}>
+      {/* URL + Execute */}
+      <Flex align="center" gap={8} style={{ marginBottom: 8 }}>
+        <Tag
+          style={{
+            color: '#fff',
+            background: METHOD_COLORS[method.toUpperCase()] ?? '#8c8c8c',
+            border: 'none',
+            fontWeight: 700,
+            fontSize: 11,
+            padding: '1px 6px',
+            marginInlineEnd: 0,
+          }}
+        >
+          {method.toUpperCase()}
+        </Tag>
         <div
           style={{
             flex: 1,
@@ -127,11 +193,64 @@ export function TryItPanel({ requestId, serverUrl, path }: Props) {
           onClick={handleExecute}
           loading={executing}
           size="small"
+          disabled={!config}
         >
           Execute
         </Button>
       </Flex>
 
+      {/* Editor Tabs */}
+      {config && (
+        <Tabs
+          activeKey={activeTab}
+          onChange={setActiveTab}
+          size="small"
+          items={[
+            {
+              key: 'body',
+              label: 'Body',
+              children: (
+                <BodyEditor
+                  body={config.body}
+                  onChange={(body) => updateConfig({ body })}
+                />
+              ),
+            },
+            {
+              key: 'params',
+              label: `Params${config.params.filter((p) => p.enabled).length ? ` (${config.params.filter((p) => p.enabled).length})` : ''}`,
+              children: (
+                <ParamsEditor
+                  params={config.params}
+                  onChange={(params) => updateConfig({ params })}
+                />
+              ),
+            },
+            {
+              key: 'headers',
+              label: `Headers${config.headers.filter((h) => h.enabled).length ? ` (${config.headers.filter((h) => h.enabled).length})` : ''}`,
+              children: (
+                <HeadersEditor
+                  headers={config.headers}
+                  onChange={(headers) => updateConfig({ headers })}
+                />
+              ),
+            },
+            {
+              key: 'auth',
+              label: 'Auth',
+              children: (
+                <AuthEditor
+                  auth={config.auth}
+                  onChange={(auth) => updateConfig({ auth })}
+                />
+              ),
+            },
+          ]}
+        />
+      )}
+
+      {/* Executing spinner */}
       {executing && (
         <Flex
           justify="center"
@@ -144,6 +263,7 @@ export function TryItPanel({ requestId, serverUrl, path }: Props) {
         </Flex>
       )}
 
+      {/* Error */}
       {execError && !executing && (
         <div
           style={{
@@ -159,12 +279,14 @@ export function TryItPanel({ requestId, serverUrl, path }: Props) {
         </div>
       )}
 
+      {/* Response */}
       {response && !executing && (
         <div
           style={{
             borderRadius: 6,
             border: '1px solid var(--ant-color-border)',
             overflow: 'hidden',
+            marginTop: 8,
           }}
         >
           <Flex

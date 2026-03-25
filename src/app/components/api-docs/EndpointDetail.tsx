@@ -231,7 +231,7 @@ export function EndpointDetail({ spec, path, method }: Props) {
       <Divider titlePlacement="start" style={{ marginTop: 8 }}>
         Try It
       </Divider>
-      <TryItPanel requestId={requestId} serverUrl={serverUrl} path={path} />
+      <TryItPanel requestId={requestId} serverUrl={serverUrl} path={path} method={method} />
     </div>
   );
 }

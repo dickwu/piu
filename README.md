@@ -14,6 +14,9 @@ Built with **Tauri 2.0** (Rust backend) + **React 19** + **Next.js** + **Ant Des
 - 🗃️ **JSON-based config storage** — Every request config stored as a JSON blob in SQLite
 - 🔢 **Version management** — Every change auto-increments a version number per entity with a full changelog
 - 🌍 **Environments & Variables** — `{{variable}}` interpolation across URLs, headers, and body; environment host + collection prefix build the full URL at execution time
+- 🎯 **Targeted Variables** — Each environment variable carries a `match_paths` glob pattern, `target_location` (header, URL param, URL path, body, auth bearer/basic/API key), `priority`, and optional `expires_at` TTL. Variables are injected only when the request path matches, with priority-based conflict resolution
+- ⚡ **Response Hooks** — Define hooks that fire after a request completes: extract a value from the response body (JSONPath) or a response header, optionally transform it with a template, and write it to one or more environment variables. Supports configurable TTL and array extraction strategies (first, last, pick)
+- 🔢 **Array Picker** — When a hook's JSONPath selector returns an array, a modal picker lets you choose which element to capture
 - ✏️ **Environment rename** — Rename environments inline with duplicate-name prevention
 - 🔗 **URL resolution** — Requests store only the path (e.g. `/users/123`); the full URL is `env host + collection prefix + path`. Missing host shows a config prompt before sending
 - 🔑 **Auth support** — Bearer token, Basic auth, API key
@@ -30,6 +33,7 @@ Built with **Tauri 2.0** (Rust backend) + **React 19** + **Next.js** + **Ant Des
 - 🧠 **LLM Search & Knowledge Graph** — FTS5 full-text search across all entity types with BM25 ranking. Auto-generated natural-language descriptions make every entity self-describing. MCP tools: `search_entities`, `find_related_entities`, `get_entity_detail`, `get_api_surface`, `get_project_summary`
 - 🔗 **Entity Relations & Backlinks** — Pre-computed relationship graph with bidirectional traversal (Obsidian-style backlinks). Ask "what uses this model?" and get endpoints, collections, and inheritance chains in one call
 - 🕸️ **Interactive API Graph** — Sigma.js v3 WebGL graph visualization of project entities (collections, requests, models) and their relationships (7 edge types). Louvain community detection with URL-prefix clustering. Overview/focus cluster navigation, ForceAtlas2 force-directed layout, curved Bezier edges, selection highlighting, path tracing (Shift+click), blast radius analysis, pulse/ripple/glow animations, dark/light theme, and keyboard shortcuts
+- 📄 **API Docs Try It** — In-app OpenAPI docs viewer with an editable Try It panel: edit Body, Params, Headers, and Auth directly in the docs pane, then execute the request and see the response inline
 
 ## Tech Stack
 
@@ -100,7 +104,7 @@ piu/
 │   └── app/
 │       ├── components/         # UI components (editors, viewers, modals, sidebar, graph)
 │       ├── hooks/              # React hooks (useSigma graph renderer)
-│       ├── stores/             # Zustand state stores (6 stores)
+│       ├── stores/             # Zustand state stores (7 stores: +hookStore)
 │       └── types/              # TypeScript types (mirrors Rust structs)
 └── src-tauri/                  # Rust backend
     └── src/
@@ -155,6 +159,27 @@ full URL = environment.host + collection.path_prefix + request.url
 ### Environment variables
 
 Create environments (Dev, Staging, Prod) and define `key=value` pairs. Variables are resolved at request-time using `{{variable}}` syntax in any field.
+
+Each variable also carries:
+- **`match_paths`** — a JSON array of glob patterns (e.g. `["api/auth/*"]`). The variable is only injected when the request path matches.
+- **`target_location`** — where to inject: `header`, `url-param`, `url-path`, `body`, `auth-bearer`, `auth-basic-user`, `auth-basic-pass`, `auth-apikey-name`, or `auth-apikey-value`.
+- **`priority`** — when multiple variables match the same target, higher priority wins.
+- **`expires_at`** — optional TTL. PIU emits a `variable-expired` warning toast when a stale variable is used.
+
+### Response hooks
+
+Hooks run automatically after a request completes and write extracted values into environment variables — useful for capturing auth tokens or session IDs without manual copy-paste.
+
+Each hook defines:
+- **Source request** — the request whose response to watch
+- **Response location** — `body` (JSONPath) or `header` (header name)
+- **Selector** — JSONPath expression (e.g. `$.data.access_token`) or header name
+- **Target variables** — one or more environment variables to update
+- **Value template** — transform the extracted value (default: `{{value}}`)
+- **TTL** — optional expiry duration; the captured variable's `expires_at` is set accordingly
+- **Array strategy** — when the selector returns an array: `first`, `last`, or `pick` (opens the array picker modal)
+
+The Refresh button on each hook executes the source request immediately and reports the captured value in a toast.
 
 ### Git commit tracking
 

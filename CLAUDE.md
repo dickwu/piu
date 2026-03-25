@@ -201,7 +201,7 @@ If Codex cannot be invoked during Phase 0 or Phase 2, do **not** self-validate. 
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **piu** (1679 symbols, 3943 relationships, 141 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **piu** (1836 symbols, 4340 relationships, 154 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

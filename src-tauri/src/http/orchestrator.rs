@@ -105,9 +105,7 @@ pub async fn orchestrate_request(
                     };
 
                     // 5. Capture api_path BEFORE prepending host (used for glob matching)
-                    let api_path = format!("{}{}", host.trim_start_matches('/'), path)
-                        .trim_start_matches('/')
-                        .to_string();
+                    let api_path = path.trim_start_matches('/').to_string();
 
                     config.url = format!("{}{}", host, path);
 

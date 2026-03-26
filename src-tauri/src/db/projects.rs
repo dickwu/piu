@@ -208,19 +208,55 @@ pub async fn delete_project(id: &str) -> DbResult<()> {
     conn.execute("DELETE FROM env_hook_targets WHERE hook_id IN (SELECT id FROM env_hooks WHERE environment_id IN (SELECT id FROM environments WHERE project_id = ?1))", turso::params![id]).await?;
     conn.execute("DELETE FROM env_hooks WHERE environment_id IN (SELECT id FROM environments WHERE project_id = ?1)", turso::params![id]).await?;
     conn.execute("DELETE FROM env_variables WHERE environment_id IN (SELECT id FROM environments WHERE project_id = ?1)", turso::params![id]).await?;
-    conn.execute("DELETE FROM graph_edges WHERE project_id = ?1", turso::params![id]).await?;
-    conn.execute("DELETE FROM graph_nodes WHERE project_id = ?1", turso::params![id]).await?;
-    conn.execute("DELETE FROM api_specs WHERE project_id = ?1", turso::params![id]).await?;
+    conn.execute(
+        "DELETE FROM graph_edges WHERE project_id = ?1",
+        turso::params![id],
+    )
+    .await?;
+    conn.execute(
+        "DELETE FROM graph_nodes WHERE project_id = ?1",
+        turso::params![id],
+    )
+    .await?;
+    conn.execute(
+        "DELETE FROM api_specs WHERE project_id = ?1",
+        turso::params![id],
+    )
+    .await?;
     conn.execute("DELETE FROM entity_relations WHERE source_id = ?1 OR source_id IN (SELECT id FROM collections WHERE project_id = ?1) OR source_id IN (SELECT id FROM api_requests WHERE project_id = ?1)", turso::params![id]).await?;
-    conn.execute("DELETE FROM entity_descriptions WHERE project_id = ?1", turso::params![id]).await?;
-    conn.execute("DELETE FROM data_models WHERE project_id = ?1", turso::params![id]).await?;
-    conn.execute("DELETE FROM api_requests WHERE project_id = ?1", turso::params![id]).await?;
-    conn.execute("DELETE FROM collections WHERE project_id = ?1", turso::params![id]).await?;
-    conn.execute("DELETE FROM environments WHERE project_id = ?1", turso::params![id]).await?;
-    conn.execute("DELETE FROM changelog WHERE entity_id = ?1", turso::params![id]).await?;
-    conn.execute("DELETE FROM projects WHERE id = ?1", turso::params![id]).await?;
-    conn.execute("PRAGMA foreign_keys = ON", ())
+    conn.execute(
+        "DELETE FROM entity_descriptions WHERE project_id = ?1",
+        turso::params![id],
+    )
+    .await?;
+    conn.execute(
+        "DELETE FROM data_models WHERE project_id = ?1",
+        turso::params![id],
+    )
+    .await?;
+    conn.execute(
+        "DELETE FROM api_requests WHERE project_id = ?1",
+        turso::params![id],
+    )
+    .await?;
+    conn.execute(
+        "DELETE FROM collections WHERE project_id = ?1",
+        turso::params![id],
+    )
+    .await?;
+    conn.execute(
+        "DELETE FROM environments WHERE project_id = ?1",
+        turso::params![id],
+    )
+    .await?;
+    conn.execute(
+        "DELETE FROM changelog WHERE entity_id = ?1",
+        turso::params![id],
+    )
+    .await?;
+    conn.execute("DELETE FROM projects WHERE id = ?1", turso::params![id])
         .await?;
+    conn.execute("PRAGMA foreign_keys = ON", ()).await?;
 
     drop(conn);
     super::changelog::insert_changelog("project", id, &name, version + 1, "Deleted project", None)

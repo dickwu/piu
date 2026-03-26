@@ -151,9 +151,12 @@ pub async fn build_openapi_spec(project_id: &str) -> Result<OpenApiSpecResult, S
 
             // Query parameters — skip for POST/PUT/PATCH when a request model is linked
             // (model fields replace query params as requestBody)
-            let has_request_model = config.get("requestModelId").and_then(Value::as_str).is_some();
-            let skip_query_params = has_request_model
-                && matches!(method.as_str(), "post" | "put" | "patch");
+            let has_request_model = config
+                .get("requestModelId")
+                .and_then(Value::as_str)
+                .is_some();
+            let skip_query_params =
+                has_request_model && matches!(method.as_str(), "post" | "put" | "patch");
             if !skip_query_params {
                 if let Some(params_arr) = config.get("params").and_then(Value::as_array) {
                     for param in params_arr {

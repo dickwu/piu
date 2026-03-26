@@ -149,34 +149,40 @@ pub async fn build_openapi_spec(project_id: &str) -> Result<OpenApiSpecResult, S
                 }));
             }
 
-            // Query parameters
-            if let Some(params_arr) = config.get("params").and_then(Value::as_array) {
-                for param in params_arr {
-                    let enabled = param
-                        .get("enabled")
-                        .and_then(Value::as_bool)
-                        .unwrap_or(true);
-                    if !enabled {
-                        continue;
+            // Query parameters — skip for POST/PUT/PATCH when a request model is linked
+            // (model fields replace query params as requestBody)
+            let has_request_model = config.get("requestModelId").and_then(Value::as_str).is_some();
+            let skip_query_params = has_request_model
+                && matches!(method.as_str(), "post" | "put" | "patch");
+            if !skip_query_params {
+                if let Some(params_arr) = config.get("params").and_then(Value::as_array) {
+                    for param in params_arr {
+                        let enabled = param
+                            .get("enabled")
+                            .and_then(Value::as_bool)
+                            .unwrap_or(true);
+                        if !enabled {
+                            continue;
+                        }
+                        let key = param
+                            .get("key")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .trim();
+                        if key.is_empty() {
+                            continue;
+                        }
+                        let value = param.get("value").and_then(Value::as_str).unwrap_or("");
+                        let mut p = Map::new();
+                        p.insert("name".into(), Value::String(key.to_string()));
+                        p.insert("in".into(), Value::String("query".into()));
+                        p.insert("required".into(), Value::Bool(false));
+                        p.insert("schema".into(), json!({"type": "string"}));
+                        if !value.is_empty() {
+                            p.insert("example".into(), Value::String(value.to_string()));
+                        }
+                        parameters.push(Value::Object(p));
                     }
-                    let key = param
-                        .get("key")
-                        .and_then(Value::as_str)
-                        .unwrap_or("")
-                        .trim();
-                    if key.is_empty() {
-                        continue;
-                    }
-                    let value = param.get("value").and_then(Value::as_str).unwrap_or("");
-                    let mut p = Map::new();
-                    p.insert("name".into(), Value::String(key.to_string()));
-                    p.insert("in".into(), Value::String("query".into()));
-                    p.insert("required".into(), Value::Bool(false));
-                    p.insert("schema".into(), json!({"type": "string"}));
-                    if !value.is_empty() {
-                        p.insert("example".into(), Value::String(value.to_string()));
-                    }
-                    parameters.push(Value::Object(p));
                 }
             }
 
@@ -584,42 +590,51 @@ fn build_request_body(config: &Value, models: &[db::DataModel]) -> Option<Value>
         .unwrap_or("GET")
         .to_uppercase();
 
-    // GET, HEAD, DELETE, OPTIONS typically have no body
+    // GET, HEAD, OPTIONS typically have no body
     if matches!(method.as_str(), "GET" | "HEAD" | "OPTIONS") {
         return None;
     }
 
+    // Check if there is a requestModelId linking to a schema — do this BEFORE
+    // the body early-return so a linked model always produces a requestBody.
+    let request_model_id = config.get("requestModelId").and_then(Value::as_str);
+
+    if let Some(model_id) = request_model_id {
+        let schema = if let Some(model) = models.iter().find(|m| m.id == model_id) {
+            json!({"$ref": format!("#/components/schemas/{}", model.name)})
+        } else {
+            json!({"type": "object"})
+        };
+        return Some(json!({
+            "required": true,
+            "content": {
+                "application/json": {
+                    "schema": schema
+                }
+            }
+        }));
+    }
+
+    // No model linked — fall back to body config
     let body = config.get("body")?;
     let body_type = body.get("type").and_then(Value::as_str).unwrap_or("none");
     let content_str = body.get("content").and_then(Value::as_str).unwrap_or("");
 
-    // Check if there is a requestModelId linking to a schema
-    let request_model_id = config.get("requestModelId").and_then(Value::as_str);
-
-    let schema: Value = if let Some(model_id) = request_model_id {
-        if let Some(model) = models.iter().find(|m| m.id == model_id) {
-            json!({"$ref": format!("#/components/schemas/{}", model.name)})
-        } else {
-            json!({"type": "object"})
-        }
-    } else {
-        match body_type {
-            "json" => {
-                // Try to infer schema from content
-                if content_str.is_empty() {
-                    json!({"type": "object"})
-                } else if let Ok(parsed) = serde_json::from_str::<Value>(content_str) {
-                    infer_schema_from_value(&parsed)
-                } else {
-                    json!({"type": "object"})
-                }
+    let schema: Value = match body_type {
+        "json" => {
+            if content_str.is_empty() {
+                json!({"type": "object"})
+            } else if let Ok(parsed) = serde_json::from_str::<Value>(content_str) {
+                infer_schema_from_value(&parsed)
+            } else {
+                json!({"type": "object"})
             }
-            "form" | "form-data" => json!({"type": "object"}),
-            "text" | "plain" => json!({"type": "string"}),
-            "xml" => json!({"type": "string", "format": "xml"}),
-            "binary" => json!({"type": "string", "format": "binary"}),
-            _ => return None,
         }
+        "form" | "form-data" => json!({"type": "object"}),
+        "text" | "plain" => json!({"type": "string"}),
+        "xml" => json!({"type": "string", "format": "xml"}),
+        "binary" => json!({"type": "string", "format": "binary"}),
+        _ => return None,
     };
 
     let media_type = match body_type {

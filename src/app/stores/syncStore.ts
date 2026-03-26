@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
-import type { SyncServerStatus, SyncResult } from '@/app/types';
+import type { SyncServerStatus, SyncResult, SyncCloneResult } from '@/app/types';
 
 interface SyncStore {
   serverStatus: SyncServerStatus;
@@ -16,6 +16,11 @@ interface SyncStore {
     joinKey: string,
     projectId: string,
   ) => Promise<SyncResult>;
+  clone: (
+    host: string,
+    port: number,
+    joinKey: string,
+  ) => Promise<SyncCloneResult>;
 }
 
 export const useSyncStore = create<SyncStore>((set) => ({
@@ -55,6 +60,24 @@ export const useSyncStore = create<SyncStore>((set) => ({
         input: { host, port, joinKey, projectId },
       });
       set({ lastResult: result, connecting: false });
+      return result;
+    } catch (error) {
+      set({ connecting: false });
+      throw error;
+    }
+  },
+
+  clone: async (
+    host: string,
+    port: number,
+    joinKey: string,
+  ) => {
+    set({ connecting: true });
+    try {
+      const result = await invoke<SyncCloneResult>('sync_clone', {
+        input: { host, port, joinKey },
+      });
+      set({ lastResult: result.sync_result, connecting: false });
       return result;
     } catch (error) {
       set({ connecting: false });

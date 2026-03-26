@@ -14,7 +14,7 @@ import { useSyncStore } from '../stores/syncStore';
 import { useProjectStore } from '../stores/projectStore';
 import { useCollectionStore } from '../stores/collectionStore';
 import { useEnvironmentStore } from '../stores/environmentStore';
-import type { SyncResult } from '../types';
+import type { SyncResult, SyncCloneResult } from '../types';
 
 interface SyncServerModalProps {
   open: boolean;
@@ -272,8 +272,8 @@ function HostPanel() {
 
 function ConnectPanel() {
   const { message } = App.useApp();
-  const { connecting, lastResult, connect } = useSyncStore();
-  const { projects, activeProjectId, loadProjects } = useProjectStore();
+  const { connecting, lastResult, connect, clone } = useSyncStore();
+  const { projects, activeProjectId, loadProjects, setActiveProject } = useProjectStore();
   const { loadCollections } = useCollectionStore();
   const { loadEnvironments } = useEnvironmentStore();
 
@@ -292,24 +292,30 @@ function ConnectPanel() {
       message.warning('Enter the join key');
       return;
     }
-    if (!projectId) {
-      message.warning('Select a local project to sync');
-      return;
-    }
     try {
-      const result = await connect(host.trim(), port, joinKey, projectId);
-      setSyncResult(result);
-      message.success('Sync completed');
-      // Reload stores to reflect synced data
-      await loadProjects();
       if (projectId) {
+        // Sync into existing project
+        const result = await connect(host.trim(), port, joinKey, projectId);
+        setSyncResult(result);
+        message.success('Sync completed');
+        await loadProjects();
         await loadCollections(projectId);
         await loadEnvironments(projectId);
+      } else {
+        // Clone from host — create new project
+        const cloneResult = await clone(host.trim(), port, joinKey);
+        setSyncResult(cloneResult.sync_result);
+        message.success(`Cloned project "${cloneResult.project_name}"`);
+        await loadProjects();
+        await setActiveProject(cloneResult.project_id);
+        await loadCollections(cloneResult.project_id);
+        await loadEnvironments(cloneResult.project_id);
+        setProjectId(cloneResult.project_id);
       }
     } catch (error) {
       message.error(`${error}`);
     }
-  }, [host, port, joinKey, projectId, connect, message, loadProjects, loadCollections, loadEnvironments]);
+  }, [host, port, joinKey, projectId, connect, clone, message, loadProjects, loadCollections, loadEnvironments, setActiveProject]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -348,11 +354,28 @@ function ConnectPanel() {
         <Select
           value={projectId}
           onChange={setProjectId}
-          placeholder="Select project to sync into"
+          allowClear
+          placeholder="Leave empty to create new from host"
           style={{ width: '100%' }}
           options={projects.map((p) => ({ label: p.name, value: p.id }))}
         />
       </div>
+
+      {!projectId && (
+        <div
+          style={{
+            padding: '8px 12px',
+            borderRadius: 6,
+            border: '1px solid #3b82f620',
+            background: '#3b82f610',
+            fontSize: 11,
+            color: '#8b8b99',
+            lineHeight: 1.5,
+          }}
+        >
+          A new project will be created using the host&apos;s project name.
+        </div>
+      )}
 
       <Button
         type="primary"
@@ -365,7 +388,7 @@ function ConnectPanel() {
         onMouseEnter={blueHover}
         onMouseLeave={blueLeave}
       >
-        {connecting ? 'Syncing...' : 'Sync Now'}
+        {connecting ? 'Syncing...' : projectId ? 'Sync Now' : 'Clone from Host'}
       </Button>
 
       {/* Result display */}

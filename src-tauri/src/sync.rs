@@ -35,6 +35,8 @@ pub struct HandshakeRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HandshakeResponse {
+    #[serde(default)]
+    pub project_id: String,
     pub project_name: String,
     pub entity_counts: EntityCounts,
     pub accepted: bool,
@@ -206,6 +208,7 @@ pub async fn handle_handshake(
 
     let _ = req; // acknowledged
     Ok(Json(HandshakeResponse {
+        project_id: state.project_id.clone(),
         project_name: project.name,
         entity_counts: EntityCounts {
             collections: collections.len() as u64,
@@ -468,7 +471,7 @@ pub async fn handle_push(
     }
 
     for r in &req.requests {
-        match upsert_request(r).await {
+        match upsert_request(r, &state.project_id).await {
             Ok(true) => accepted += 1,
             Ok(false) => rejected += 1,
             Err(e) => errors.push(format!("request {}: {}", r.id, e)),
@@ -548,6 +551,54 @@ pub fn create_sync_router(join_key: String, project_id: String) -> axum::Router 
 }
 
 // ============ Client Logic ============
+
+/// Lightweight handshake to discover remote project info without requiring a local project.
+pub async fn handshake_only(
+    host: &str,
+    port: u16,
+    join_key: &str,
+) -> Result<HandshakeResponse, String> {
+    let base_url = format!("http://{}:{}", host, port);
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+    let auth_header = format!("Bearer {}", join_key);
+
+    let handshake_req = HandshakeRequest {
+        project_name: String::new(),
+        entity_counts: EntityCounts {
+            collections: 0,
+            requests: 0,
+            environments: 0,
+            env_variables: 0,
+            data_models: 0,
+        },
+    };
+
+    let resp = client
+        .post(format!("{}/sync/handshake", base_url))
+        .header("authorization", &auth_header)
+        .json(&handshake_req)
+        .send()
+        .await
+        .map_err(|e| format!("Connection failed: {}", e))?;
+
+    if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
+        return Err("Invalid join key".to_string());
+    }
+    if !resp.status().is_success() {
+        let text = resp.text().await.unwrap_or_default();
+        return Err(format!("Handshake failed: {}", text));
+    }
+
+    let handshake: HandshakeResponse = resp.json().await.map_err(|e| e.to_string())?;
+    if !handshake.accepted {
+        return Err("Remote rejected the sync request".to_string());
+    }
+
+    Ok(handshake)
+}
 
 pub async fn sync_with_remote(
     host: &str,
@@ -725,7 +776,7 @@ pub async fn sync_with_remote(
     let local_req_ids: std::collections::HashSet<&str> =
         local_requests.iter().map(|r| r.id.as_str()).collect();
     for r in &pull_response.requests {
-        match upsert_request(r).await {
+        match upsert_request(r, local_project_id).await {
             Ok(true) => {
                 if local_req_ids.contains(r.id.as_str()) {
                     pulled_updated += 1;
@@ -1055,7 +1106,7 @@ async fn upsert_collection(col: &db::Collection, project_id: &str) -> Result<boo
     Ok(true)
 }
 
-async fn upsert_request(req: &db::ApiRequest) -> Result<bool, String> {
+async fn upsert_request(req: &db::ApiRequest, project_id: &str) -> Result<bool, String> {
     let conn = db::get_connection().map_err(|e| e.to_string())?;
     let conn = conn.lock().await;
 
@@ -1081,31 +1132,6 @@ async fn upsert_request(req: &db::ApiRequest) -> Result<bool, String> {
         }
     }
 
-    // Derive project_id: use the field on the wire payload if present.
-    // For backward compat with older peers that don't send project_id, fall back
-    // to looking up the collection's project_id when collection_id is available.
-    let project_id: Option<String> = if req.project_id.is_some() {
-        req.project_id.clone()
-    } else if let Some(ref col_id) = req.collection_id {
-        // collection was already upserted before requests, so it should exist
-        let mut rows = conn
-            .query(
-                "SELECT project_id FROM collections WHERE id = ?1",
-                turso::params![col_id.clone()],
-            )
-            .await
-            .map_err(|e| e.to_string())?;
-        let pid: Option<String> = if let Some(row) = rows.next().await.map_err(|e| e.to_string())? {
-            row.get::<Option<String>>(0).map_err(|e| e.to_string())?
-        } else {
-            None
-        };
-        drop(rows);
-        pid
-    } else {
-        None
-    };
-
     conn.execute(
         "INSERT INTO api_requests (id, collection_id, project_id, name, sort_order, config, version, created_at, updated_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
@@ -1121,7 +1147,7 @@ async fn upsert_request(req: &db::ApiRequest) -> Result<bool, String> {
         turso::params![
             req.id.clone(),
             req.collection_id.clone(),
-            project_id,
+            project_id.to_string(),
             req.name.clone(),
             req.sort_order,
             req.config.clone(),

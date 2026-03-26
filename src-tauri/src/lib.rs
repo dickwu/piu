@@ -186,6 +186,7 @@ pub fn run() {
             commands::stop_sync_server,
             commands::get_sync_server_status,
             commands::sync_connect,
+            commands::sync_clone,
             // OpenAPI commands
             commands::generate_openapi_spec,
             commands::get_openapi_spec,

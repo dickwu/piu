@@ -328,6 +328,12 @@ export interface SyncResult {
   errors: string[];
 }
 
+export interface SyncCloneResult {
+  project_id: string;
+  project_name: string;
+  sync_result: SyncResult;
+}
+
 export function parseSharedHeaders(json: string): KeyValuePair[] {
   try {
     const parsed = JSON.parse(json);

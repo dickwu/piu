@@ -83,6 +83,15 @@ export function TryItPanel({ requestId, serverUrl, path, method }: Props) {
     };
   }, []);
 
+  // Auto-switch to body tab for POST/PUT/PATCH when a model is linked
+  useEffect(() => {
+    if (!config?.requestModelId) return;
+    const m = method.toUpperCase();
+    if (m === 'POST' || m === 'PUT' || m === 'PATCH') {
+      setActiveTab('body');
+    }
+  }, [config?.requestModelId, method]);
+
   const updateConfig = useCallback((partial: Partial<RequestConfig>) => {
     setConfig((prev) => (prev ? { ...prev, ...partial } : prev));
   }, []);
@@ -213,6 +222,8 @@ export function TryItPanel({ requestId, serverUrl, path, method }: Props) {
                 <BodyEditor
                   body={config.body}
                   onChange={(body) => updateConfig({ body })}
+                  requestModelId={config.requestModelId}
+                  onModelChange={(modelId) => updateConfig({ requestModelId: modelId })}
                 />
               ),
             },

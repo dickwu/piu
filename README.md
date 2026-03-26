@@ -34,6 +34,8 @@ Built with **Tauri 2.0** (Rust backend) + **React 19** + **Next.js** + **Ant Des
 - 🔗 **Entity Relations & Backlinks** — Pre-computed relationship graph with bidirectional traversal (Obsidian-style backlinks). Ask "what uses this model?" and get endpoints, collections, and inheritance chains in one call
 - 🕸️ **Interactive API Graph** — Sigma.js v3 WebGL graph visualization of project entities (collections, requests, models) and their relationships (7 edge types). Louvain community detection with URL-prefix clustering. Overview/focus cluster navigation, ForceAtlas2 force-directed layout, curved Bezier edges, selection highlighting, path tracing (Shift+click), blast radius analysis, pulse/ripple/glow animations, dark/light theme, and keyboard shortcuts
 - 📄 **API Docs Try It** — In-app OpenAPI docs viewer with an editable Try It panel: edit Body, Params, Headers, and Auth directly in the docs pane, then execute the request and see the response inline
+- 🖊️ **Monaco JSON editor** — JSON body editing uses Monaco (VS Code's editor engine) in Raw mode with syntax highlighting and `vs-dark` theme; Form mode provides a structured field-by-field editor driven by the linked Data Model, with recursive object/array support and type badges
+- 🤖 **MCP server auto-start** — The MCP server starts automatically on port 3333 at launch so Claude and other MCP clients connect without manual setup
 
 ## Tech Stack
 
@@ -44,6 +46,7 @@ Built with **Tauri 2.0** (Rust backend) + **React 19** + **Next.js** + **Ant Des
 | Database | Turso SQLite (local, embedded) |
 | State | Zustand 5 |
 | UI | Ant Design 6 + Tailwind CSS 4 |
+| Editor | Monaco (VS Code engine) |
 | Graph | Sigma.js 3 + Graphology + ForceAtlas2 |
 | HTTP | reqwest 0.13 (Rust-side execution) |
 | Package manager | bun |

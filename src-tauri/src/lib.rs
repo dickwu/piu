@@ -110,6 +110,15 @@ pub fn run() {
                 }
             });
 
+            // Auto-start MCP server on port 3333
+            let mcp_app = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                match commands::start_mcp_server(mcp_app, 3333, None).await {
+                    Ok(url) => log::info!("MCP server auto-started at {}", url),
+                    Err(e) => log::warn!("MCP server auto-start failed: {}", e),
+                }
+            });
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

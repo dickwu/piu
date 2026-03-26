@@ -5878,13 +5878,14 @@ dependencies = [
 
 [[package]]
 name = "tauri-plugin-connector"
-version = "0.5.0"
-source = "git+https://github.com/dickwu/tauri-connector#8ad18902ef561137a912c00d59a6bc47516ecb07"
+version = "0.7.0"
+source = "git+https://github.com/dickwu/tauri-connector#6f411683715f83442687242b347a687c10ded42f"
 dependencies = [
  "axum",
  "base64 0.22.1",
  "futures-util",
  "image",
+ "regex",
  "serde",
  "serde_json",
  "tauri",

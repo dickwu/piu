@@ -201,7 +201,25 @@ pub async fn delete_project(id: &str) -> DbResult<()> {
     let version: i64 = row.get(1)?;
     drop(rows);
 
-    conn.execute("DELETE FROM projects WHERE id = ?1", turso::params![id])
+    // Disable FK enforcement to avoid Turso stack overflow on deep cascades.
+    // The self-referential collections FK (parent_id → collections.id) causes
+    // recursive cascade planning in turso_core::translate::fkeys that blows the stack.
+    conn.execute("PRAGMA foreign_keys = OFF", ()).await?;
+    conn.execute("DELETE FROM env_hook_targets WHERE hook_id IN (SELECT id FROM env_hooks WHERE environment_id IN (SELECT id FROM environments WHERE project_id = ?1))", turso::params![id]).await?;
+    conn.execute("DELETE FROM env_hooks WHERE environment_id IN (SELECT id FROM environments WHERE project_id = ?1)", turso::params![id]).await?;
+    conn.execute("DELETE FROM env_variables WHERE environment_id IN (SELECT id FROM environments WHERE project_id = ?1)", turso::params![id]).await?;
+    conn.execute("DELETE FROM graph_edges WHERE project_id = ?1", turso::params![id]).await?;
+    conn.execute("DELETE FROM graph_nodes WHERE project_id = ?1", turso::params![id]).await?;
+    conn.execute("DELETE FROM api_specs WHERE project_id = ?1", turso::params![id]).await?;
+    conn.execute("DELETE FROM entity_relations WHERE source_id = ?1 OR source_id IN (SELECT id FROM collections WHERE project_id = ?1) OR source_id IN (SELECT id FROM api_requests WHERE project_id = ?1)", turso::params![id]).await?;
+    conn.execute("DELETE FROM entity_descriptions WHERE project_id = ?1", turso::params![id]).await?;
+    conn.execute("DELETE FROM data_models WHERE project_id = ?1", turso::params![id]).await?;
+    conn.execute("DELETE FROM api_requests WHERE project_id = ?1", turso::params![id]).await?;
+    conn.execute("DELETE FROM collections WHERE project_id = ?1", turso::params![id]).await?;
+    conn.execute("DELETE FROM environments WHERE project_id = ?1", turso::params![id]).await?;
+    conn.execute("DELETE FROM changelog WHERE entity_id = ?1", turso::params![id]).await?;
+    conn.execute("DELETE FROM projects WHERE id = ?1", turso::params![id]).await?;
+    conn.execute("PRAGMA foreign_keys = ON", ())
         .await?;
 
     drop(conn);

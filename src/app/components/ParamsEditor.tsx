@@ -44,6 +44,9 @@ export function ParamsEditor({ params, onChange }: ParamsEditorProps) {
             value={param.key}
             onChange={(e) => updateParam(idx, 'key', e.target.value)}
             style={{ flex: 1 }}
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
           />
           <Input
             size="small"
@@ -52,6 +55,9 @@ export function ParamsEditor({ params, onChange }: ParamsEditorProps) {
             value={param.value}
             onChange={(e) => updateParam(idx, 'value', e.target.value)}
             style={{ flex: 1 }}
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
           />
           <Button
             size="small"

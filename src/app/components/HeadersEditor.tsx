@@ -44,6 +44,9 @@ export function HeadersEditor({ headers, onChange }: HeadersEditorProps) {
             value={header.key}
             onChange={(e) => updateHeader(idx, 'key', e.target.value)}
             style={{ flex: 1 }}
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
           />
           <Input
             size="small"
@@ -52,6 +55,9 @@ export function HeadersEditor({ headers, onChange }: HeadersEditorProps) {
             value={header.value}
             onChange={(e) => updateHeader(idx, 'value', e.target.value)}
             style={{ flex: 1 }}
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
           />
           <Button
             size="small"

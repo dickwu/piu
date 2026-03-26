@@ -40,6 +40,9 @@ export function AuthEditor({ auth, onChange }: AuthEditorProps) {
             placeholder="Bearer token (supports {{variables}})"
             value={auth.token ?? ''}
             onChange={(e) => onChange({ ...auth, token: e.target.value })}
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
           />
         </div>
       )}
@@ -55,6 +58,9 @@ export function AuthEditor({ auth, onChange }: AuthEditorProps) {
               placeholder="Username"
               value={auth.username ?? ''}
               onChange={(e) => onChange({ ...auth, username: e.target.value })}
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
             />
           </div>
           <div className="flex items-center gap-2">
@@ -85,6 +91,9 @@ export function AuthEditor({ auth, onChange }: AuthEditorProps) {
               onChange={(e) =>
                 onChange({ ...auth, header_name: e.target.value })
               }
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
             />
           </div>
           <div className="flex items-center gap-2">
@@ -99,6 +108,9 @@ export function AuthEditor({ auth, onChange }: AuthEditorProps) {
               onChange={(e) =>
                 onChange({ ...auth, header_value: e.target.value })
               }
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
             />
           </div>
         </>

@@ -26,7 +26,7 @@ Built with **Tauri 2.0** (Rust backend) + **React 19** + **Next.js** + **Ant Des
 - 🧬 **Model Inheritance** — Single-parent inheritance + multi-mixin composition. Fields resolve via strict linearization (parent chain → mixins → own). Cycle detection prevents circular references. Side-by-side diff modal compares parent-child fields or version history
 - 🤖 **MCP Server** — 46 built-in tools let Claude (or any MCP client) create projects, send requests, manage collections, search the knowledge graph, and query data model relationships — including a Mermaid class diagram generator, sync status tracking, and OpenAPI spec generation
 - 📦 **Move requests freely** — Right-click any request to move it between collections or to project root via a tree picker. Moving the last request out of a collection prompts to delete the empty collection
-- 🔄 **PIU-to-PIU Sync** — Sync projects between PIU instances over LAN. One hosts, another connects with IP + port + shared join key. Last-writer-wins conflict resolution via version fields
+- 🔄 **PIU-to-PIU Sync** — Sync projects between PIU instances over LAN. One hosts, another connects with IP + port + shared join key. Last-writer-wins conflict resolution via version fields. **Clone from Host** lets a connecting instance create a new local project automatically — no pre-existing project required
 - 🔗 **Git Commit Tracking** — Projects, collections, and requests track their source git repo URL, commit SHA, and backend framework type. The `get_sync_status` MCP tool detects stale entities by comparing per-entity commit IDs against the project-level commit
 - 🛠️ **Backend Sync Skill** — A Claude Code skill that clones a backend repo, detects the framework (Express, FastAPI, Django, Gin, Axum, etc.), extracts routes, and creates PIU projects/collections/requests via MCP — all tagged with the source commit SHA
 - 🔍 **Frontend Sync Skill** — A Claude Code skill that scans a frontend repo for HTTP API calls and cross-references them against a PIU project to find mismatches, missing endpoints, and type contract violations
@@ -102,7 +102,8 @@ piu/
 ├── skills/                     # Claude Code skills (installable via skills.sh)
 │   ├── piu-mcp/SKILL.md        # Full MCP toolkit (46 tools)
 │   ├── piu-backend-sync/SKILL.md   # Import backend routes into PIU
-│   └── piu-frontend-sync/SKILL.md  # Validate frontend API calls against PIU
+│   ├── piu-frontend-sync/SKILL.md  # Validate frontend API calls against PIU
+│   └── piu-hyperf-sync/SKILL.md    # Deep-sync Hyperf PHP backends (routes, DTOs, middleware)
 ├── src/                        # React/Next.js frontend
 │   └── app/
 │       ├── components/         # UI components (editors, viewers, modals, sidebar, graph)
@@ -210,10 +211,11 @@ npx skills add dickwu/piu
 #### Manual installation
 
 ```bash
-mkdir -p .claude/skills/piu-mcp .claude/skills/piu-backend-sync .claude/skills/piu-frontend-sync
+mkdir -p .claude/skills/piu-mcp .claude/skills/piu-backend-sync .claude/skills/piu-frontend-sync .claude/skills/piu-hyperf-sync
 cp skills/piu-mcp/SKILL.md .claude/skills/piu-mcp/SKILL.md
 cp skills/piu-backend-sync/SKILL.md .claude/skills/piu-backend-sync/SKILL.md
 cp skills/piu-frontend-sync/SKILL.md .claude/skills/piu-frontend-sync/SKILL.md
+cp skills/piu-hyperf-sync/SKILL.md .claude/skills/piu-hyperf-sync/SKILL.md
 ```
 
 Once installed, Claude Code auto-activates them based on trigger keywords.
@@ -247,6 +249,16 @@ Validate a frontend repo's API calls against a PIU project. Trigger with `sync f
 2. Cross-references against PIU routes by method + path
 3. Reports: **matched**, **missing in PIU** (undocumented calls), **missing in frontend** (dead endpoints), **type mismatches**
 4. Optional auto-fix: creates missing PIU requests and models from TypeScript interfaces
+
+#### Hyperf sync (`skills/piu-hyperf-sync/`)
+
+Deep-sync a Hyperf PHP backend to PIU. Trigger with `sync hyperf`, `import hyperf`, or when `piu-backend-sync` detects `framework: hyperf`.
+
+1. Extracts routes via `php bin/hyperf.php describe:routes` CLI
+2. Parses controller validation rules and response shapes for request/response models
+3. Builds Eloquent model schemas and maps middleware to PIU auth types
+4. Manifest-based incremental re-sync — only processes routes changed since last run
+5. Creates PIU entities tagged with source commit SHA for drift detection
 
 ## Releasing
 

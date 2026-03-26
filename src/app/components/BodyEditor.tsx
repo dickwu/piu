@@ -2,12 +2,14 @@
 
 import { Segmented, Input, Button, App, Flex, Dropdown } from 'antd';
 import { ThunderboltOutlined, UnorderedListOutlined, CheckCircleOutlined } from '@ant-design/icons';
-import { useState, useMemo, useRef } from 'react';
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import Editor, { type OnMount } from '@monaco-editor/react';
 import type { RequestBody } from '../types';
 import { useModelStore } from '../stores/modelStore';
 import { ModelSelector } from './shared/ModelSelector';
 import { resolveModelFields } from '../utils/modelResolution';
 import { validateJsonAgainstModel } from '../utils/modelValidation';
+import { BodyFormEditor } from './BodyFormEditor';
 
 const { TextArea } = Input;
 
@@ -38,12 +40,27 @@ export function BodyEditor({ body, onChange, requestModelId, onModelChange }: Bo
   const models = useModelStore((s) => s.models);
   const generateJson = useModelStore((s) => s.generateJson);
   const [generating, setGenerating] = useState(false);
+  const [viewMode, setViewMode] = useState<'form' | 'raw'>('form');
   const textAreaRef = useRef<any>(null);
+  const editorRef = useRef<any>(null);
+
+  const handleEditorMount: OnMount = useCallback((editor) => {
+    editorRef.current = editor;
+  }, []);
 
   const resolvedFields = useMemo(() => {
     if (!requestModelId) return [];
     return resolveModelFields(requestModelId, models);
   }, [requestModelId, models]);
+
+  // Auto-switch to form view for JSON body type
+  useEffect(() => {
+    if (body.type === 'json') {
+      setViewMode('form');
+    } else {
+      setViewMode('raw');
+    }
+  }, [body.type]);
 
   const validationIssues = useMemo(() => {
     if (!requestModelId || body.type !== 'json' || !body.content.trim()) return [];
@@ -68,6 +85,21 @@ export function BodyEditor({ body, onChange, requestModelId, onModelChange }: Bo
     const defaultValue = getDefaultValue(field.field_type, field.example);
     const insertion = `"${field.name}": ${defaultValue}`;
 
+    // Monaco editor (JSON raw mode)
+    const editor = editorRef.current;
+    if (editor) {
+      const selection = editor.getSelection();
+      if (selection) {
+        editor.executeEdits('insert-field', [{
+          range: selection,
+          text: insertion,
+          forceMoveMarkers: true,
+        }]);
+      }
+      return;
+    }
+
+    // TextArea fallback (text mode)
     const textarea = textAreaRef.current?.resizableTextArea?.textArea;
     if (textarea) {
       const start = textarea.selectionStart;
@@ -75,7 +107,6 @@ export function BodyEditor({ body, onChange, requestModelId, onModelChange }: Bo
       const after = body.content.slice(start);
       onChange({ ...body, content: before + insertion + after });
     } else {
-      // Fallback: append
       const content = body.content.trimEnd();
       const separator = content.endsWith('{') || !content ? '' : ',\n  ';
       onChange({ ...body, content: content + separator + insertion });
@@ -103,7 +134,7 @@ export function BodyEditor({ body, onChange, requestModelId, onModelChange }: Bo
             Generate
           </Button>
         )}
-        {requestModelId && resolvedFields.length > 0 && (
+        {viewMode === 'raw' && requestModelId && resolvedFields.length > 0 && (
           <Dropdown
             trigger={['click']}
             menu={{
@@ -129,7 +160,7 @@ export function BodyEditor({ body, onChange, requestModelId, onModelChange }: Bo
             <Button size="small" icon={<UnorderedListOutlined />}>Fields</Button>
           </Dropdown>
         )}
-        {requestModelId && resolvedFields.length > 0 && body.content.trim() && (
+        {viewMode === 'raw' && requestModelId && resolvedFields.length > 0 && body.content.trim() && (
           <>
             {validationIssues.length === 0 ? (
               <span style={{ fontSize: 12, color: 'var(--success)' }}>
@@ -145,7 +176,7 @@ export function BodyEditor({ body, onChange, requestModelId, onModelChange }: Bo
           </>
         )}
       </Flex>
-      {validationIssues.length > 0 && (
+      {viewMode === 'raw' && validationIssues.length > 0 && (
         <div style={{
           padding: '6px 10px',
           borderRadius: 6,
@@ -159,33 +190,86 @@ export function BodyEditor({ body, onChange, requestModelId, onModelChange }: Bo
           ))}
         </div>
       )}
-      <Segmented
-        size="small"
-        value={body.type}
-        onChange={(type) => onChange({ ...body, type: type as 'json' | 'text' })}
-        options={[
-          { label: 'JSON', value: 'json' },
-          { label: 'Text', value: 'text' },
-        ]}
-      />
-      <TextArea
-        ref={textAreaRef}
-        value={body.content}
-        onChange={(e) => onChange({ ...body, content: e.target.value })}
-        placeholder={
-          body.type === 'json'
-            ? '{\n  "key": "value"\n}'
-            : 'Enter raw text body...'
-        }
-        autoSize={{ minRows: 6, maxRows: 16 }}
-        className="input-depth"
-        style={{
-          fontFamily: 'var(--font-code)',
-          fontSize: 13,
-          lineHeight: 1.6,
-          letterSpacing: '-0.01em',
-        }}
-      />
+      <Flex align="center" gap={8}>
+        <Segmented
+          size="small"
+          value={body.type}
+          onChange={(type) => onChange({ ...body, type: type as 'json' | 'text' })}
+          options={[
+            { label: 'JSON', value: 'json' },
+            { label: 'Text', value: 'text' },
+          ]}
+        />
+        {body.type === 'json' && (
+          <Segmented
+            size="small"
+            value={viewMode}
+            onChange={(v) => setViewMode(v as 'form' | 'raw')}
+            options={[
+              { label: 'Form', value: 'form' },
+              { label: 'Raw', value: 'raw' },
+            ]}
+          />
+        )}
+      </Flex>
+      {viewMode === 'form' && body.type === 'json' ? (
+        <BodyFormEditor
+          fields={resolvedFields}
+          jsonContent={body.content}
+          onChange={(content) => onChange({ ...body, content })}
+        />
+      ) : body.type === 'json' ? (
+        <div style={{
+          borderRadius: 6,
+          overflow: 'hidden',
+          border: '1px solid var(--ant-color-border)',
+        }}>
+          <Editor
+            height={240}
+            defaultLanguage="json"
+            value={body.content}
+            onChange={(value) => onChange({ ...body, content: value ?? '' })}
+            onMount={handleEditorMount}
+            theme="vs-dark"
+            options={{
+              minimap: { enabled: false },
+              fontSize: 13,
+              fontFamily: "'SF Mono', 'Fira Code', 'JetBrains Mono', monospace",
+              lineNumbers: 'off',
+              scrollBeyondLastLine: false,
+              automaticLayout: true,
+              tabSize: 2,
+              wordWrap: 'on',
+              padding: { top: 8, bottom: 8 },
+              renderLineHighlight: 'none',
+              overviewRulerBorder: false,
+              hideCursorInOverviewRuler: true,
+              scrollbar: {
+                verticalScrollbarSize: 6,
+                horizontalScrollbarSize: 6,
+              },
+            }}
+          />
+        </div>
+      ) : (
+        <TextArea
+          ref={textAreaRef}
+          value={body.content}
+          onChange={(e) => onChange({ ...body, content: e.target.value })}
+          placeholder="Enter raw text body..."
+          autoSize={{ minRows: 6, maxRows: 16 }}
+          className="input-depth"
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
+          style={{
+            fontFamily: 'var(--font-code)',
+            fontSize: 13,
+            lineHeight: 1.6,
+            letterSpacing: '-0.01em',
+          }}
+        />
+      )}
     </div>
   );
 }

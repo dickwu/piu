@@ -88,6 +88,7 @@ pub async fn get_sync_server_status() -> serde_json::Value {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SyncConnectInput {
     pub host: String,
     pub port: u16,
@@ -108,6 +109,7 @@ pub struct SyncCloneResult {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SyncCloneInput {
     pub host: String,
     pub port: u16,

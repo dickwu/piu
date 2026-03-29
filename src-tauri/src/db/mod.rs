@@ -568,6 +568,6 @@ pub use search::{rebuild_search_index, search_entities, SearchResult};
 
 // Re-export hook functions
 pub use hooks::{
-    create_hook, delete_hook, find_hook_for_variable, list_hook_targets, list_hooks, update_hook,
-    update_hook_last_executed,
+    create_hook, delete_hook, find_hook_for_variable, get_hook_by_id, list_hook_targets,
+    list_hooks, update_hook, update_hook_last_executed,
 };

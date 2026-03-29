@@ -462,12 +462,12 @@ Save the returned `environment_id`, then set variables:
 
 ```bash
 $PIU_CLI set-vars '{"environment_id":"ENV_ID","variables":[
-  {"key":"staff_token","value":"","enabled":true},
-  {"key":"admin_token","value":"","enabled":true},
-  {"key":"patient_token","value":"","enabled":true},
-  {"key":"pre_token","value":"","enabled":true},
-  {"key":"reception_token","value":"","enabled":true},
-  {"key":"checkin_token","value":"","enabled":true}
+  {"key":"staff_token","value":"","enabled":true,"match_paths":"[\"*\"]","target_location":"auth-bearer"},
+  {"key":"admin_token","value":"","enabled":true,"match_paths":"[\"/admin/*\"]","target_location":"auth-bearer"},
+  {"key":"patient_token","value":"","enabled":true,"match_paths":"[\"/patient/*\"]","target_location":"auth-bearer"},
+  {"key":"pre_token","value":"","enabled":true,"match_paths":"[\"/pre/*\"]","target_location":"auth-bearer"},
+  {"key":"reception_token","value":"","enabled":true,"match_paths":"[\"/reception/*\"]","target_location":"auth-bearer"},
+  {"key":"checkin_token","value":"","enabled":true,"match_paths":"[\"/appointment/*\"]","target_location":"auth-bearer"}
 ]}'
 ```
 
@@ -476,7 +476,32 @@ Activate the environment:
 $PIU_CLI activate-env '{"environment_id":"ENV_ID","project_id":"PROJECT_ID"}'
 ```
 
-### Step 4.3 — Batch-create collections
+### Step 4.3 — Create auth token hooks
+
+After creating variables, set up hooks so that executing login requests automatically captures tokens into the corresponding variables. The `set-vars` response includes variable records with stable IDs — use these IDs for hook targets.
+
+For each auth middleware type that has a login endpoint, create a hook:
+
+```bash
+# Example: staff login hook — captures body.data.token into staff_token variable
+$PIU_CLI tool create_hook '{"environment_id":"ENV_ID","source_request_id":"STAFF_LOGIN_REQ_ID","response_location":"body","selector":"data.token","target_variable_ids":["STAFF_TOKEN_VAR_ID"],"expires_in":86400000,"value_template":"{{value}}"}'
+
+# Example: admin login hook
+$PIU_CLI tool create_hook '{"environment_id":"ENV_ID","source_request_id":"ADMIN_LOGIN_REQ_ID","response_location":"body","selector":"data.token","target_variable_ids":["ADMIN_TOKEN_VAR_ID"],"expires_in":86400000,"value_template":"{{value}}"}'
+```
+
+**How to find the login request IDs:** After creating requests in Step 4.4, search for login endpoints:
+```bash
+$PIU_CLI search PROJECT_ID "login"
+```
+
+**How to find variable IDs:** The `set-vars` response now returns full variable records including IDs. Cache these during Step 4.2.
+
+**expires_in** is in milliseconds (86400000 = 24 hours).
+
+Hook workflow: when a login request is executed (either via PIU UI or MCP `execute_request`), the hook automatically extracts `data.token` from the response body and writes it to the target variable. Subsequent requests using `{{staff_token}}` etc. get the captured value automatically.
+
+### Step 4.4 — Batch-create collections
 
 Write one JSON array with all collections and pipe to the batch command:
 
@@ -498,7 +523,7 @@ EOF
 
 Save the returned collection IDs — map each `path_prefix` to its `collection_id`.
 
-### Step 4.4 — Batch-create requests
+### Step 4.5 — Batch-create requests
 
 For each collection, write a JSON file with all its routes and pipe to batch-requests.
 
@@ -533,7 +558,7 @@ Strip the collection prefix from the URL. Example: route URI `/user/task/create`
 
 **Auth config per request:** Use the middleware mapping from Phase 1. For collections with mixed middleware (like Patient), set auth per-request based on each route's specific middleware.
 
-### Step 4.5 — Batch-create models
+### Step 4.6 — Batch-create models
 
 ```bash
 cat <<'EOF' | $PIU_CLI batch-models
@@ -552,7 +577,7 @@ Create in order: base models -> entity models -> request models -> response mode
 
 Save all returned model IDs — map each model name to its `model_id`.
 
-### Step 4.6 — Batch-link models to requests
+### Step 4.7 — Batch-link models to requests
 
 ```bash
 cat <<'EOF' | $PIU_CLI batch-links
@@ -565,7 +590,7 @@ EOF
 
 Each request gets up to two links: one request model and one response model.
 
-### Step 4.7 — Create "System Events" collection
+### Step 4.8 — Create "System Events" collection
 
 ```bash
 $PIU_CLI create-collection '{"project_id":"PROJECT_ID","name":"System Events","path_prefix":"","description":"Non-executable reference — documents Redis pub/sub events, async queue jobs, and webhook callbacks triggered by API endpoints"}'

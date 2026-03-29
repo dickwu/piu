@@ -1,7 +1,7 @@
 ---
 name: piu-mcp
 description: >
-  Full PIU API management toolkit — 46 MCP tools for managing projects, collections,
+  Full PIU API management toolkit — 57 MCP tools for managing projects, collections,
   requests, environments, data models, execution, search, sync, and OpenAPI generation.
   Use this skill whenever you need to interact with PIU — whether creating projects,
   sending API requests, managing environments, querying the knowledge graph, generating
@@ -11,7 +11,7 @@ description: >
 
 # PIU MCP Toolkit
 
-PIU exposes 46 MCP tools via Streamable HTTP at `http://127.0.0.1:3333/mcp`. The CLI handles session management automatically.
+PIU exposes 57 MCP tools via Streamable HTTP at `http://127.0.0.1:3333/mcp`. The CLI handles session management automatically.
 
 ## Prerequisites
 
@@ -84,7 +84,7 @@ bun scripts/piu.ts search <project_id> <query> [method]
 
 URL resolution: `env.host + collection.path_prefix + request.url`
 
-## Environments (7 tools)
+## Environments (8 tools)
 
 ```bash
 bun scripts/piu.ts list-envs <project_id>
@@ -97,7 +97,48 @@ bun scripts/piu.ts get-vars <environment_id>
 bun scripts/piu.ts set-vars '{"environment_id":"...","variables":[{"key":"token","value":"abc","enabled":true}]}'
 ```
 
+`set-vars` uses upsert-by-key: existing variables with matching keys are updated (preserving their IDs and hook associations), new keys are inserted, absent keys are deleted. Returns full variable records with IDs.
+
 Activate an environment before executing requests — it sets the host URL for URL resolution.
+
+## Hooks (5 tools)
+
+Response hooks auto-extract values from HTTP responses and write them to environment variables. Use these to set up auth token flows (e.g., login → extract token → set variable).
+
+```bash
+bun scripts/piu.ts tool create_hook '{"environment_id":"...","source_request_id":"LOGIN_REQ_ID","response_location":"body","selector":"data.token","target_variable_ids":["VAR_ID_1","VAR_ID_2"],"expires_in":3600000,"array_strategy":"first"}'
+bun scripts/piu.ts tool list_hooks '{"environment_id":"..."}'
+bun scripts/piu.ts tool get_hook '{"hook_id":"..."}'
+bun scripts/piu.ts tool update_hook '{"hook_id":"...","selector":"data.access_token","enabled":true}'
+bun scripts/piu.ts tool delete_hook '{"hook_id":"..."}'
+```
+
+### Hook fields
+
+- **source_request_id** — The request whose response triggers extraction
+- **response_location** — `"body"` (JSONPath on response body) or `"header"` (header name)
+- **selector** — JSONPath expression (e.g. `data.token`) or header name
+- **target_variable_ids** — Variable IDs to update with extracted value (get IDs from `set-vars` response)
+- **value_template** — Transform template, default `"{{value}}"`
+- **expires_in** — TTL in **milliseconds** (e.g. 3600000 = 1 hour). Sets variable `expires_at`
+- **array_strategy** — `"pick"` (UI picker), `"first"`, or `"last"`. Note: only `"pick"` is fully implemented in the UI; `"first"`/`"last"` are stored but not yet executed at runtime
+
+### Hook workflow
+
+1. Create variables via `set-vars` (returns variable records with stable IDs)
+2. Create hook pointing source request → target variables
+3. Execute source request via MCP — hooks fire automatically and update target variables
+4. Subsequent requests using `{{variable}}` get the extracted values
+
+## Variables (1 tool)
+
+Update a single variable without replacing all variables in the environment.
+
+```bash
+bun scripts/piu.ts tool update_variable '{"variable_id":"...","value":"new-token","match_paths":"[\"/admin/*\"]","target_location":"auth-bearer"}'
+```
+
+Fields: `value`, `match_paths` (JSON array of globs), `target_location` (header, url-param, url-path, body, auth-bearer, auth-basic-username, auth-basic-password, auth-custom), `expires_at` (epoch ms), `priority` (integer), `enabled` (boolean). All optional — only provided fields are updated.
 
 ## Data Models (11 tools)
 
@@ -147,7 +188,7 @@ bun scripts/piu.ts request-models <request_id>    # Get linked request + respons
 bun scripts/piu.ts execute <request_id>
 ```
 
-Resolves URL (`env.host + collection.prefix + request.url`), interpolates `{{variables}}`, injects auth, sends HTTP via reqwest, and returns status, headers, body, timing.
+Resolves URL (`env.host + collection.prefix + request.url`), interpolates `{{variables}}`, injects auth, sends HTTP via reqwest, and returns status, headers, body, timing. Execute resolves variables, injects auth, sends the request, and **fires response hooks** — any hook whose source request matches will extract values and update target variables automatically.
 
 ### Batch verification
 
@@ -230,14 +271,15 @@ bun scripts/piu.ts tool <tool_name> '<json_args>'
 bun scripts/piu.ts tool search_entities '{"query":"auth","entity_type":"request"}'
 ```
 
-## All 46 MCP Tools
+## All 57 MCP Tools
 
 | Domain | Tools |
 |--------|-------|
 | Projects (6) | `list_projects`, `get_project`, `get_project_overview`, `create_project`, `update_project`, `delete_project` |
 | Collections (5) | `list_collections`, `get_collection`, `create_collection`, `update_collection`, `delete_collection` |
 | Requests (6) | `list_requests`, `get_request`, `create_request`, `update_request`, `delete_request`, `duplicate_request` |
-| Environments (7) | `list_environments`, `get_environment`, `create_environment`, `update_environment`, `delete_environment`, `set_active_environment`, `list_env_variables`, `set_env_variables` |
+| Environments (8) | `list_environments`, `get_environment`, `create_environment`, `update_environment`, `delete_environment`, `set_active_environment`, `list_env_variables`, `set_env_variables`, `update_variable` |
+| Hooks (5) | `create_hook`, `list_hooks`, `get_hook`, `update_hook`, `delete_hook` |
 | Models (8) | `list_models`, `get_model`, `create_model`, `update_model`, `delete_model`, `generate_body_from_model`, `validate_response_against_model`, `resolve_model_fields` |
 | Model Batch (2) | `batch_create_models`, `batch_link_models` |
 | Model Relations (3) | `get_model_relations`, `get_model_hierarchy`, `get_model_diagram` |

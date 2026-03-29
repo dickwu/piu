@@ -409,6 +409,102 @@ struct BatchLinkModelsParam {
     links: String,
 }
 
+#[derive(Deserialize, JsonSchema)]
+struct CreateHookParam {
+    #[schemars(
+        description = "Environment ID this hook belongs to. The hook, source request, and target variables must all belong to the same project as this environment."
+    )]
+    environment_id: String,
+    #[schemars(
+        description = "Request ID whose response triggers this hook. When this request is executed, the hook extracts a value from the response and writes it to the target variables."
+    )]
+    source_request_id: String,
+    #[schemars(
+        description = "Where to extract from: 'body' (JSONPath on response body) or 'header' (header name)"
+    )]
+    response_location: String,
+    #[schemars(
+        description = "Extraction selector. For body: a dot-path like 'data.token' or 'data.items[0].id'. For header: the header name like 'Authorization'."
+    )]
+    selector: String,
+    #[schemars(
+        description = "Template applied to the extracted value. Use {{value}} as placeholder. Default: '{{value}}'. Example: 'Bearer {{value}}'."
+    )]
+    #[serde(default = "hook_default_value_template")]
+    value_template: String,
+    #[schemars(
+        description = "How long the extracted value is valid, in milliseconds. After this period, the variable is marked expired. Null = never expires."
+    )]
+    expires_in: Option<i64>,
+    #[schemars(
+        description = "Strategy when selector matches an array: 'pick' (show UI picker — default, only works in desktop UI), 'first' (take first element), 'last' (take last element). Note: only 'pick' is currently implemented in the UI runtime; 'first' and 'last' are stored but not yet executed automatically."
+    )]
+    #[serde(default = "hook_default_array_strategy")]
+    array_strategy: String,
+    #[schemars(
+        description = "List of variable IDs to write the extracted value into. All variables must belong to the same project as the environment."
+    )]
+    target_variable_ids: Vec<String>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct HookIdParam {
+    #[schemars(description = "The hook's unique ID")]
+    hook_id: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct UpdateHookParam {
+    #[schemars(description = "The hook's unique ID")]
+    hook_id: String,
+    #[schemars(description = "New source request ID")]
+    source_request_id: Option<String>,
+    #[schemars(description = "New response location: 'body' or 'header'")]
+    response_location: Option<String>,
+    #[schemars(description = "New extraction selector")]
+    selector: Option<String>,
+    #[schemars(description = "New value template")]
+    value_template: Option<String>,
+    #[schemars(description = "New expiration in milliseconds (null to clear)")]
+    expires_in: Option<Option<i64>>,
+    #[schemars(description = "New array strategy: 'pick', 'first', or 'last'")]
+    array_strategy: Option<String>,
+    #[schemars(description = "Enable or disable the hook")]
+    enabled: Option<bool>,
+    #[schemars(description = "Replace target variable IDs (all must belong to same project)")]
+    target_variable_ids: Option<Vec<String>>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct UpdateVariableParam {
+    #[schemars(description = "The variable's unique ID")]
+    variable_id: String,
+    #[schemars(description = "New variable value")]
+    value: Option<String>,
+    #[schemars(
+        description = "New match_paths as JSON array string, e.g. '[\"users/*\", \"auth/*\"]'"
+    )]
+    match_paths: Option<String>,
+    #[schemars(
+        description = "New target location: 'header', 'url-param', 'body', 'url-path', 'auth-bearer', etc."
+    )]
+    target_location: Option<String>,
+    #[schemars(description = "New expiration as epoch ms (null to clear)")]
+    expires_at: Option<Option<i64>>,
+    #[schemars(description = "New priority (higher wins in conflicts)")]
+    priority: Option<i64>,
+    #[schemars(description = "Enable or disable the variable")]
+    enabled: Option<bool>,
+}
+
+fn hook_default_value_template() -> String {
+    "{{value}}".to_string()
+}
+
+fn hook_default_array_strategy() -> String {
+    "pick".to_string()
+}
+
 // ============ Helper Functions ============
 
 fn mcp_err(msg: impl std::fmt::Display) -> McpError {
@@ -1147,6 +1243,43 @@ impl PiuMcp {
         // Parse raw config for model ID fields not in the typed struct
         let raw_config = parse_config(&req.config);
 
+        // Find hooks associated with the variables used by this request
+        let mut hooks_associated: Vec<serde_json::Value> = Vec::new();
+        if let Some(pid) = project_id {
+            if let Ok(Some(env)) = db::get_active_environment(pid).await {
+                if let Ok(vars) = db::list_env_variables(&env.id).await {
+                    // Build a set of variable IDs whose keys match variables_used
+                    for var in &vars {
+                        if variables_used.contains(&var.key) {
+                            if let Ok(Some(hook)) = db::find_hook_for_variable(&var.id).await {
+                                // Avoid duplicate hook entries
+                                if !hooks_associated.iter().any(|h| {
+                                    h.get("hook_id").and_then(|v| v.as_str()) == Some(&hook.id)
+                                }) {
+                                    // Look up source request name
+                                    let source_req = db::get_request(&hook.source_request_id)
+                                        .await
+                                        .ok()
+                                        .flatten();
+                                    hooks_associated.push(serde_json::json!({
+                                        "hook_id": hook.id,
+                                        "source_request_id": hook.source_request_id,
+                                        "source_request_name": source_req.as_ref().map(|r| r.name.as_str()),
+                                        "source_request_method": source_req.as_ref().map(|r| {
+                                            let c = parse_config(&r.config);
+                                            c.get("method").and_then(|v| v.as_str()).unwrap_or("GET").to_string()
+                                        }),
+                                        "selector": hook.selector,
+                                        "response_location": hook.response_location,
+                                    }));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         text_result(&serde_json::json!({
             "id": req.id,
             "name": req.name,
@@ -1169,6 +1302,7 @@ impl PiuMcp {
                 "variables_used": variables_used,
                 "variables_resolved": variables_resolved,
             },
+            "hooks_associated": hooks_associated,
             "source_commit_id": req.source_commit_id,
             "version": req.version,
             "sort_order": req.sort_order,
@@ -1442,7 +1576,7 @@ impl PiuMcp {
     }
 
     #[tool(
-        description = "Replace all variables for an environment. This is an upsert-all operation: all existing variables are deleted and replaced with the provided list."
+        description = "Set variables for an environment using upsert-by-key. Variables with matching keys are updated (preserving their IDs and hook target associations). New keys are inserted. Existing keys not in the input are deleted. Returns the full variable records with their stable IDs."
     )]
     async fn set_env_variables(
         &self,
@@ -1474,6 +1608,12 @@ impl PiuMcp {
         db::set_env_variables(&p.environment_id, variables)
             .await
             .map_err(mcp_err)?;
+
+        // Return full variable records with their stable IDs
+        let full_vars = db::list_env_variables(&p.environment_id)
+            .await
+            .map_err(mcp_err)?;
+
         emit_data_changed(
             "environment",
             "updated",
@@ -1483,6 +1623,419 @@ impl PiuMcp {
         text_result(&serde_json::json!({
             "environment_id": p.environment_id,
             "variables_set": count,
+            "variables": full_vars,
+        }))
+    }
+
+    // ---- Environment Variable Updates ----
+
+    #[tool(
+        description = "Update a single environment variable's value, match_paths, target_location, expires_at, priority, or enabled status. Only provided fields are changed. Use this for surgical updates to individual variables — especially useful for hooks that need to update a variable's value and expiration without replacing the entire variable set."
+    )]
+    async fn update_variable(
+        &self,
+        Parameters(p): Parameters<UpdateVariableParam>,
+    ) -> Result<CallToolResult, McpError> {
+        let expires_at = p.expires_at.as_ref().map(|o| *o);
+        let var = db::update_env_variable(
+            &p.variable_id,
+            p.value.as_deref(),
+            p.match_paths.as_deref(),
+            p.target_location.as_deref(),
+            expires_at,
+            p.priority,
+            p.enabled,
+        )
+        .await
+        .map_err(mcp_err)?;
+
+        // Emit data-changed for the environment
+        let envs = db::list_environments(None).await.unwrap_or_default();
+        let env_proj_id = envs
+            .iter()
+            .find(|e| e.id == var.environment_id)
+            .and_then(|e| e.project_id.as_deref())
+            .map(|s| s.to_string());
+        emit_data_changed(
+            "environment",
+            "updated",
+            Some(&var.environment_id),
+            env_proj_id.as_deref(),
+        );
+
+        text_result(&var)
+    }
+
+    // ---- Hooks (Auto-Extraction) ----
+
+    #[tool(
+        description = "Create a hook that auto-extracts values from HTTP responses into environment variables. When the source request is executed, the hook reads a value from the response (body via JSONPath or header by name), applies a template, and writes it to one or more target variables. This enables auth token chains (e.g., login response → Bearer token variable) and data pipelines (e.g., create resource → capture ID). The environment_id, source_request_id, and all target_variable_ids must belong to the same project."
+    )]
+    async fn create_hook(
+        &self,
+        Parameters(p): Parameters<CreateHookParam>,
+    ) -> Result<CallToolResult, McpError> {
+        // Ownership validation: verify all entities belong to the same project
+        let envs = db::list_environments(None).await.map_err(mcp_err)?;
+        let env = envs
+            .iter()
+            .find(|e| e.id == p.environment_id)
+            .ok_or_else(|| mcp_err(format!("Environment {} not found", p.environment_id)))?;
+        let env_project_id = env
+            .project_id
+            .as_deref()
+            .ok_or_else(|| mcp_err("Environment has no project_id"))?;
+
+        // Validate source request belongs to same project
+        let source_req = db::get_request(&p.source_request_id)
+            .await
+            .map_err(mcp_err)?
+            .ok_or_else(|| mcp_err(format!("Source request {} not found", p.source_request_id)))?;
+        if source_req.project_id.as_deref() != Some(env_project_id) {
+            return Err(mcp_err(format!(
+                "Source request {} belongs to a different project than environment {}",
+                p.source_request_id, p.environment_id
+            )));
+        }
+
+        // Validate all target variables belong to this environment
+        let env_vars = db::list_env_variables(&p.environment_id)
+            .await
+            .map_err(mcp_err)?;
+        let env_var_ids: std::collections::HashSet<&str> =
+            env_vars.iter().map(|v| v.id.as_str()).collect();
+        for var_id in &p.target_variable_ids {
+            if !env_var_ids.contains(var_id.as_str()) {
+                return Err(mcp_err(format!(
+                    "Target variable {} does not belong to environment {}",
+                    var_id, p.environment_id
+                )));
+            }
+        }
+
+        // Validate response_location
+        if p.response_location != "body" && p.response_location != "header" {
+            return Err(mcp_err("response_location must be 'body' or 'header'"));
+        }
+
+        let id = uuid::Uuid::new_v4().to_string();
+        let hook = db::create_hook(
+            &id,
+            &p.environment_id,
+            &p.source_request_id,
+            &p.response_location,
+            &p.selector,
+            &p.value_template,
+            p.expires_in,
+            &p.array_strategy,
+            &p.target_variable_ids,
+        )
+        .await
+        .map_err(mcp_err)?;
+
+        // Build enriched response with target variable keys
+        let target_details: Vec<serde_json::Value> = p
+            .target_variable_ids
+            .iter()
+            .filter_map(|vid| env_vars.iter().find(|v| v.id == *vid))
+            .map(|v| serde_json::json!({"variable_id": v.id, "key": v.key}))
+            .collect();
+
+        emit_data_changed(
+            "environment",
+            "updated",
+            Some(&p.environment_id),
+            Some(env_project_id),
+        );
+
+        text_result(&serde_json::json!({
+            "hook": hook,
+            "target_variables": target_details,
+            "source_request_name": source_req.name,
+        }))
+    }
+
+    #[tool(
+        description = "List all hooks for an environment, enriched with target variable IDs/keys and source request name/method. Use this to understand the full hook topology for an environment."
+    )]
+    async fn list_hooks(
+        &self,
+        Parameters(p): Parameters<EnvironmentIdParam>,
+    ) -> Result<CallToolResult, McpError> {
+        let hooks = db::list_hooks(&p.environment_id).await.map_err(mcp_err)?;
+
+        // Batch-load all targets for these hooks
+        let mut all_targets: HashMap<String, Vec<db::EnvHookTarget>> = HashMap::new();
+        for hook in &hooks {
+            let targets = db::list_hook_targets(&hook.id).await.unwrap_or_default();
+            all_targets.insert(hook.id.clone(), targets);
+        }
+
+        // Batch-load variable keys for all target variable IDs
+        let env_vars = db::list_env_variables(&p.environment_id)
+            .await
+            .unwrap_or_default();
+        let var_key_map: HashMap<&str, &str> = env_vars
+            .iter()
+            .map(|v| (v.id.as_str(), v.key.as_str()))
+            .collect();
+
+        let mut result = Vec::new();
+        for hook in &hooks {
+            let targets = all_targets.get(&hook.id).cloned().unwrap_or_default();
+            let target_details: Vec<serde_json::Value> = targets
+                .iter()
+                .map(|t| {
+                    serde_json::json!({
+                        "variable_id": t.variable_id,
+                        "key": var_key_map.get(t.variable_id.as_str()).unwrap_or(&""),
+                    })
+                })
+                .collect();
+
+            // Look up source request info
+            let source_req = db::get_request(&hook.source_request_id)
+                .await
+                .ok()
+                .flatten();
+            let source_method = source_req.as_ref().map(|r| {
+                let c = parse_config(&r.config);
+                c.get("method")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("GET")
+                    .to_string()
+            });
+
+            result.push(serde_json::json!({
+                "id": hook.id,
+                "environment_id": hook.environment_id,
+                "source_request_id": hook.source_request_id,
+                "source_request_name": source_req.as_ref().map(|r| r.name.as_str()),
+                "source_request_method": source_method,
+                "response_location": hook.response_location,
+                "selector": hook.selector,
+                "value_template": hook.value_template,
+                "expires_in": hook.expires_in,
+                "array_strategy": hook.array_strategy,
+                "enabled": hook.enabled,
+                "last_executed_at": hook.last_executed_at,
+                "target_variables": target_details,
+                "created_at": hook.created_at,
+                "updated_at": hook.updated_at,
+            }));
+        }
+
+        text_result(&serde_json::json!({ "hooks": result, "total": result.len() }))
+    }
+
+    #[tool(
+        description = "Get detailed info about a single hook by its ID, enriched with target variable keys and source request details."
+    )]
+    async fn get_hook(
+        &self,
+        Parameters(p): Parameters<HookIdParam>,
+    ) -> Result<CallToolResult, McpError> {
+        let hook = db::get_hook_by_id(&p.hook_id)
+            .await
+            .map_err(mcp_err)?
+            .ok_or_else(|| mcp_err(format!("Hook {} not found", p.hook_id)))?;
+
+        let targets = db::list_hook_targets(&hook.id).await.map_err(mcp_err)?;
+
+        // Load variable keys
+        let env_vars = db::list_env_variables(&hook.environment_id)
+            .await
+            .unwrap_or_default();
+        let var_key_map: HashMap<&str, &str> = env_vars
+            .iter()
+            .map(|v| (v.id.as_str(), v.key.as_str()))
+            .collect();
+
+        let target_details: Vec<serde_json::Value> = targets
+            .iter()
+            .map(|t| {
+                serde_json::json!({
+                    "variable_id": t.variable_id,
+                    "key": var_key_map.get(t.variable_id.as_str()).unwrap_or(&""),
+                })
+            })
+            .collect();
+
+        // Source request info
+        let source_req = db::get_request(&hook.source_request_id)
+            .await
+            .ok()
+            .flatten();
+        let source_method = source_req.as_ref().map(|r| {
+            let c = parse_config(&r.config);
+            c.get("method")
+                .and_then(|v| v.as_str())
+                .unwrap_or("GET")
+                .to_string()
+        });
+
+        text_result(&serde_json::json!({
+            "id": hook.id,
+            "environment_id": hook.environment_id,
+            "source_request_id": hook.source_request_id,
+            "source_request_name": source_req.as_ref().map(|r| r.name.as_str()),
+            "source_request_method": source_method,
+            "response_location": hook.response_location,
+            "selector": hook.selector,
+            "value_template": hook.value_template,
+            "expires_in": hook.expires_in,
+            "array_strategy": hook.array_strategy,
+            "enabled": hook.enabled,
+            "last_executed_at": hook.last_executed_at,
+            "target_variables": target_details,
+            "created_at": hook.created_at,
+            "updated_at": hook.updated_at,
+        }))
+    }
+
+    #[tool(
+        description = "Update a hook's source request, selector, template, expiration, array strategy, enabled status, or target variables. Only provided fields are changed. Target variable IDs, if provided, replace all existing targets (must belong to the same project)."
+    )]
+    async fn update_hook(
+        &self,
+        Parameters(p): Parameters<UpdateHookParam>,
+    ) -> Result<CallToolResult, McpError> {
+        // Load existing hook to get environment_id for validation
+        let existing = db::get_hook_by_id(&p.hook_id)
+            .await
+            .map_err(mcp_err)?
+            .ok_or_else(|| mcp_err(format!("Hook {} not found", p.hook_id)))?;
+
+        let envs = db::list_environments(None).await.map_err(mcp_err)?;
+        let env = envs
+            .iter()
+            .find(|e| e.id == existing.environment_id)
+            .ok_or_else(|| mcp_err(format!("Environment {} not found", existing.environment_id)))?;
+        let env_project_id = env
+            .project_id
+            .as_deref()
+            .ok_or_else(|| mcp_err("Environment has no project_id"))?;
+
+        // Validate new source_request_id if provided
+        if let Some(ref new_src_id) = p.source_request_id {
+            let src_req = db::get_request(new_src_id)
+                .await
+                .map_err(mcp_err)?
+                .ok_or_else(|| mcp_err(format!("Source request {} not found", new_src_id)))?;
+            if src_req.project_id.as_deref() != Some(env_project_id) {
+                return Err(mcp_err(format!(
+                    "Source request {} belongs to a different project",
+                    new_src_id
+                )));
+            }
+        }
+
+        // Validate new target_variable_ids if provided
+        if let Some(ref new_var_ids) = p.target_variable_ids {
+            let env_vars = db::list_env_variables(&existing.environment_id)
+                .await
+                .map_err(mcp_err)?;
+            let env_var_ids: std::collections::HashSet<&str> =
+                env_vars.iter().map(|v| v.id.as_str()).collect();
+            for var_id in new_var_ids {
+                if !env_var_ids.contains(var_id.as_str()) {
+                    return Err(mcp_err(format!(
+                        "Target variable {} does not belong to environment {}",
+                        var_id, existing.environment_id
+                    )));
+                }
+            }
+        }
+
+        // Validate response_location if provided
+        if let Some(ref loc) = p.response_location {
+            if loc != "body" && loc != "header" {
+                return Err(mcp_err("response_location must be 'body' or 'header'"));
+            }
+        }
+
+        let target_ids_ref = p.target_variable_ids.as_deref();
+
+        let hook = db::update_hook(
+            &p.hook_id,
+            p.source_request_id.as_deref(),
+            p.response_location.as_deref(),
+            p.selector.as_deref(),
+            p.value_template.as_deref(),
+            p.expires_in,
+            p.array_strategy.as_deref(),
+            p.enabled,
+            target_ids_ref,
+        )
+        .await
+        .map_err(mcp_err)?;
+
+        emit_data_changed(
+            "environment",
+            "updated",
+            Some(&existing.environment_id),
+            Some(env_project_id),
+        );
+
+        // Return enriched hook
+        let targets = db::list_hook_targets(&hook.id).await.unwrap_or_default();
+        let env_vars = db::list_env_variables(&existing.environment_id)
+            .await
+            .unwrap_or_default();
+        let var_key_map: HashMap<&str, &str> = env_vars
+            .iter()
+            .map(|v| (v.id.as_str(), v.key.as_str()))
+            .collect();
+        let target_details: Vec<serde_json::Value> = targets
+            .iter()
+            .map(|t| {
+                serde_json::json!({
+                    "variable_id": t.variable_id,
+                    "key": var_key_map.get(t.variable_id.as_str()).unwrap_or(&""),
+                })
+            })
+            .collect();
+
+        text_result(&serde_json::json!({
+            "hook": hook,
+            "target_variables": target_details,
+        }))
+    }
+
+    #[tool(
+        description = "Delete a hook by its ID. This removes the hook and all its target associations (via CASCADE). The target variables themselves are not deleted."
+    )]
+    async fn delete_hook(
+        &self,
+        Parameters(p): Parameters<HookIdParam>,
+    ) -> Result<CallToolResult, McpError> {
+        // Load hook info before deletion for the response
+        let hook = db::get_hook_by_id(&p.hook_id)
+            .await
+            .map_err(mcp_err)?
+            .ok_or_else(|| mcp_err(format!("Hook {} not found", p.hook_id)))?;
+
+        let envs = db::list_environments(None).await.unwrap_or_default();
+        let env_proj_id = envs
+            .iter()
+            .find(|e| e.id == hook.environment_id)
+            .and_then(|e| e.project_id.as_deref())
+            .map(|s| s.to_string());
+
+        db::delete_hook(&p.hook_id).await.map_err(mcp_err)?;
+
+        emit_data_changed(
+            "environment",
+            "updated",
+            Some(&hook.environment_id),
+            env_proj_id.as_deref(),
+        );
+
+        text_result(&serde_json::json!({
+            "deleted": p.hook_id,
+            "environment_id": hook.environment_id,
+            "source_request_id": hook.source_request_id,
+            "selector": hook.selector,
         }))
     }
 
@@ -2583,6 +3136,10 @@ impl PiuMcp {
         // Execute
         let response = http::executor::execute(&config).await.map_err(mcp_err)?;
 
+        // Post-response hook processing (same as orchestrator, without Tauri events)
+        let hooks_fired =
+            http::orchestrator::process_hooks_headless(&p.request_id, &response).await;
+
         text_result(&serde_json::json!({
             "status": response.status,
             "status_text": response.status_text,
@@ -2595,6 +3152,7 @@ impl PiuMcp {
                 "method": config.method,
                 "environment": env_name,
                 "variables_evaluated": variables_applied,
+                "hooks_fired": hooks_fired,
             },
         }))
     }

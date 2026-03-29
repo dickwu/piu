@@ -2,6 +2,21 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+Before starting a new task, review existing rules and hypotheses for this domain.
+Apply rules by default. Check if any hypothesis can be tested with today's work.
+At the end of each task, extract insights.
+Store them in domain folders, e.g.:
+/knowLedge/pricing/ knowledge.md
+(facts and patterns)
+hypotheses.md (need more data)
+rules.md
+(confirmed - apply by default)
+Maintain a /knowledge/INDEX.md
+that routes
+to each domain folder.
+When a hypothesis gets confirmed 5+ times, promote it to a rule.
+When a rule gets contradicted by new data, demote it back to a hypothesis.
+
 ## What is PIU
 
 PIU is a desktop API management app (Postman alternative) built with Tauri 2.0 (Rust backend) + React 19 + Next.js 16 + Ant Design 6. It's native, offline-first, and stores data in local SQLite.

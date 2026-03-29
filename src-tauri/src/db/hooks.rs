@@ -98,31 +98,49 @@ pub async fn create_hook(
     let conn = get_connection()?.lock().await;
     let now = chrono::Utc::now().timestamp_millis();
 
-    conn.execute(
-        &format!(
-            "INSERT INTO env_hooks ({}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 1, NULL, ?9, ?9)",
-            HOOK_SELECT
-        ),
-        turso::params![
-            id,
-            environment_id,
-            source_request_id,
-            response_location,
-            selector,
-            value_template,
-            expires_in,
-            array_strategy,
-            now
-        ],
-    )
-    .await?;
+    // Wrap hook + targets in a transaction to prevent partial state on FK failure
+    conn.execute("BEGIN IMMEDIATE", ()).await?;
 
-    for var_id in target_variable_ids {
+    let result: DbResult<()> = async {
         conn.execute(
-            "INSERT INTO env_hook_targets (hook_id, variable_id) VALUES (?1, ?2)",
-            turso::params![id, var_id.as_str()],
+            &format!(
+                "INSERT INTO env_hooks ({}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 1, NULL, ?9, ?9)",
+                HOOK_SELECT
+            ),
+            turso::params![
+                id,
+                environment_id,
+                source_request_id,
+                response_location,
+                selector,
+                value_template,
+                expires_in,
+                array_strategy,
+                now
+            ],
         )
         .await?;
+
+        for var_id in target_variable_ids {
+            conn.execute(
+                "INSERT INTO env_hook_targets (hook_id, variable_id) VALUES (?1, ?2)",
+                turso::params![id, var_id.as_str()],
+            )
+            .await?;
+        }
+
+        Ok(())
+    }
+    .await;
+
+    match result {
+        Ok(()) => {
+            conn.execute("COMMIT", ()).await?;
+        }
+        Err(e) => {
+            let _ = conn.execute("ROLLBACK", ()).await;
+            return Err(e);
+        }
     }
 
     Ok(EnvHook {
@@ -245,35 +263,53 @@ pub async fn update_hook(
     let new_enabled = enabled.unwrap_or(current.enabled);
     let now = chrono::Utc::now().timestamp_millis();
 
-    conn.execute(
-        "UPDATE env_hooks SET source_request_id = ?1, response_location = ?2, selector = ?3, value_template = ?4, expires_in = ?5, array_strategy = ?6, enabled = ?7, updated_at = ?8 WHERE id = ?9",
-        turso::params![
-            new_source_request_id,
-            new_response_location,
-            new_selector,
-            new_value_template,
-            new_expires_in,
-            new_array_strategy,
-            new_enabled,
-            now,
-            id
-        ],
-    )
-    .await?;
+    // Wrap update + target replacement in a transaction to prevent partial state
+    conn.execute("BEGIN IMMEDIATE", ()).await?;
 
-    if let Some(var_ids) = target_variable_ids {
+    let result: DbResult<()> = async {
         conn.execute(
-            "DELETE FROM env_hook_targets WHERE hook_id = ?1",
-            turso::params![id],
+            "UPDATE env_hooks SET source_request_id = ?1, response_location = ?2, selector = ?3, value_template = ?4, expires_in = ?5, array_strategy = ?6, enabled = ?7, updated_at = ?8 WHERE id = ?9",
+            turso::params![
+                new_source_request_id,
+                new_response_location,
+                new_selector,
+                new_value_template,
+                new_expires_in,
+                new_array_strategy,
+                new_enabled,
+                now,
+                id
+            ],
         )
         .await?;
 
-        for var_id in var_ids {
+        if let Some(var_ids) = target_variable_ids {
             conn.execute(
-                "INSERT INTO env_hook_targets (hook_id, variable_id) VALUES (?1, ?2)",
-                turso::params![id, var_id.as_str()],
+                "DELETE FROM env_hook_targets WHERE hook_id = ?1",
+                turso::params![id],
             )
             .await?;
+
+            for var_id in var_ids {
+                conn.execute(
+                    "INSERT INTO env_hook_targets (hook_id, variable_id) VALUES (?1, ?2)",
+                    turso::params![id, var_id.as_str()],
+                )
+                .await?;
+            }
+        }
+
+        Ok(())
+    }
+    .await;
+
+    match result {
+        Ok(()) => {
+            conn.execute("COMMIT", ()).await?;
+        }
+        Err(e) => {
+            let _ = conn.execute("ROLLBACK", ()).await;
+            return Err(e);
         }
     }
 
@@ -300,6 +336,23 @@ pub async fn delete_hook(id: &str) -> DbResult<()> {
         .await?;
 
     Ok(())
+}
+
+pub async fn get_hook_by_id(id: &str) -> DbResult<Option<EnvHook>> {
+    let conn = get_connection()?.lock().await;
+
+    let mut rows = conn
+        .query(
+            &format!("SELECT {} FROM env_hooks WHERE id = ?1", HOOK_SELECT),
+            turso::params![id],
+        )
+        .await?;
+
+    if let Some(row) = rows.next().await? {
+        Ok(Some(hook_from_row(&row)?))
+    } else {
+        Ok(None)
+    }
 }
 
 pub async fn update_hook_last_executed(id: &str) -> DbResult<()> {

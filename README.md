@@ -15,7 +15,8 @@ Built with **Tauri 2.0** (Rust backend) + **React 19** + **Next.js** + **Ant Des
 - 🔢 **Version management** — Every change auto-increments a version number per entity with a full changelog
 - 🌍 **Environments & Variables** — `{{variable}}` interpolation across URLs, headers, and body; environment host + collection prefix build the full URL at execution time
 - 🎯 **Targeted Variables** — Each environment variable carries a `match_paths` glob pattern, `target_location` (header, URL param, URL path, body, auth bearer/basic/API key), `priority`, and optional `expires_at` TTL. Variables are injected only when the request path matches, with priority-based conflict resolution
-- ⚡ **Response Hooks** — Define hooks that fire after a request completes: extract a value from the response body (JSONPath) or a response header, optionally transform it with a template, and write it to one or more environment variables. Supports configurable TTL and array extraction strategies (first, last, pick)
+- ⚡ **Response Hooks** — Define hooks that fire after a request completes: extract a value from the response body (JSONPath) or a response header, optionally transform it with a template, and write it to one or more environment variables. Supports configurable TTL and array extraction strategies (first, last, pick). Hooks fire automatically when requests are executed via both the desktop UI and MCP tools
+- 🔗 **MCP Hook Management** — Create, list, update, and delete response hooks via MCP tools. Skills can set up complete auth token flows programmatically: create login request → configure hook to extract token → execute login → token captured into variables automatically
 - 🔢 **Array Picker** — When a hook's JSONPath selector returns an array, a modal picker lets you choose which element to capture
 - ✏️ **Environment rename** — Rename environments inline with duplicate-name prevention
 - 🔗 **URL resolution** — Requests store only the path (e.g. `/users/123`); the full URL is `env host + collection prefix + path`. Missing host shows a config prompt before sending
@@ -24,7 +25,7 @@ Built with **Tauri 2.0** (Rust backend) + **React 19** + **Next.js** + **Ant Des
 - 🔄 **Auto-updater** — Built-in Tauri updater with signed artifacts
 - 🧩 **Data Models** — Per-project typed schemas with named fields, descriptions, required flags, and example values. Link a model to a request to generate sample JSON bodies or validate response shapes inline
 - 🧬 **Model Inheritance** — Single-parent inheritance + multi-mixin composition. Fields resolve via strict linearization (parent chain → mixins → own). Cycle detection prevents circular references. Side-by-side diff modal compares parent-child fields or version history
-- 🤖 **MCP Server** — 46 built-in tools let Claude (or any MCP client) create projects, send requests, manage collections, search the knowledge graph, and query data model relationships — including a Mermaid class diagram generator, sync status tracking, and OpenAPI spec generation
+- 🤖 **MCP Server** — 57 built-in tools let Claude (or any MCP client) create projects, send requests, manage collections, configure response hooks, search the knowledge graph, and query data model relationships — including a Mermaid class diagram generator, sync status tracking, and OpenAPI spec generation
 - 📦 **Move requests freely** — Right-click any request to move it between collections or to project root via a tree picker. Moving the last request out of a collection prompts to delete the empty collection
 - 🔄 **PIU-to-PIU Sync** — Sync projects between PIU instances over LAN. One hosts, another connects with IP + port + shared join key. Last-writer-wins conflict resolution via version fields. **Clone from Host** lets a connecting instance create a new local project automatically — no pre-existing project required
 - 🔗 **Git Commit Tracking** — Projects, collections, and requests track their source git repo URL, commit SHA, and backend framework type. The `get_sync_status` MCP tool detects stale entities by comparing per-entity commit IDs against the project-level commit
@@ -100,7 +101,7 @@ bun tauri dev
 ```
 piu/
 ├── skills/                     # Claude Code skills (installable via skills.sh)
-│   ├── piu-mcp/SKILL.md        # Full MCP toolkit (46 tools)
+│   ├── piu-mcp/SKILL.md        # Full MCP toolkit (57 tools)
 │   ├── piu-backend-sync/SKILL.md   # Import backend routes into PIU
 │   ├── piu-frontend-sync/SKILL.md  # Validate frontend API calls against PIU
 │   └── piu-hyperf-sync/SKILL.md    # Deep-sync Hyperf PHP backends (routes, DTOs, middleware)
@@ -119,7 +120,7 @@ piu/
         │   ├── models.rs       # Data model CRUD + inheritance + cycle detection
         │   └── changelog.rs    # Version history
         ├── commands/           # Tauri IPC commands (~35 handlers)
-        ├── mcp.rs              # In-process MCP server (46 tools, LLM-optimized descriptions)
+        ├── mcp.rs              # In-process MCP server (57 tools, LLM-optimized descriptions)
         ├── mcp_relations.rs    # Model graph, hierarchy, and Mermaid diagram generation
         ├── sync.rs             # PIU-to-PIU sync protocol (Axum server + reqwest client)
         └── http/
@@ -222,7 +223,7 @@ Once installed, Claude Code auto-activates them based on trigger keywords.
 
 #### PIU MCP Toolkit (`skills/piu-mcp/`)
 
-Full reference for all 46 MCP tools. Covers projects, collections, requests, environments, data models, execution, search & discovery, sync tracking, and OpenAPI generation. Includes a Bun CLI wrapper:
+Full reference for all 57 MCP tools. Covers projects, collections, requests, environments, data models, execution, search & discovery, sync tracking, and OpenAPI generation. Includes a Bun CLI wrapper:
 
 ```bash
 bun scripts/piu.ts tree <project_id>       # Full project tree

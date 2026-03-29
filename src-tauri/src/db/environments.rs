@@ -301,31 +301,81 @@ pub async fn set_env_variables(
     let conn = get_connection()?.lock().await;
     let now = chrono::Utc::now().timestamp_millis();
 
-    conn.execute(
-        "DELETE FROM env_variables WHERE environment_id = ?1",
-        turso::params![environment_id],
-    )
-    .await?;
+    // Upsert-by-key: preserve existing variable IDs so that FK references
+    // in env_hook_targets survive the update.
 
-    for (id, key, value, enabled, match_paths, target_location, expires_at, priority) in &variables
-    {
-        conn.execute(
-            "INSERT INTO env_variables (id, environment_id, key, value, enabled, match_paths, target_location, expires_at, priority, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10)",
-            turso::params![
-                id.clone(),
-                environment_id,
-                key.clone(),
-                value.clone(),
-                *enabled,
-                match_paths.clone(),
-                target_location.clone(),
-                *expires_at,
-                *priority,
-                now
-            ],
+    // 1. Load existing variables keyed by their `key` column
+    let mut existing_rows = conn
+        .query(
+            "SELECT id, key FROM env_variables WHERE environment_id = ?1",
+            turso::params![environment_id],
         )
         .await?;
+    let mut existing_by_key: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
+    while let Some(row) = existing_rows.next().await? {
+        let id: String = row.get(0)?;
+        let key: String = row.get(1)?;
+        existing_by_key.insert(key, id);
+    }
+    drop(existing_rows);
+
+    // 2. Collect the set of keys being written
+    let input_keys: std::collections::HashSet<String> =
+        variables.iter().map(|(_, key, ..)| key.clone()).collect();
+
+    // 3. Delete variables whose keys are NOT in the input set
+    for (key, existing_id) in &existing_by_key {
+        if !input_keys.contains(key) {
+            conn.execute(
+                "DELETE FROM env_variables WHERE id = ?1",
+                turso::params![existing_id.as_str()],
+            )
+            .await?;
+        }
+    }
+
+    // 4. Upsert each input variable: UPDATE if key exists, INSERT if new
+    for (_input_id, key, value, enabled, match_paths, target_location, expires_at, priority) in
+        &variables
+    {
+        if let Some(existing_id) = existing_by_key.get(key) {
+            // UPDATE existing row — preserves its ID and hook target FKs
+            conn.execute(
+                "UPDATE env_variables SET value = ?1, enabled = ?2, match_paths = ?3, target_location = ?4, expires_at = ?5, priority = ?6, updated_at = ?7 WHERE id = ?8",
+                turso::params![
+                    value.clone(),
+                    *enabled,
+                    match_paths.clone(),
+                    target_location.clone(),
+                    *expires_at,
+                    *priority,
+                    now,
+                    existing_id.as_str()
+                ],
+            )
+            .await?;
+        } else {
+            // INSERT new variable with a fresh UUID
+            let new_id = uuid::Uuid::new_v4().to_string();
+            conn.execute(
+                "INSERT INTO env_variables (id, environment_id, key, value, enabled, match_paths, target_location, expires_at, priority, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10)",
+                turso::params![
+                    new_id,
+                    environment_id,
+                    key.clone(),
+                    value.clone(),
+                    *enabled,
+                    match_paths.clone(),
+                    target_location.clone(),
+                    *expires_at,
+                    *priority,
+                    now
+                ],
+            )
+            .await?;
+        }
     }
 
     Ok(())

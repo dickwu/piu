@@ -261,6 +261,68 @@ async fn process_hooks(app: &tauri::AppHandle, request_id: &str, response: &Http
     }
 }
 
+/// Process post-response hooks without Tauri event emission.
+/// Used by the MCP execute_request path which has no AppHandle.
+/// Returns the number of variables updated across all hooks.
+pub async fn process_hooks_headless(request_id: &str, response: &HttpResponse) -> usize {
+    let hooks = match list_hooks_for_source_request(request_id).await {
+        Ok(h) => h,
+        Err(_) => return 0,
+    };
+
+    let mut total_updated: usize = 0;
+
+    for hook in &hooks {
+        let extraction = match hook.response_location.as_str() {
+            "body" => extractor::extract_from_body(&response.body, &hook.selector),
+            "header" => extractor::extract_from_header(&response.headers, &hook.selector),
+            _ => continue,
+        };
+
+        let captured_value = match extraction {
+            ExtractionResult::Scalar(v) => extractor::apply_template(&hook.value_template, &v),
+            ExtractionResult::Array(_) => continue,
+            ExtractionResult::NotFound
+            | ExtractionResult::InvalidJson
+            | ExtractionResult::NonScalar => continue,
+        };
+
+        let target_ids = match db::list_hook_targets(&hook.id).await {
+            Ok(t) => t,
+            Err(_) => continue,
+        };
+
+        if target_ids.is_empty() {
+            continue;
+        }
+
+        let expires_at = hook
+            .expires_in
+            .map(|ms| chrono::Utc::now().timestamp_millis() + ms);
+
+        for target in &target_ids {
+            if db::update_env_variable(
+                &target.variable_id,
+                Some(&captured_value),
+                None,
+                None,
+                Some(expires_at),
+                None,
+                None,
+            )
+            .await
+            .is_ok()
+            {
+                total_updated += 1;
+            }
+        }
+
+        let _ = db::update_hook_last_executed(&hook.id).await;
+    }
+
+    total_updated
+}
+
 /// Query hooks whose source_request_id matches the given request and are enabled.
 async fn list_hooks_for_source_request(
     request_id: &str,
